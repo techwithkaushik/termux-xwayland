@@ -40,9 +40,6 @@ android {
         debug {
             if (hasDevSigning) signingConfig = signingConfigs.getByName("dev")
         }
-        release {
-            if (hasDevSigning) signingConfig = signingConfigs.getByName("dev")
-        }
     }
 
     compileOptions {
