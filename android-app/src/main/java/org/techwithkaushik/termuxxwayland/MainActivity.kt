@@ -30,6 +30,11 @@ import android.widget.TextView
 import android.widget.Toast
 import java.nio.ByteBuffer
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -58,6 +63,10 @@ class MainActivity : Activity() {
     private lateinit var binderProbeButton: Button
     private var binderProbeConnection: ServiceConnection? = null
     @Volatile private var binderProbeRunning = false
+    private lateinit var tcpProbeTitle: TextView
+    private lateinit var tcpProbeDescription: TextView
+    private lateinit var tcpProbeButton: Button
+    @Volatile private var tcpProbeRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -153,6 +162,25 @@ class MainActivity : Activity() {
         content.addView(binderProbeDescription, margins(bottom = 8))
         binderProbeButton = actionButton("Run Binder capability probe") { runBinderProbe() }
         content.addView(binderProbeButton, margins(bottom = 16))
+
+        content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        content.addView(infoCard(
+            "Diagnostic only • 127.0.0.1:38471",
+            "Checks whether this Android app can reach a one-shot TCP echo server running inside Termux on the same phone. This is not enabled as a bridge fallback and does not send desktop frames."
+        ), margins(bottom = 10))
+        tcpProbeTitle = label("Not tested", 17, ink, true).apply {
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        tcpProbeDescription = label(
+            "Start the repository's TCP probe server in Termux, then tap the button below.",
+            13, muted, false
+        )
+        content.addView(tcpProbeTitle)
+        content.addView(tcpProbeDescription, margins(bottom = 8))
+        tcpProbeButton = actionButton("Test Termux TCP connection") { runTcpProbe() }
+        content.addView(tcpProbeButton, margins(bottom = 16))
 
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
@@ -399,6 +427,39 @@ class MainActivity : Activity() {
             binderProbeDescription.text =
                 "Install the companion APK built from :ipc-companion and ensure both APKs use the same signing certificate. No socket or network fallback was attempted."
         }
+    }
+
+    private fun runTcpProbe() {
+        if (tcpProbeRunning) return
+        tcpProbeRunning = true
+        tcpProbeButton.isEnabled = false
+        tcpProbeTitle.text = "Connecting to 127.0.0.1:38471…"
+        tcpProbeDescription.text = "Testing a loopback TCP echo from Android host to Termux."
+        Thread({
+            val result = try {
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress("127.0.0.1", 38471), 3000)
+                    socket.soTimeout = 3000
+                    val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                    writer.write("TERMUX_XWAYLAND_TCP_PROBE\\n")
+                    writer.flush()
+                    val reply = reader.readLine()
+                    if (reply != "PASS TERMUX_XWAYLAND_TCP_PROBE") {
+                        throw IOException("Unexpected TCP echo response: ${reply ?: "connection closed"}")
+                    }
+                    "PASS • Android host connected to Termux on 127.0.0.1:38471 and received the exact echo. This is a one-shot connectivity test only."
+                }
+            } catch (error: Exception) {
+                "FAIL • ${error.message ?: error.javaClass.simpleName}. Ensure the Termux probe server is running on 127.0.0.1:38471."
+            }
+            runOnUiThread {
+                tcpProbeRunning = false
+                tcpProbeButton.isEnabled = true
+                tcpProbeTitle.text = if (result.startsWith("PASS")) "TCP loopback passed" else "TCP loopback failed"
+                tcpProbeDescription.text = result
+            }
+        }, "tcp-loopback-probe").start()
     }
 
     private fun performBinderProbe(remote: IBinder): String {
