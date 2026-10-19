@@ -25,6 +25,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.nio.ByteBuffer
+import java.io.IOException
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -161,9 +162,22 @@ class MainActivity : Activity() {
             var candidate: LocalSocket? = null
             try {
                 candidate = LocalSocket()
-                candidate.connect(LocalSocketAddress(
-                    socketName, LocalSocketAddress.Namespace.ABSTRACT
-                ))
+                try {
+                    candidate.connect(LocalSocketAddress(
+                        socketName, LocalSocketAddress.Namespace.ABSTRACT
+                    ))
+                } catch (error: IOException) {
+                    if (error.message?.contains("Permission denied", ignoreCase = true) == true) {
+                        throw IllegalStateException(
+                            "Android blocked the cross-app AF_UNIX connection (EACCES). " +
+                                "On Android 10 this is commonly SELinux per-app isolation; " +
+                                "chmod cannot fix an abstract socket. A shared-UID build " +
+                                "signed with the same key as Termux, or a Termux-mediated IPC bridge, is required.",
+                            error
+                        )
+                    }
+                    throw error
+                }
                 candidate.setSoTimeout(15000)
                 BridgeProtocol.write(candidate.getOutputStream(), BridgeMessageKind.HELLO, token)
                 token.fill(0)
