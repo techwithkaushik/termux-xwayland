@@ -13,6 +13,10 @@ A standalone Android display host for graphical sessions launched from Termux. T
 - Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
 - Architecture targets remain `armeabi-v7a` and `arm64-v8a`; Android 10 compatibility must be verified on-device.
 
+## Verify real X11 capture (diagnostic only)
+
+After starting an X11/XWayland session in Termux, run `pkg install ffmpeg` and then `tools/capture-x11-frame.sh "$HOME/x11-check.png" 320x180`. This captures one real frame to a local PNG and helps isolate display-capture problems. It is **not yet wired to the Android bridge**; the app still receives a synthetic frame. See [docs/x11-capture-probe.md](docs/x11-capture-probe.md).
+
 ## Build and test
 
 Android shell build (Gradle 8.9 and JDK 17):
