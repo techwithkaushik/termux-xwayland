@@ -7,7 +7,6 @@ on:
       - ".github/workflows/ci.yml"
       - "android-app/**"
       - "ipc-companion/**"
-      - "ipc-companion/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
@@ -18,6 +17,7 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - "android-app/**"
+      - "ipc-companion/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
