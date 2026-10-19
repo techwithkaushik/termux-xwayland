@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "TermuxXWayland"
-include(":android-app", ":ipc-companion")
+include(":android-app")
