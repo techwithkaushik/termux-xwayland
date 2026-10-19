@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-The native binary now provides a **single-client, authenticated loopback handshake smoke test** and the Android app can connect to it. This is not a compositor: no Wayland socket, frame stream, input forwarding, XWayland, XFCE or LXQt session is available yet.
+The native binary now provides a **single-client, authenticated loopback transport smoke test** and sends one synthetic RGBA frame that the Android app validates and renders. This is not a compositor: no Wayland socket, real desktop frame capture, input forwarding, XWayland, XFCE or LXQt session is available yet.
 
 ## Build the native smoke-test server
 
@@ -31,10 +31,10 @@ Generate a fresh 256-bit token for each run and start the server. The token is p
     printf 'Session token: %s\n' "$TERMUX_XWAYLAND_TOKEN_HEX"
     ./target/release/termux-xwayland-compositor
 
-The server binds only to `127.0.0.1`. In the Android app, enter host `127.0.0.1`, port `38765`, and the session token, then tap **Connect securely**. The UI should report **Bridge authenticated** only after the token handshake succeeds. Tap **Disconnect** to close the session. The token is held in the shell environment for this test run; unset it when finished with `unset TERMUX_XWAYLAND_TOKEN_HEX`.
+The server binds only to `127.0.0.1`. In the Android app, enter host `127.0.0.1`, port `38765`, and the session token, then tap **Connect securely**. The UI should report **Test frame received** after the token handshake succeeds and the synthetic test pattern has been rendered. Tap **Disconnect** to close the session. The token is held in the shell environment for this test run; unset it when finished with `unset TERMUX_XWAYLAND_TOKEN_HEX`.
 
 If connection fails, check that the server is running, the port matches, and the token has exactly 64 hexadecimal characters. Do not expose the server on `0.0.0.0` or a LAN interface as a workaround.
 
 ## What this test proves
 
-It validates loopback connectivity on the device and the versioned authenticated handshake only. It does not display Linux applications. The next milestone is a real Wayland compositor plus bounded frame delivery and Android `SurfaceView` rendering; only after that should input forwarding and XWayland/XFCE be added.
+It validates loopback connectivity on the device, the versioned authenticated handshake, bounded frame delivery, and Android bitmap rendering. It does not display Linux applications. The next milestone is integrating a real Wayland compositor and forwarding its actual output; input forwarding and XWayland/XFCE should follow after real frame capture is stable.
