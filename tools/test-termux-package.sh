@@ -39,8 +39,8 @@ check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metad
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
-check_grep 'SYSTEM_MONKEY="/system/bin/monkey"' "$script" "MIUI-compatible launcher command"
-check_grep '"$SYSTEM_MONKEY" -p "$DETECTED_APP_ID" -c android.intent.category.LAUNCHER 1' "$script" "Android host launcher intent"
+check_grep 'TERMUX_OPEN="${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open"' "$script" "Termux open command"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start"' "$script" "Android host deep-link launch"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
