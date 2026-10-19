@@ -8,6 +8,7 @@ A standalone Android display host for graphical sessions launched from Termux. T
 
 - Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
 - Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype; no TCP listener or localhost port.
+- Binder probe: a separately installed companion APK exposes a signature-permission-protected Binder service; the display host verifies a bounded 16 KiB echo and distinct app UIDs. This is only a host-to-companion capability test, not a Termux connection or streaming transport.
 - Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
 - Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
@@ -21,7 +22,7 @@ tools/capture-x11-frame.sh is an optional, one-shot debugging helper only. FFmpe
 
 Android shell build (Gradle 8.9 and JDK 17):
 
-    gradle :android-app:assembleDebug
+    gradle :android-app:assembleDebug :ipc-companion:assembleDebug
 
 Native protocol/server checks from native/compositor:
 
@@ -36,7 +37,7 @@ See docs/termux-workflow.md for building and starting the diagnostic server. Use
 
 1. Buildable Android host and CI. **Complete.**
 2. Bounded bridge framing and protocol tests. **Implemented; cross-UID Android device connection fails with EACCES and is not a supported transport yet.**
-3. Select and verify an Android-10-compatible IPC transport.
+3. Binder capability probe implemented for host ↔ companion; install both APKs signed with the same certificate and verify on Android 10. This does not yet prove Termux-side access or frame streaming.
 4. Build a real Wayland compositor and render one real Wayland client surface in Android.
 5. Integrate upstream XWayland and verify a known X11 test client.
 6. Add input, resize, clipboard and lifecycle handling.
@@ -50,6 +51,7 @@ See docs/xwayland-integration-plan.md for the detailed process topology, rootful
 - The abstract AF_UNIX socket is diagnostic only; do not assume it works across Android UIDs.
 - Generate a new high-entropy token per session. Never place secrets in exported intents, command-line arguments, or logs.
 - A token cannot override Android IPC authorization; the connection must be permitted before authentication can happen.
+- The Binder probe service is guarded by a signature-level permission. Install the companion APK first, then the display-host APK, and sign both with the same certificate. Do not treat this test as evidence that the existing Termux app can bind to this service.
 - Do not add a public TCP/LAN or localhost fallback if Android SELinux blocks cross-UID access.
 - Do not disable SELinux or require root.
 - Do not assume GPU acceleration, DMA-BUF, zero-copy transport, or ARM32 dependency availability; test each explicitly.
