@@ -146,7 +146,8 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
-   "$launch_uri" == *"&server=running&port="* ]] || {
+   "$launch_uri" == *"&server=running&port="* &&
+   "$launch_uri" != *"&token="* ]] || {
   echo "FAIL: start must send session ID and monitor port (got: $launch_uri)" >&2; exit 1;
 }
 session_id="${launch_uri#*session_id=}"
@@ -165,7 +166,7 @@ grep -Fq 'Android host detection: waiting for host app' <<<"$running_status" || 
 }
 valid_response="$(printf 'STATUS %s\n' "$session_id" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
 [[ "$valid_response" == "RUNNING $session_id" ]] || {
-  echo "FAIL: authenticated status request should report running Weston" >&2; exit 1;
+  echo "FAIL: matching session request should report running Weston" >&2; exit 1;
 }
 invalid_session="$(printf '0%.0s' {1..32})"
 invalid_response="$(printf 'STATUS %s\n' "$invalid_session" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
@@ -174,7 +175,7 @@ invalid_response="$(printf 'STATUS %s\n' "$invalid_session" | "${cli_env[@]}" ba
 }
 active_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host detection: active (host polling server status)' <<<"$active_status" || {
-  echo "FAIL: status should record authenticated host polling" >&2; exit 1;
+  echo "FAIL: status should record host polling" >&2; exit 1;
 }
 grep -Fq 'Wayland frame stream: not connected' <<<"$active_status" || {
   echo "FAIL: status must not claim desktop streaming exists" >&2; exit 1;
@@ -198,4 +199,4 @@ stopped_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped server" >&2; exit 1;
 }
-echo "PASS: Termux package, authenticated host polling, Weston lifecycle and status checks passed."
+echo "PASS: Termux package, host status polling, Weston lifecycle and status checks passed."
