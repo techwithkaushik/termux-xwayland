@@ -1,0 +1,11 @@
+Package: termux-xwayland-bridge
+Version: 0.1.0
+Architecture: all
+Maintainer: Termux-XWayland contributors
+Section: x11
+Priority: optional
+Depends: bash, coreutils
+Description: Termux-side session companion for Termux-XWayland
+ A small Termux package that checks whether the Termux-XWayland Android
+ display host is installed and provides safe status/start/stop commands.
+ This package does not yet provide compositor streaming.
