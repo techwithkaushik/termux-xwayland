@@ -87,16 +87,7 @@ start_control_session() {
 }
 
 show_control_status() {
-  local response
-  if ! response="$(control_call status)"; then
-    printf 'Android control handshake: unavailable (host IPC endpoint not reachable)\n'
-    return 0
-  fi
-  case "$response" in
-    *"state=connected"*) printf 'Android control handshake: accepted (protocol v1)\n' ;;
-    *"state=disconnected"*) printf 'Android control handshake: no active session\n' ;;
-    *) printf 'Android control handshake: unknown (endpoint returned an unrecognized response)\n' ;;
-  esac
+  printf 'Android host connection: intent handoff only (host acknowledgement channel not integrated)\\n'
 }
 prepare_runtime_dir() {
   mkdir -p "$RUNTIME_DIR" || fail "cannot create runtime directory: $RUNTIME_DIR"
