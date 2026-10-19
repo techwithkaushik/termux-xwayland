@@ -2,6 +2,8 @@ package org.techwithkaushik.termuxxwayland
 
 import android.app.Activity
 import android.content.ClipData
+import android.content.ComponentName
+import android.content.ServiceConnection
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.LocalSocket
@@ -12,6 +14,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.IBinder
+import android.os.Parcel
 import android.os.Process
 import android.text.InputType
 import android.view.Gravity
@@ -35,6 +39,12 @@ class MainActivity : Activity() {
     private val pale = Color.rgb(239, 246, 255)
     private val page = Color.rgb(246, 248, 252)
     private val SOCKET_PREFIX = "termux_xwayland_"
+    private companion object {
+        const val BINDER_PROBE_DESCRIPTOR = "org.techwithkaushik.termuxxwayland.ipc.PROBE"
+        const val BINDER_PROBE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 17
+        const val BINDER_PROBE_PAYLOAD_BYTES = 16 * 1024
+        const val BINDER_PROBE_MAX_PAYLOAD_BYTES = 64 * 1024
+    }
 
     private lateinit var tokenInput: EditText
     private lateinit var statusTitle: TextView
@@ -43,6 +53,11 @@ class MainActivity : Activity() {
     private lateinit var connectButton: Button
     @Volatile private var activeSocket: LocalSocket? = null
     @Volatile private var connecting = false
+    private lateinit var binderProbeTitle: TextView
+    private lateinit var binderProbeDescription: TextView
+    private lateinit var binderProbeButton: Button
+    private var binderProbeConnection: ServiceConnection? = null
+    @Volatile private var binderProbeRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,6 +135,25 @@ class MainActivity : Activity() {
             "What this test proves",
             "Cross-UID IPC passed means the token was accepted, the Termux process UID was reported, a synthetic frame arrived, and Android PING received a Termux PONG. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
+        content.addView(label("Binder IPC capability probe", 20, ink, true).apply {
+            setPadding(0, dp(12), 0, dp(8))
+        })
+        content.addView(infoCard(
+            "Separate companion APK",
+            "Tests Android-authorized Binder communication with a separately installed companion app. Both APKs must be signed with the same certificate. This proves host-to-companion IPC only; it does not yet connect Termux or stream desktop frames."
+        ), margins(bottom = 10))
+        binderProbeTitle = label("Not tested", 17, ink, true).apply {
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        binderProbeDescription = label(
+            "Sends a bounded 16 KiB test payload and verifies the exact echo, caller identity, service UID, and Android API level.",
+            13, muted, false
+        )
+        content.addView(binderProbeTitle)
+        content.addView(binderProbeDescription, margins(bottom = 8))
+        binderProbeButton = actionButton("Run Binder capability probe") { runBinderProbe() }
+        content.addView(binderProbeButton, margins(bottom = 16))
+
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
@@ -301,7 +335,113 @@ class MainActivity : Activity() {
         statusDescription.text = "Bridge session closed."
     }
 
-    private fun socketNameForToken(token: ByteArray): String {
+    private fun runBinderProbe() {
+        if (binderProbeRunning) return
+        binderProbeRunning = true
+        binderProbeButton.isEnabled = false
+        binderProbeTitle.text = "Binding companion…"
+        binderProbeDescription.text = "Requesting the signature-protected Binder service."
+
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                Thread({
+                    val result = try {
+                        performBinderProbe(service)
+                    } catch (error: Exception) {
+                        "FAIL • ${error.message ?: error.javaClass.simpleName}"
+                    }
+                    runOnUiThread {
+                        if (binderProbeConnection === this) {
+                            try { unbindService(this) } catch (_: Exception) { }
+                            binderProbeConnection = null
+                        }
+                        binderProbeRunning = false
+                        binderProbeButton.isEnabled = true
+                        binderProbeTitle.text = if (result.startsWith("PASS")) {
+                            "Binder probe passed"
+                        } else {
+                            "Binder probe failed"
+                        }
+                        binderProbeDescription.text = result
+                    }
+                }, "binder-ipc-probe").start()
+            }
+
+            override fun onServiceDisconnected(name: ComponentName) {
+                runOnUiThread {
+                    if (binderProbeRunning) {
+                        binderProbeTitle.text = "Companion disconnected"
+                        binderProbeDescription.text =
+                            "The Binder service disconnected before the probe completed."
+                    }
+                }
+            }
+        }
+        binderProbeConnection = connection
+        val intent = Intent().setComponent(
+            ComponentName(
+                "org.techwithkaushik.termuxxwayland.companion",
+                "org.techwithkaushik.termuxxwayland.companion.IpcProbeService"
+            )
+        )
+        val bound = try {
+            bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
+            false
+        }
+        if (!bound) {
+            binderProbeConnection = null
+            binderProbeRunning = false
+            binderProbeButton.isEnabled = true
+            binderProbeTitle.text = "Companion unavailable"
+            binderProbeDescription.text =
+                "Install the companion APK built from :ipc-companion and ensure both APKs use the same signing certificate. No socket or network fallback was attempted."
+        }
+    }
+
+    private fun performBinderProbe(remote: IBinder): String {
+        val payload = ByteArray(BINDER_PROBE_PAYLOAD_BYTES) { index ->
+            ((index * 31 + 7) and 0xff).toByte()
+        }
+        val request = Parcel.obtain()
+        val response = Parcel.obtain()
+        try {
+            request.writeInterfaceToken(BINDER_PROBE_DESCRIPTOR)
+            request.writeInt(payload.size)
+            request.writeByteArray(payload)
+            if (!remote.transact(BINDER_PROBE_TRANSACTION, request, response, 0)) {
+                throw IOException("Companion does not implement the Binder probe transaction")
+            }
+            response.readException()
+            val serviceUid = response.readInt()
+            val callerUid = response.readInt()
+            val apiLevel = response.readInt()
+            val echoedSize = response.readInt()
+            if (echoedSize !in 0..BINDER_PROBE_MAX_PAYLOAD_BYTES) {
+                throw IOException("Companion returned an invalid payload length")
+            }
+            val echoed = ByteArray(echoedSize)
+            response.readByteArray(echoed)
+            if (callerUid != Process.myUid()) {
+                throw IOException("Companion reported an unexpected caller UID")
+            }
+            if (serviceUid == callerUid) {
+                throw IOException("Probe service is not running under a separate app UID")
+            }
+            if (echoedSize != payload.size || !echoed.contentEquals(payload)) {
+                throw IOException("Binder echo payload did not match the request")
+            }
+            return "PASS • host UID $callerUid → companion UID $serviceUid • Android API $apiLevel • exact ${payload.size}-byte echo. This verifies one bounded Binder round trip only; Termux integration and streaming remain unverified."
+        } finally {
+            request.recycle()
+            response.recycle()
+            payload.fill(0)
+        }
+    }
+
+    private fun socketNameForToken(token: ByteArray) {
         val fingerprint = token.take(8).joinToString("") { byte ->
             (byte.toInt() and 0xff).toString(16).padStart(2, '0')
         }
@@ -320,6 +460,11 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         try { activeSocket?.close() } catch (_: Exception) { }
         activeSocket = null
+        binderProbeConnection?.let { connection ->
+            try { unbindService(connection) } catch (_: Exception) { }
+        }
+        binderProbeConnection = null
+        binderProbeRunning = false
         super.onDestroy()
     }
 
