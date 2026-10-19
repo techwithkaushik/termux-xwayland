@@ -3,9 +3,30 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
+val devSigningPropertiesFile = rootProject.file("build/signing/key.properties")
+val devSigningProperties = Properties().apply {
+    if (devSigningPropertiesFile.isFile) {
+        devSigningPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasDevSigning = devSigningPropertiesFile.isFile
+
 android {
     namespace = "org.techwithkaushik.termuxxwayland.companion"
     compileSdk = 35
+
+    signingConfigs {
+        if (hasDevSigning) {
+            create("dev") {
+                storeFile = rootProject.file(devSigningProperties.getProperty("storeFile"))
+                storePassword = devSigningProperties.getProperty("storePassword")
+                keyAlias = devSigningProperties.getProperty("keyAlias")
+                keyPassword = devSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "org.techwithkaushik.termuxxwayland.companion"
@@ -13,6 +34,15 @@ android {
         targetSdk = 28
         versionCode = 1
         versionName = "0.1.0-alpha01"
+    }
+
+    buildTypes {
+        debug {
+            if (hasDevSigning) signingConfig = signingConfigs.getByName("dev")
+        }
+        release {
+            if (hasDevSigning) signingConfig = signingConfigs.getByName("dev")
+        }
     }
 
     compileOptions {
