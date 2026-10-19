@@ -533,14 +533,6 @@ class MainActivity : Activity() {
             outputPipe[1].writeToParcel(request, 0)
             writer.start()
             reader.start()
-            val intent = Intent().setComponent(
-                ComponentName(
-                    "org.techwithkaushik.termuxxwayland.companion",
-                    "org.techwithkaushik.termuxxwayland.companion.IpcProbeService"
-                )
-            )
-            // The caller is already bound to this service for the normal Binder probe;
-            // use the retained binder only via a separate explicit binding below.
             val binding = bindProbeForFd()
             val binder = binding.first
             try {
@@ -569,7 +561,7 @@ class MainActivity : Activity() {
             if (!echoed.toByteArray().contentEquals(payload)) {
                 throw IOException("FD echo bytes did not match the original payload")
             }
-            return "PASS • Android API ${android.os.Build.VERSION.SDK_INT} • exact ${payload.size}-byte round trip through two Binder-transferred pipe FDs. One-shot companion test only; Termux integration and sustained streaming remain unverified."
+            return "PASS • Android API ${android.os.Build.VERSION.SDK_INT} • exact ${payload.size}-byte round trip through two Binder-transferred pipe FDs. Android API $apiLevel • one-shot companion test only; Termux integration and sustained streaming remain unverified."
         } finally {
             try { inputPipe[0].close() } catch (_: Exception) { }
             try { inputPipe[1].close() } catch (_: Exception) { }
