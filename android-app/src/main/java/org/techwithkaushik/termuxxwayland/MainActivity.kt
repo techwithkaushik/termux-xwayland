@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
 import android.os.Process
+import android.util.Log
 import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
@@ -256,7 +257,10 @@ class MainActivity : Activity() {
      * a separate socket so it cannot consume frames from the active bridge.
      */
     private fun runNativeJniProbe() {
+        Log.i("TermuxXWayland", "JNI probe button tapped")
+        Toast.makeText(this, "Starting Rust JNI socket test…", Toast.LENGTH_SHORT).show()
         Thread({
+            Log.i("TermuxXWayland", "JNI probe worker started")
             var server: LocalServerSocket? = null
             var client: LocalSocket? = null
             var accepted: LocalSocket? = null
@@ -274,7 +278,9 @@ class MainActivity : Activity() {
 
                 val fd = accepted.fileDescriptor
                     ?: throw IOException("Connected diagnostic socket has no file descriptor")
+                Log.i("TermuxXWayland", "Local socket connected; invoking native reader")
                 val result = NativeBridge.nativeReadSocket(fd)
+                Log.i("TermuxXWayland", "Native reader returned $result")
                 runOnUiThread {
                     Toast.makeText(
                         this,
@@ -286,7 +292,8 @@ class MainActivity : Activity() {
                         Toast.LENGTH_LONG
                     ).show()
                 }
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
+                Log.e("TermuxXWayland", "JNI probe failed", error)
                 runOnUiThread {
                     Toast.makeText(
                         this,
