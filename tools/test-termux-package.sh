@@ -72,4 +72,57 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   fi
 fi
 
+
+# Exercise the CLI behavior without Android by injecting mock executables.
+# Production defaults remain /system/bin/pm and Termux's termux-open.
+cli_tmp="$(mktemp -d)"
+trap 'rm -rf "$cli_tmp"' EXIT
+mock_pm="$cli_tmp/pm"
+mock_open="$cli_tmp/termux-open"
+open_log="$cli_tmp/open.log"
+cat > "$mock_pm" <<'MOCK_PM'
+#!/usr/bin/env bash
+if [[ "${1:-}" == path && "${MOCK_HOST_PRESENT:-yes}" == yes ]]; then
+  case "${2:-}" in
+    org.techwithkaushik.termuxxwayland|org.techwithkaushik.termuxxwayland.debug)
+      printf 'package:/mock/base.apk\\n'
+      exit 0
+      ;;
+  esac
+fi
+exit 1
+MOCK_PM
+cat > "$mock_open" <<'MOCK_OPEN'
+#!/usr/bin/env bash
+[[ "${MOCK_OPEN_FAIL:-no}" != yes ]] || exit 1
+printf '%s\\n' "$*" >> "$MOCK_OPEN_LOG"
+MOCK_OPEN
+chmod +x "$mock_pm" "$mock_open"
+cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" MOCK_OPEN_LOG="$open_log")
+
+status_output="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Android host: installed (' <<<"$status_output" || {
+  echo "FAIL: status should detect a mock installed host" >&2; exit 1;
+}
+grep -Fq 'Live compositor/stream: not implemented yet' <<<"$status_output" || {
+  echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
+}
+
+"${cli_env[@]}" bash "$script" start >/dev/null
+grep -Fxq 'termuxxwayland://start' "$open_log" || {
+  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+}
+
+if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
+  echo "FAIL: start should fail when no host package is detected" >&2; exit 1
+fi
+if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
+  echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
+fi
+stop_status=0
+"${cli_env[@]}" bash "$script" stop >/dev/null 2>&1 || stop_status=$?
+[[ "$stop_status" -eq 3 ]] || {
+  echo "FAIL: stop should clearly return exit code 3 while session control is unimplemented" >&2; exit 1;
+}
+
 echo "PASS: Termux companion package structure, shell syntax, and DEB build checks passed."
