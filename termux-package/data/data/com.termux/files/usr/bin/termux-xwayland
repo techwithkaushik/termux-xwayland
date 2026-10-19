@@ -26,13 +26,13 @@ notify_user() {
 detect_host() {
   [ -x "$SYSTEM_PM" ] || return 1
   local app_id output
-  for app_id in "\${APP_IDS[@]}"; do
+  for app_id in "${APP_IDS[@]}"; do
     output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null | head -n 1)" || continue
     case "$output" in
       package:*)
         DETECTED_APP_ID="$app_id"
-        CONTROL_APK_PATH="\${output#package:}"
-        CONTROL_URI="content://\${app_id}.control/session"
+        CONTROL_APK_PATH="${output#package:}"
+        CONTROL_URI="content://${app_id}.control/session"
         return 0
         ;;
     esac
@@ -41,7 +41,7 @@ detect_host() {
 }
 
 control_call() {
-  local method="$1" arg="\${2:-}"
+  local method="$1" arg="${2:-}"
   [ -x "$SYSTEM_APP_PROCESS" ] || {
     printf 'Android app_process is unavailable: %s\n' "$SYSTEM_APP_PROCESS" >&2
     return 127
