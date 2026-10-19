@@ -44,10 +44,10 @@ jobs:
           gradle-version: "8.9"
       - name: Prepare shared development signing keystore
         env:
-          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE || secrets.SIGNING_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.DEV_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS || secrets.SIGNING_ALIAS || secrets.DEV_KEY_ALIAS || secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD || secrets.DEV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD || secrets.DEV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.STORE_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -60,6 +60,11 @@ jobs:
           mkdir -p build/signing
           printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > build/signing/dev-keystore.jks
           test -s build/signing/dev-keystore.jks
+          if ! keytool -list -keystore build/signing/dev-keystore.jks -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Keystore could not be opened with the configured store password and key alias. Check the existing GitHub secrets and confirm the keystore secret is base64-encoded once."
+            exit 1
+          fi
+          echo "Keystore file and alias validated."
           umask 077
           cat > build/signing/key.properties <<EOF
           storeFile=build/signing/dev-keystore.jks
@@ -92,6 +97,8 @@ jobs:
             echo "::error::Host and companion APK signing certificates do not match."
             exit 1
           fi
+          echo "Host signer SHA-256: $host_cert"
+          echo "Companion signer SHA-256: $companion_cert"
           echo "PASS: host and companion APKs have the same signer certificate."
       - name: Upload display host APK
         uses: actions/upload-artifact@v4
