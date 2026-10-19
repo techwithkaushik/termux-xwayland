@@ -61,19 +61,19 @@ stop_monitor() {
   rm -f "$MONITOR_PID_FILE" "$MONITOR_STATE_FILE" "$HOST_POLL_FILE"
 }
 start_monitor() {
-  local session_id="$1" token="$2" port attempt pid
+  local session_id="$1" port attempt pid
   command -v "$SOCAT_BIN" >/dev/null 2>&1 || fail "socat is required for Android host detection. Install it with: pkg install socat"
   stop_monitor
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     port=$((30000 + $(od -An -N2 -tu2 /dev/urandom 2>/dev/null | tr -d ' ') % 20000))
     rm -f "$MONITOR_LOG_FILE"
-    "$SOCAT_BIN" -d -d "TCP-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" "EXEC:$0 status-handler $session_id $token" >>"$MONITOR_LOG_FILE" 2>&1 &
+    "$SOCAT_BIN" -d -d "TCP-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" "EXEC:$0 status-handler $session_id" >>"$MONITOR_LOG_FILE" 2>&1 &
     pid=$!
     printf '%s\n' "$pid" > "$MONITOR_PID_FILE"
     local wait_attempt
     for wait_attempt in 1 2 3 4 5 6 7 8 9 10; do
       if grep -Fq "127.0.0.1:$port" "$MONITOR_LOG_FILE" 2>/dev/null && grep -qi 'listening' "$MONITOR_LOG_FILE"; then
-        printf '%s %s %s\n' "$session_id" "$port" "$token" > "$MONITOR_STATE_FILE"
+        printf '%s %s\n' "$session_id" "$port" > "$MONITOR_STATE_FILE"
         chmod 600 "$MONITOR_STATE_FILE"
         printf '%s\n' "$port"
         return 0
@@ -92,8 +92,8 @@ show_control_status() {
     printf 'Android host detection: not active (start the session from Termux)\n'
     return 0
   fi
-  local session_id port token now last_poll
-  read -r session_id port token < "$MONITOR_STATE_FILE"
+  local session_id port now last_poll
+  read -r session_id port < "$MONITOR_STATE_FILE"
   if [ -f "$HOST_POLL_FILE" ]; then
     last_poll="$(cat "$HOST_POLL_FILE" 2>/dev/null || printf 0)"
     now="$(date +%s)"
@@ -105,10 +105,10 @@ show_control_status() {
   printf 'Android host detection: waiting for host app (127.0.0.1:%s)\n' "$port"
 }
 status_handler() {
-  local session_id="${1:-}" token="${2:-}" request
-  [[ "$session_id" =~ ^[a-f0-9]{32}$ && "$token" =~ ^[a-f0-9]{64}$ ]] || exit 64
+  local session_id="${1:-}" request
+  [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || exit 64
   IFS= read -r -t 3 request || exit 0
-  if [ "$request" != "STATUS $token" ]; then
+  if [ "$request" != "STATUS $session_id" ]; then
     printf 'DENIED\n'
     return 0
   fi
@@ -206,12 +206,10 @@ start_session() {
     fail "Android host not detected; checked ${APP_IDS[*]}"
   }
   start_server
-  local session_id token port
+  local session_id port
   session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
-  token="$(od -An -N32 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
   [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a host launch session ID"
-  [[ "$token" =~ ^[a-f0-9]{64}$ ]] || fail "could not generate a host monitor token"
-  port="$(start_monitor "$session_id" "$token")" || {
+  port="$(start_monitor "$session_id")" || {
     stop_server >/dev/null 2>&1 || true
     fail "could not start Android host status monitor"
   }
@@ -220,7 +218,7 @@ start_session() {
     stop_monitor
     fail "termux-open is unavailable; install/update termux-tools"
   }
-  if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port&token=$token"; then
+  if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"; then
     stop_server >/dev/null 2>&1 || true
     stop_monitor
     fail "could not open Android host deep link"
