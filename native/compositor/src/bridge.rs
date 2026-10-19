@@ -80,8 +80,8 @@ fn abstract_address(name: &str) -> io::Result<(libc::sockaddr_un, libc::socklen_
     for (index, byte) in bytes.iter().enumerate() {
         address.sun_path[index + 1] = *byte as libc::c_char;
     }
-    let length = (mem::offset_of!(libc::sockaddr_un, sun_path) + 1 + bytes.len())
-        as libc::socklen_t;
+    let length =
+        (mem::offset_of!(libc::sockaddr_un, sun_path) + 1 + bytes.len()) as libc::socklen_t;
     Ok((address, length))
 }
 
@@ -143,7 +143,11 @@ fn handle_client<S: TimedStream>(mut stream: S, expected_token: &[u8; 32]) -> io
         ));
     }
 
-    Message::new(MessageKind::Welcome, Vec::new())?.write_to(&mut stream)?;
+    // Report the Termux process effective UID so the Android app can verify
+    // that this connection really crosses Android application UID boundaries.
+    let termux_uid = unsafe { libc::geteuid() };
+    Message::new(MessageKind::Welcome, termux_uid.to_be_bytes().to_vec())?
+        .write_to(&mut stream)?;
     write_test_frame(&mut stream)?;
     // The handshake timeout must not silently expire an otherwise idle session.
     stream.set_read_timeout(None)?;
@@ -218,6 +222,14 @@ pub fn run() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn welcome_uid_payload_is_a_big_endian_u32() {
+        let uid = 10_123_u32;
+        let payload = uid.to_be_bytes();
+        assert_eq!(u32::from_be_bytes(payload), uid);
+        assert_eq!(payload.len(), 4);
+    }
 
     #[test]
     fn decodes_32_byte_hex_token() {
