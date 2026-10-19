@@ -76,7 +76,7 @@ fi
 # Exercise the CLI behavior without Android by injecting mock executables.
 # Production defaults remain /system/bin/pm and Termux's termux-open.
 cli_tmp="$(mktemp -d)"
-trap 'rm -rf "$cli_tmp"' EXIT
+trap 'rm -rf "$cli_tmp" "${tmp_out:-}"' EXIT
 mock_pm="$cli_tmp/pm"
 mock_open="$cli_tmp/termux-open"
 open_log="$cli_tmp/open.log"
