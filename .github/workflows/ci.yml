@@ -104,12 +104,14 @@ jobs:
           test -x "$apksigner"
           host_cert="$("$apksigner" verify --print-certs "$host_apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
           companion_cert="$("$apksigner" verify --print-certs "$companion_apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+          echo "Host APK: $host_apk"
+          echo "Companion APK: $companion_apk"
+          echo "Host signer SHA-256: ${host_cert:-<missing>}"
+          echo "Companion signer SHA-256: ${companion_cert:-<missing>}"
           if [[ -z "$host_cert" || -z "$companion_cert" || "$host_cert" != "$companion_cert" ]]; then
-            echo "::error::Host and companion APK signing certificates do not match."
+            echo "::error::Host and companion APK signing certificates do not match. See the two fingerprints above."
             exit 1
           fi
-          echo "Host signer SHA-256: $host_cert"
-          echo "Companion signer SHA-256: $companion_cert"
           echo "PASS: host and companion APKs have the same signer certificate."
       - name: Upload display host APK
         uses: actions/upload-artifact@v4
