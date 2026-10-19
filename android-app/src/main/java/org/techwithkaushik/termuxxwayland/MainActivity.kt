@@ -107,6 +107,29 @@ class MainActivity : Activity() {
         refreshTermuxControlStatus()
     }
 
+    override fun onResume() {
+        super.onResume()
+        val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
+        val sessionId = prefs.getString("session_id", "").orEmpty()
+        val port = prefs.getInt("monitor_port", -1)
+        if (sessionId.matches(Regex("^[a-f0-9]{32}$")) && port in 30000..49999) {
+            // Persisted "running" is never trusted across Activity/process restarts.
+            prefs.edit().putString("state", "checking_status").apply()
+            refreshTermuxControlStatus()
+            statusPollHandler.removeCallbacks(statusPollRunnable)
+            pollTermuxServerStatus()
+            statusPollHandler.postDelayed(statusPollRunnable, 2000)
+        } else {
+            prefs.edit().putString("state", "disconnected").apply()
+            refreshTermuxControlStatus()
+        }
+    }
+
+    override fun onPause() {
+        statusPollHandler.removeCallbacks(statusPollRunnable)
+        super.onPause()
+    }
+
     private fun handleTermuxIntent(intent: Intent?) {
         val uri = intent?.data ?: return
         if (uri.scheme != "termuxxwayland" || uri.host != "start") return
@@ -180,9 +203,9 @@ class MainActivity : Activity() {
         if (!::statusTitle.isInitialized || !::statusDescription.isInitialized) return
         val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
         when (prefs.getString("state", "disconnected")) {
-            "request_received" -> {
-                statusTitle.text = "Termux-Companion connection received"
-                statusDescription.text = "Launch request received. Verifying the live Wayland server over read-only loopback status polling…"
+            "request_received", "checking_status" -> {
+                statusTitle.text = "Checking Termux server…"
+                statusDescription.text = "Checking the current session now. A previously saved running status is not treated as live until the status endpoint replies."
             }
             "server_running" -> {
                 statusTitle.text = "Termux-Companion connection received"
