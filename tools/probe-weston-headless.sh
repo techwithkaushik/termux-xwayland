@@ -47,6 +47,7 @@ trap cleanup EXIT INT TERM
 if [[ ! -e "$x11_socket_dir" ]]; then
   if mkdir -m 1777 "$x11_socket_dir" 2>/dev/null; then
     created_x11_socket_dir=1
+    chmod 1777 "$x11_socket_dir" || exit 2
   else
     printf 'ERROR: X11 socket directory is missing and could not be created: %s\n' "$x11_socket_dir" >&2
     exit 2
