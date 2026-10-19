@@ -140,8 +140,6 @@ start_server() {
   fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 5 seconds; inspect $LOG_FILE"
 }
 stop_server() {
-  detect_host >/dev/null 2>&1 || true
-  control_call stop >/dev/null 2>&1 || true
   if ! server_is_running; then
     rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
     printf 'Wayland server: not running\n'
@@ -187,17 +185,19 @@ start_session() {
     fail "Android host not detected; checked ${APP_IDS[*]}"
   }
   start_server
-  start_control_session || fail "Android control handshake failed"
+  local session_id
+  session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \\n')"
+  [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a host launch session ID"
   [ -x "$TERMUX_OPEN" ] || {
-    control_call stop >/dev/null 2>&1 || true
+    stop_server >/dev/null 2>&1 || true
     fail "termux-open is unavailable; install/update termux-tools"
   }
-  if ! "$TERMUX_OPEN" "termuxxwayland://start"; then
-    control_call stop >/dev/null 2>&1 || true
+  if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running"; then
+    stop_server >/dev/null 2>&1 || true
     fail "could not open Android host deep link"
   fi
-  notify_user "Termux-XWayland" "Android host authenticated the Termux control channel. Weston is running; live frame transport is still pending."
-  printf 'Android host launch requested. Control IPC is authenticated; live Wayland frames are not connected yet.\n'
+  notify_user "Termux-XWayland" "Wayland socket is ready. Android host launch request sent; live frame transport is still pending."
+  printf 'Wayland server started; Android host launch request sent. Live Wayland frames are not connected yet.\\n'
 }
 case "${1:-status}" in
   status|check) show_status ;;
@@ -210,7 +210,7 @@ case "${1:-status}" in
 Usage: termux-xwayland [status|check|start|server-start|stop|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
-start         Authenticate Termux control IPC, start Weston, then open the Android host.
+start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
 stop          Stop the Weston process started by this companion.
 --version     Print version and current implementation status.
