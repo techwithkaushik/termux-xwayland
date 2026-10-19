@@ -120,7 +120,6 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
     }
 }
 
-
 /// Attempts a single AF_UNIX filesystem-socket connect and returns 0 or -errno.
 /// This is a permission/path diagnostic only; it sends no application payload.
 #[no_mangle]
@@ -163,11 +162,13 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
             path_bytes.len(),
         );
     }
-    let address_len = (std::mem::size_of::<libc::sa_family_t>() + path_bytes.len() + 1)
-        as libc::socklen_t;
+    let address_len =
+        (std::mem::size_of::<libc::sa_family_t>() + path_bytes.len() + 1) as libc::socklen_t;
     let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
     if fd < 0 {
-        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+        let errno = std::io::Error::last_os_error()
+            .raw_os_error()
+            .unwrap_or(libc::EIO);
         error!("Unable to create Unix socket; errno={errno}");
         return -errno;
     }
