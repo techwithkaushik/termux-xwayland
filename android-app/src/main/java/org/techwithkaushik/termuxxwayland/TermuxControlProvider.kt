@@ -16,7 +16,6 @@ import android.os.Process
  */
 class TermuxControlProvider : ContentProvider() {
     companion object {
-        const val AUTHORITY = "org.techwithkaushik.termuxxwayland.control"
         private const val PREFS = "termux_control_session"
         private const val KEY_STATE = "state"
         private const val KEY_SESSION = "session_id"
