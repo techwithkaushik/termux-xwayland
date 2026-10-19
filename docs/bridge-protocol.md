@@ -1,6 +1,6 @@
 # Local bridge protocol v1
 
-**Status:** bounded framing, Rust tests, a loopback handshake server and an Android handshake client are implemented. This is a smoke test only; frame delivery, input forwarding, compositor integration and production session brokering are not implemented.
+**Status:** bounded framing, authenticated loopback transport, one synthetic RGBA test frame, and Android-side frame decoding/rendering are implemented. This remains a transport/rendering smoke test; the test pattern is not desktop output. Wayland compositor integration, real frame capture, input forwarding and production session brokering are not implemented.
 
 ## Transport and security
 
@@ -32,7 +32,7 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 |---:|---|---|---|
 | 1 | `HELLO` | Android → Termux | Implemented: exactly 32 token bytes |
 | 2 | `WELCOME` | Termux → Android | Implemented: empty payload after valid token |
-| 3 | `FRAME` | Termux → Android | Planned; no frame producer or renderer |
+| 3 | `FRAME` | Termux → Android | Smoke-test producer and Android renderer implemented; sends one synthetic 320×180 RGBA pattern, not desktop pixels |
 | 4 | `INPUT` | Android → Termux | Planned; event schema still required |
 | 5 | `RESIZE` | Android → Termux | Planned |
 | 6 | `CLIPBOARD` | Bidirectional | Planned; must be opt-in and separately bounded |
@@ -44,7 +44,7 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 - `HELLO`: exactly 32 bytes of session token. Never log payload bytes.
 - `WELCOME`: empty payload.
-- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, initially `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. Validate dimensions and exact payload length before rendering. The 16 MiB envelope cap means large frames must be tiled or compressed rather than bypassing the limit.
+- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, initially `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The smoke test sends one 320×180 synthetic pattern after `WELCOME`; Android validates metadata and exact payload length before rendering. The 16 MiB envelope cap means large frames must be tiled or compressed rather than bypassing the limit.
 - `RESIZE`: width (`u16`) and height (`u16`); reject zero dimensions and values beyond implementation limits.
 - `CLIPBOARD`: UTF-8 bytes, maximum 1 MiB, only after explicit session authentication. Never automatically execute clipboard contents.
 - `PING`, `PONG`, `CLOSE`: empty payloads in version 1.
@@ -52,4 +52,4 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 ## Testing and state
 
-Rust tests cover round trips and rejection of bad magic, unsupported versions, unknown kinds, nonzero reserved bits, oversized payloads and token validation. The Android client verifies that `WELCOME` is empty and only then displays “Bridge authenticated.” That status confirms only token acceptance; it must not be interpreted as a connected desktop. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
+Rust tests cover round trips and rejection of bad magic, unsupported versions, unknown kinds, nonzero reserved bits, oversized payloads and token validation. The Android client verifies the empty `WELCOME`, then validates and displays the synthetic `FRAME`. “Test frame received” confirms authenticated transport and rendering only; it must not be interpreted as a connected desktop. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
