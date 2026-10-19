@@ -116,8 +116,8 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Commands copied", Toast.LENGTH_SHORT).show()
         }, margins(bottom = 8))
         content.addView(infoCard(
-            "Connected does not mean desktop rendered",
-            "A successful connection confirms the session token was accepted and one synthetic test frame was rendered. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
+            "What this test proves",
+            "Cross-UID IPC passed means the token was accepted, the Termux process UID was reported, a synthetic frame arrived, and Android PING received a Termux PONG. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
