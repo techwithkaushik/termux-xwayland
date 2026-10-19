@@ -64,11 +64,18 @@ Evaluate a documented Termux-side bootstrap such as app_process or a loader only
 
 No localhost TCP fallback, root requirement, or SELinux disabling. Do not use repeated RUN_COMMAND invocations or shared-storage files as the live frame stream.
 
+## Target-device feasibility result (2026-10-19)
+
+On the reported Termux ARM32 / Android 10 device, the standalone `tools/probe-weston-headless.sh` successfully created a Wayland socket and started Weston 16.0.0 with its headless Pixman backend and XWayland. The follow-up `tools/probe-weston-x11-client.sh` selected the already-installed `xterm`, showed the conventional `tmp/.X11-unix/X0` socket, and logged XWayland startup plus `created wm, root 562`. The XKB compiler emitted non-fatal keymap warnings.
+
+This establishes that the installed Weston/XWayland binaries can start together and that an X11 client launch path is available in this standalone headless probe. It does **not** establish that the xterm surface was committed/composited correctly, that pixels are exported to the Android app, or that the app can receive input. The probe is not yet integrated into this project's native compositor or Android host.
+
 ## Current status
 
 - Android host and bounded protocol smoke test: present.
 - Synthetic frame: diagnostic only.
-- Real Wayland compositor and surface rendering: not implemented.
+- Standalone Weston + XWayland + installed `xterm` startup: verified on the target device; surface visibility/rendering remains unverified.
+- Real compositor surface-to-Android frame export: not implemented.
 - Android-authorized full-duplex IPC: not proven on target device.
-- XWayland integration and X11 client rendering: not implemented.
+- Production project-native XWayland integration and visible X11 client rendering: not implemented.
 - XFCE/LXQt: not yet supported.
