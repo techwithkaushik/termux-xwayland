@@ -13,7 +13,6 @@ import java.io.EOFException
 import java.io.IOException
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.io.EOFException
 
 /**
  * Minimal capability probe only. This is not yet a Termux bridge or frame transport.
