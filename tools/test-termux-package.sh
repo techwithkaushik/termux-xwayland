@@ -144,9 +144,8 @@ if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
   echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
 fi
 "${cli_env[@]}" bash "$script" stop >/dev/null
-stopped_status=0
-"${cli_env[@]}" bash "$script" status >/dev/null 2>&1 || stopped_status=$?
-[[ "$stopped_status" -ne 0 ]] || {
+stopped_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
 }
 
