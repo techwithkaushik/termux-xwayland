@@ -1,95 +1,193 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -u
-
-# Debug APKs append .debug via applicationIdSuffix; release APKs do not.
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
-# Optional executable overrides make the CLI testable outside Android. Normal
-# installations continue to use Android's package manager and Termux's opener.
 SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
 TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
-TERMUX_NOTIFY="${TERMUX_XWAYLAND_NOTIFY:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-notification}"
+WESTON_BIN="${TERMUX_XWAYLAND_WESTON:-weston}"
+NOTIFY_BIN="${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
+CONTROL_BIN="${TERMUX_XWAYLAND_CONTENT:-/system/bin/content}"
+CONTROL_URI=""
+RUNTIME_DIR="${TERMUX_XWAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-${UID:-$(id -u)}}}"
+WAYLAND_SOCKET="${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
+PID_FILE="$RUNTIME_DIR/weston.pid"
+LOG_FILE="$RUNTIME_DIR/weston.log"
 
-fail() {
-  printf 'termux-xwayland: %s\n' "$*" >&2
-  exit 1
+fail() { printf 'termux-xwayland: %s\n' "$*" >&2; exit 1; }
+notify_user() {
+  local title="$1" message="$2"
+  if command -v "$NOTIFY_BIN" >/dev/null 2>&1; then
+    "$NOTIFY_BIN" --title "$title" --content "$message" --id 73101 >/dev/null 2>&1 || true
+  fi
+  printf '%s: %s\n' "$title" "$message"
 }
-
 detect_host() {
   [ -x "$SYSTEM_PM" ] || return 1
   local app_id output
   for app_id in "${APP_IDS[@]}"; do
     output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
-    case "$output" in
-      package:*)
-        DETECTED_APP_ID="$app_id"
-        return 0
-        ;;
-    esac
+    case "$output" in package:*) DETECTED_APP_ID="$app_id"; CONTROL_URI="content://${app_id}.control/session"; return 0 ;; esac
   done
   return 1
 }
 
-notify_status() {
-  # Notifications are best-effort; never make launching the host depend on them.
-  [ -x "$TERMUX_NOTIFY" ] || return 0
-  "$TERMUX_NOTIFY" --title "Termux XWayland" --content "$1" --id 7331 >/dev/null 2>&1 || true
+control_call() {
+  local method="$1" arg="${2:-}"
+  [ -x "$CONTROL_BIN" ] || return 127
+  if [ -n "$arg" ]; then
+    "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" --arg "$arg" 2>&1
+  else
+    "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" 2>&1
+  fi
 }
 
-show_status() {
-  if detect_host; then
-    printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
-  else
-    printf 'Android host: NOT DETECTED\n'
-    printf 'Checked package IDs:\n'
-    printf '  - %s\n' "${APP_IDS[@]}"
-    printf 'Install the Termux-XWayland Android APK, then retry.\n'
+start_control_session() {
+  local session_id response
+  session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+  [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a control session ID"
+  response="$(control_call start "$session_id")" || {
+    printf 'termux-xwayland: Android control handshake failed. Ensure the installed host supports this feature and that the caller is the official com.termux app.\n%s\n' "$response" >&2
+    return 1
+  }
+  if ! grep -Fq 'state=connected' <<<"$response"; then
+    printf 'termux-xwayland: Android control handshake was rejected.\n%s\n' "$response" >&2
     return 1
   fi
-  printf 'Termux companion: installed (deb package)\n'
-  printf 'Live compositor/stream: not implemented yet\n'
+  printf 'Android control handshake: accepted (protocol v1)\n'
 }
 
-start_host() {
-  detect_host || {
-    printf 'Android host: NOT DETECTED\n' >&2
-    printf 'Checked package IDs: %s\n' "${APP_IDS[*]}" >&2
-    printf 'Install the Termux-XWayland Android APK first.\n' >&2
-    exit 2
-  }
-  # Launch through Android's VIEW intent so MIUI does not need the app UID
-  # to call protected am/monkey shell entry points. The host registers this URI.
-  [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
-  if "$TERMUX_OPEN" "termuxxwayland://start"; then
-    notify_status "Android host found; launch requested. Connection is not confirmed yet."
-    printf 'Termux-XWayland host launch requested (%s). Connection is not confirmed; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
-  else
-    fail "Could not open the Termux-XWayland launcher URI. Rebuild/reinstall the Android host APK with the latest manifest."
+show_control_status() {
+  local response
+  if ! response="$(control_call status)"; then
+    printf 'Android control handshake: unavailable (host IPC endpoint not reachable)\n'
+    return 0
   fi
+  case "$response" in
+    *"state=connected"*) printf 'Android control handshake: accepted (protocol v1)\n' ;;
+    *"state=disconnected"*) printf 'Android control handshake: no active session\n' ;;
+    *) printf 'Android control handshake: unknown (endpoint returned an unrecognized response)\n' ;;
+  esac
 }
-
+prepare_runtime_dir() {
+  mkdir -p "$RUNTIME_DIR" || fail "cannot create runtime directory: $RUNTIME_DIR"
+  chmod 700 "$RUNTIME_DIR" 2>/dev/null || true
+  [ -d "$RUNTIME_DIR" ] && [ -w "$RUNTIME_DIR" ] || fail "runtime directory is not writable: $RUNTIME_DIR"
+}
+server_is_running() {
+  [ -f "$PID_FILE" ] || return 1
+  local pid
+  pid="$(cat "$PID_FILE" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+start_server() {
+  prepare_runtime_dir
+  if server_is_running; then
+    printf 'Wayland server: already running (PID %s)\n' "$(cat "$PID_FILE")"
+    return 0
+  fi
+  rm -f "$PID_FILE"
+  command -v "$WESTON_BIN" >/dev/null 2>&1 || fail "Weston is not installed. Run: pkg install weston"
+  rm -f "$RUNTIME_DIR/$WAYLAND_SOCKET"
+  XDG_RUNTIME_DIR="$RUNTIME_DIR" "$WESTON_BIN" --backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" >/dev/null 2>&1 &
+  local pid=$!
+  printf '%s\n' "$pid" > "$PID_FILE"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
+      printf 'Wayland server: started (PID %s)\nWAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\n' "$pid" "$WAYLAND_SOCKET" "$RUNTIME_DIR"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$PID_FILE"
+      tail -n 30 "$LOG_FILE" 2>/dev/null || true
+      fail "Weston exited before creating its Wayland socket; inspect $LOG_FILE"
+    fi
+    sleep 0.5
+  done
+  kill "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE"
+  fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 5 seconds; inspect $LOG_FILE"
+}
+stop_server() {
+  detect_host >/dev/null 2>&1 || true
+  control_call stop >/dev/null 2>&1 || true
+  if ! server_is_running; then
+    rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+    printf 'Wayland server: not running\n'
+    return 0
+  fi
+  local pid
+  pid="$(cat "$PID_FILE")"
+  kill "$pid" 2>/dev/null || fail "could not stop Weston PID $pid"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+      notify_user "Termux-XWayland" "Wayland server stopped."
+      return 0
+    fi
+    sleep 0.2
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+  notify_user "Termux-XWayland" "Wayland server stopped."
+}
+show_status() {
+  local host_found=0
+  if detect_host; then
+    host_found=1
+    printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
+  else
+    printf 'Android host: NOT DETECTED\nChecked package IDs: %s\n' "${APP_IDS[*]}"
+  fi
+  if server_is_running && [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
+    printf 'Wayland server: running (PID %s, socket %s)\n' "$(cat "$PID_FILE")" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+  else
+    printf 'Wayland server: not running\n'
+  fi
+  show_control_status
+  printf 'Wayland frame stream: not connected (frame transport is not integrated yet)\n'
+  if [ "$host_found" -eq 1 ]; then return 0; fi
+  return 1
+}
+start_session() {
+  detect_host || {
+    notify_user "Termux-XWayland" "Android host not found. Install the Termux-XWayland APK first."
+    fail "Android host not detected; checked ${APP_IDS[*]}"
+  }
+  start_server
+  start_control_session || fail "Android control handshake failed"
+  [ -x "$TERMUX_OPEN" ] || {
+    control_call stop >/dev/null 2>&1 || true
+    fail "termux-open is unavailable; install/update termux-tools"
+  }
+  if ! "$TERMUX_OPEN" "termuxxwayland://start"; then
+    control_call stop >/dev/null 2>&1 || true
+    fail "could not open Android host deep link"
+  fi
+  notify_user "Termux-XWayland" "Android host authenticated the Termux control channel. Weston is running; live frame transport is still pending."
+  printf 'Android host launch requested. Control IPC is authenticated; live Wayland frames are not connected yet.\n'
+}
 case "${1:-status}" in
   status|check) show_status ;;
-  start) start_host ;;
-  stop)
-    printf 'Session stop is not available yet: the persistent session controller is not implemented.\n' >&2
-    exit 3
-    ;;
-  --version|-V)
-    printf 'termux-xwayland companion 0.1.0 (session streaming not implemented)\n'
-    ;;
+  start) start_session ;;
+  server-start) start_server ;;
+  stop|server-stop) stop_server ;;
+  --version|-V) printf 'termux-xwayland companion 0.3.0 (authenticated control IPC; frame transport pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|stop|--version|--help]
+Usage: termux-xwayland [status|check|start|server-start|stop|--version|--help]
 
-status/check  Detect release or debug Android host package.
-start         Open the Android host (does not start a compositor yet).
-stop          Reserved; session lifecycle is not implemented yet.
+status/check  Show Android host, control IPC and Wayland server status.
+start         Authenticate Termux control IPC, start Weston, then open the Android host.
+server-start Start Weston without opening the Android host.
+stop          Stop the Weston process started by this companion.
+--version     Print version and current implementation status.
+
+The control endpoint accepts calls only from the installed com.termux UID.
+This is control-plane IPC only: live frame/input transport is not integrated.
 EOF
     ;;
-  *)
-    printf 'Unknown command: %s\n' "$1" >&2
-    printf 'Run termux-xwayland --help\n' >&2
-    exit 64
-    ;;
+  *) printf 'Unknown command: %s\nRun termux-xwayland --help\n' "$1" >&2; exit 64 ;;
 esac

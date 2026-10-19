@@ -7,6 +7,11 @@
         android:label="Termux XWayland"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider
+            android:name=".TermuxControlProvider"
+            android:authorities="${applicationId}.control"
+            android:exported="true"
+            android:grantUriPermissions="false" />
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
