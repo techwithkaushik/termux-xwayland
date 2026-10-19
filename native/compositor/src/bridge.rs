@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(
             address.sun_path[1..1 + test_name.len()]
                 .iter()
-                .map(|byte| *byte as u8)
+                .map(|byte| *byte)
                 .collect::<Vec<_>>()
                 .as_slice(),
             test_name.as_bytes()
