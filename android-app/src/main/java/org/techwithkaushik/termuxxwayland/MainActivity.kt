@@ -31,7 +31,7 @@ class MainActivity : Activity() {
     private val blue = Color.rgb(37, 99, 235)
     private val pale = Color.rgb(239, 246, 255)
     private val page = Color.rgb(246, 248, 252)
-    private val SOCKET_NAME = "termux_xwayland_bridge_v1"
+    private val SOCKET_PREFIX = "termux_xwayland_"
 
     private lateinit var tokenInput: EditText
     private lateinit var statusTitle: TextView
@@ -150,6 +150,7 @@ class MainActivity : Activity() {
             showError(error.message ?: "Invalid session token")
             return
         }
+        val socketName = socketNameForToken(token)
         connecting = true
         connectButton.isEnabled = false
         statusTitle.text = "Connecting…"
@@ -159,7 +160,7 @@ class MainActivity : Activity() {
             try {
                 candidate = LocalSocket()
                 candidate.connect(LocalSocketAddress(
-                    SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT
+                    socketName, LocalSocketAddress.Namespace.ABSTRACT
                 ))
                 candidate.setSoTimeout(15000)
                 BridgeProtocol.write(candidate.getOutputStream(), BridgeMessageKind.HELLO, token)
@@ -215,6 +216,13 @@ class MainActivity : Activity() {
         previewImage.visibility = View.GONE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
+    }
+
+    private fun socketNameForToken(token: ByteArray): String {
+        val fingerprint = token.take(8).joinToString("") { byte ->
+            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
+        return "$SOCKET_PREFIX$fingerprint"
     }
 
     private fun decodeTestFrame(payload: ByteArray): Bitmap {
