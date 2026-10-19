@@ -42,12 +42,56 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Prepare shared development signing keystore
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SIGNING_KEYSTORE SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD SIGNING_STORE_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required GitHub Actions secret $name is missing."
+              exit 1
+            fi
+          done
+          mkdir -p build/signing
+          printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > build/signing/dev-keystore.jks
+          test -s build/signing/dev-keystore.jks
+          umask 077
+          cat > build/signing/key.properties <<EOF
+          storeFile=build/signing/dev-keystore.jks
+          keyAlias=$SIGNING_KEY_ALIAS
+          keyPassword=$SIGNING_KEY_PASSWORD
+          storePassword=$SIGNING_STORE_PASSWORD
+          EOF
+          chmod 600 build/signing/dev-keystore.jks build/signing/key.properties
+          echo "Shared development keystore prepared (secret values are not printed)."
       - name: Run Android bridge protocol unit tests
         run: gradle --no-daemon :android-app:testDebugUnitTest
       - name: Test and assemble Binder companion
         run: gradle --no-daemon :ipc-companion:testDebugUnitTest :ipc-companion:assembleDebug
-      - name: Assemble debug APK
+      - name: Assemble display host APK
         run: gradle --no-daemon :android-app:assembleDebug
+      - name: Verify both APKs use the same signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          host_apk="$(find android-app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          companion_apk="$(find ipc-companion/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$host_apk"
+          test -n "$companion_apk"
+          apksigner="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          host_cert="$("$apksigner" verify --print-certs "$host_apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+          companion_cert="$("$apksigner" verify --print-certs "$companion_apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+          if [[ -z "$host_cert" || -z "$companion_cert" || "$host_cert" != "$companion_cert" ]]; then
+            echo "::error::Host and companion APK signing certificates do not match."
+            exit 1
+          fi
+          echo "PASS: host and companion APKs have the same signer certificate."
       - name: Upload display host APK
         uses: actions/upload-artifact@v4
         with:
