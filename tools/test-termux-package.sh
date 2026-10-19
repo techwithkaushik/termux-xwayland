@@ -13,7 +13,8 @@ bash -n "$script"
 
 grep -q '^Package: termux-xwayland-bridge$' "$pkg/DEBIAN/control"
 grep -q '^Architecture: all$' "$pkg/DEBIAN/control"
-grep -q 'APP_ID="org.techwithkaushik.termuxxwayland"' "$script"
+grep -Fq '"org.techwithkaushik.termuxxwayland"' "$script"
+grep -Fq '"org.techwithkaushik.termuxxwayland.debug"' "$script"
 grep -Fq '"$SYSTEM_PM" path' "$script"
 grep -Fq '"$SYSTEM_AM" start -W -n' "$script"
 
