@@ -181,7 +181,7 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$active_status" || {
 }
 
 "${cli_env[@]}" bash "$script" stop >/dev/null
-stopped_response="$(printf 'STATUS %s\\n' "$token" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
+stopped_response="$(printf 'STATUS %s\n' "$token" | "\${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
 [[ "$stopped_response" == "STOPPED $session_id" ]] || {
   echo "FAIL: host monitor should detect when Weston stops" >&2; exit 1;
 }
