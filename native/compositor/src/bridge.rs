@@ -1,16 +1,17 @@
-//! Authenticated loopback smoke-test server.
+//! Authenticated abstract Unix-domain socket smoke-test server.
 //!
-//! This is a bridge handshake test endpoint, not a Wayland compositor or frame
-//! server. The session token is supplied through an environment variable and
-//! is never printed.
+//! This is a transport/rendering test endpoint, not a Wayland compositor.
+//! The socket is local IPC (AF_UNIX abstract namespace), not TCP/IP.
 
 use crate::protocol::{Message, MessageKind};
 use std::env;
-use std::io;
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{self, Read, Write};
+use std::mem;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-const DEFAULT_PORT: u16 = 38765;
+const SOCKET_NAME: &str = "termux_xwayland_bridge_v1";
 const TOKEN_ENV: &str = "TERMUX_XWAYLAND_TOKEN_HEX";
 
 fn decode_token(value: &str) -> io::Result<[u8; 32]> {
@@ -40,7 +41,66 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-fn write_test_frame(stream: &mut TcpStream) -> io::Result<()> {
+trait TimedStream: Read + Write {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
+}
+
+impl TimedStream for UnixStream {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        UnixStream::set_read_timeout(self, timeout)
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        UnixStream::set_write_timeout(self, timeout)
+    }
+}
+
+fn abstract_address(name: &str) -> io::Result<(libc::sockaddr_un, libc::socklen_t)> {
+    let bytes = name.as_bytes();
+    // Abstract namespace names start with NUL and have no trailing NUL.
+    let capacity = unsafe { mem::zeroed::<libc::sockaddr_un>() }.sun_path.len();
+    if bytes.is_empty() || bytes.contains(&0) || bytes.len() + 1 > capacity {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid abstract socket name",
+        ));
+    }
+
+    let mut address: libc::sockaddr_un = unsafe { mem::zeroed() };
+    address.sun_family = libc::AF_UNIX as libc::sa_family_t;
+    for (index, byte) in bytes.iter().enumerate() {
+        address.sun_path[index + 1] = *byte as libc::c_char;
+    }
+    let length = (mem::offset_of!(libc::sockaddr_un, sun_path) + 1 + bytes.len())
+        as libc::socklen_t;
+    Ok((address, length))
+}
+
+fn bind_abstract_listener(name: &str) -> io::Result<OwnedFd> {
+    let (address, address_len) = abstract_address(name)?;
+    let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let listener = unsafe { OwnedFd::from_raw_fd(fd) };
+    let result = unsafe {
+        libc::bind(
+            listener.as_raw_fd(),
+            &address as *const libc::sockaddr_un as *const libc::sockaddr,
+            address_len,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe { libc::listen(listener.as_raw_fd(), 1) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(listener)
+}
+
+fn write_test_frame<W: Write>(stream: &mut W) -> io::Result<()> {
     // Small deterministic RGBA test pattern, not a compositor-generated desktop.
     const WIDTH: u16 = 320;
     const HEIGHT: u16 = 180;
@@ -52,14 +112,18 @@ fn write_test_frame(stream: &mut TcpStream) -> io::Result<()> {
         for x in 0..WIDTH {
             let r = ((x as u32 * 255) / (WIDTH as u32 - 1)) as u8;
             let g = ((y as u32 * 255) / (HEIGHT as u32 - 1)) as u8;
-            let b = if ((x / 20) + (y / 20)) % 2 == 0 { 220 } else { 48 };
+            let b = if ((x / 20) + (y / 20)) % 2 == 0 {
+                220
+            } else {
+                48
+            };
             payload.extend_from_slice(&[r, g, b, 255]);
         }
     }
     Message::new(MessageKind::Frame, payload)?.write_to(stream)
 }
 
-fn handle_client(mut stream: TcpStream, expected_token: &[u8; 32]) -> io::Result<()> {
+fn handle_client<S: TimedStream>(mut stream: S, expected_token: &[u8; 32]) -> io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(15)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
@@ -72,6 +136,7 @@ fn handle_client(mut stream: TcpStream, expected_token: &[u8; 32]) -> io::Result
     }
 
     Message::new(MessageKind::Welcome, Vec::new())?.write_to(&mut stream)?;
+    write_test_frame(&mut stream)?;
     // The handshake timeout must not silently expire an otherwise idle session.
     stream.set_read_timeout(None)?;
     log::info!("Android bridge client authenticated");
@@ -89,7 +154,7 @@ fn handle_client(mut stream: TcpStream, expected_token: &[u8; 32]) -> io::Result
             Ok(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "message not supported by handshake-only server",
+                    "message not supported by smoke-test server",
                 ));
             }
             Err(error)
@@ -113,31 +178,32 @@ pub fn run() -> io::Result<()> {
     let token = decode_token(&raw_token)?;
     drop(raw_token);
 
-    let port = env::var("TERMUX_XWAYLAND_PORT")
-        .ok()
-        .map(|value| value.parse::<u16>())
-        .transpose()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid port"))?
-        .unwrap_or(DEFAULT_PORT);
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = TcpListener::bind(address)?;
-    let bound_address = listener.local_addr()?;
-    println!("Termux XWayland bridge listening on {bound_address}");
-    println!("Enter the port and session token in the Android app; token is not printed.");
+    let listener = bind_abstract_listener(SOCKET_NAME)?;
+    println!("Termux XWayland bridge listening on abstract AF_UNIX socket @{SOCKET_NAME}");
+    println!("Open the Android app and enter the fresh session token; token is not printed.");
 
     // One client at a time in this smoke-test implementation.
-    for incoming in listener.incoming() {
-        match incoming {
-            Ok(stream) => {
-                let peer = stream.peer_addr().ok();
-                if let Err(error) = handle_client(stream, &token) {
-                    log::warn!("Bridge client rejected or disconnected ({peer:?}): {error}");
-                }
+    loop {
+        let fd = unsafe {
+            libc::accept(
+                listener.as_raw_fd(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if fd < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
             }
-            Err(error) => log::warn!("Bridge accept failed: {error}"),
+            log::warn!("Bridge accept failed: {error}");
+            continue;
+        }
+        let stream = unsafe { UnixStream::from_raw_fd(fd) };
+        if let Err(error) = handle_client(stream, &token) {
+            log::warn!("Bridge client rejected or disconnected: {error}");
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -160,5 +226,23 @@ mod tests {
         assert!(constant_time_eq(&[1, 2, 3], &[1, 2, 3]));
         assert!(!constant_time_eq(&[1, 2, 3], &[1, 2, 4]));
         assert!(!constant_time_eq(&[1, 2], &[1, 2, 3]));
+    }
+
+    #[test]
+    fn abstract_socket_address_uses_linux_abstract_namespace() {
+        let (address, length) = abstract_address(SOCKET_NAME).unwrap();
+        assert_eq!(address.sun_family as i32, libc::AF_UNIX);
+        assert_eq!(address.sun_path[0], 0);
+        assert_eq!(
+            &address.sun_path[1..1 + SOCKET_NAME.len()]
+                .iter()
+                .map(|value| *value as u8)
+                .collect::<Vec<_>>(),
+            SOCKET_NAME.as_bytes()
+        );
+        assert_eq!(
+            length as usize,
+            mem::offset_of!(libc::sockaddr_un, sun_path) + 1 + SOCKET_NAME.len()
+        );
     }
 }
