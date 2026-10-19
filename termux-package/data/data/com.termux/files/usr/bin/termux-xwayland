@@ -5,7 +5,7 @@ set -u
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
 SYSTEM_PM="/system/bin/pm"
-SYSTEM_AM="/system/bin/am"
+SYSTEM_MONKEY="/system/bin/monkey"
 
 fail() {
   printf 'termux-xwayland: %s\n' "$*" >&2
@@ -48,17 +48,14 @@ start_host() {
     printf 'Install the Termux-XWayland Android APK first.\n' >&2
     exit 2
   }
-  [ -x "$SYSTEM_AM" ] || fail "Android activity manager is unavailable"
-  # Android's am defaults to USER_CURRENT (-2), which app UIDs cannot target
-  # on Android 10. Resolve this Termux process's Android user from its UID.
-  local caller_uid android_user
-  caller_uid="$(id -u)" || fail "Could not determine current Android UID"
-  [[ "$caller_uid" =~ ^[0-9]+$ ]] || fail "Unexpected numeric UID: $caller_uid"
-  android_user=$((caller_uid / 100000))
-  if "$SYSTEM_AM" start --user "$android_user" -n "$DETECTED_APP_ID/.MainActivity"; then
-    printf 'Termux-XWayland host launch requested (%s). A visible window is not proof that a Linux session is running.\n' "$DETECTED_APP_ID"
+  # MIUI 12's am shell path calls protected getCurrentUserId() for
+  # ordinary app UIDs. Use Monkey's launcher-category intent instead; it
+  # avoids the explicit USER_CURRENT/-2 path that fails on this device.
+  [ -x "$SYSTEM_MONKEY" ] || fail "Android monkey launcher is unavailable"
+  if "$SYSTEM_MONKEY" -p "$DETECTED_APP_ID" -c android.intent.category.LAUNCHER 1; then
+    printf 'Termux-XWayland host launch requested (%s). Confirm the host UI opens; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
   else
-    fail "Could not launch Android host $DETECTED_APP_ID. Check the installed package and Android restrictions."
+    fail "Could not launch Android host $DETECTED_APP_ID via launcher intent. Open the host manually and check MIUI restrictions."
   fi
 }
 
