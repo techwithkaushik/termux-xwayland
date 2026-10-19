@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read-only diagnostic for Termux:X11 and XWayland Unix sockets.
+# Read-only diagnostic for Termux:X11's X11 socket and possible Wayland sockets.
 set -uo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -7,8 +7,8 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Usage: bash tools/probe-termux-x11-sockets.sh
 
 Read-only check of X11 display sockets and common Wayland runtime sockets.
-Start Termux:X11 first (for example: termux-x11 :0). If testing XWayland,
-also start the actual Wayland compositor/backend and XWayland server.
+Termux:X11 is itself a full X server; it does not imply a Wayland backend.
+To test XWayland, a Wayland compositor/backend and XWayland must be running.
 This script does not start or stop processes or change permissions.
 USAGE
   exit 0
@@ -70,8 +70,6 @@ declare -a w_candidates=(
   "$runtime_dir/wayland-1"
   "$termux_tmp/wayland-0"
   "$termux_tmp/wayland-1"
-  "$runtime_dir/termux-x11"
-  "$termux_tmp/termux-x11"
   "/tmp/wayland-0"
 )
 w_found=0
