@@ -17,7 +17,7 @@ The script:
 
 A successful result only establishes that Weston starts and creates its socket. It does **not** yet prove an actual Wayland client can render, that XWayland is ready for clients, or that compositor output can be streamed to the Android app. Check the logs for XWayland module startup/errors; the module may initialize asynchronously.
 
-The probe retains its log directory and prints its path so failures can be diagnosed. Remove that temporary directory manually after inspecting it.
+The probe retains its log directory and prints its path so failures can be diagnosed. Remove that temporary directory manually after inspecting it. If the probe created the X11 socket directory but it is non-empty at exit, it leaves the directory in place and prints a note rather than deleting other processes' files.
 
 ## Next gate
 
