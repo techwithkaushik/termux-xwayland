@@ -53,6 +53,8 @@ fn handle_client(mut stream: TcpStream, expected_token: &[u8; 32]) -> io::Result
     }
 
     Message::new(MessageKind::Welcome, Vec::new())?.write_to(&mut stream)?;
+    // The handshake timeout must not silently expire an otherwise idle session.
+    stream.set_read_timeout(None)?;
     log::info!("Android bridge client authenticated");
 
     loop {
