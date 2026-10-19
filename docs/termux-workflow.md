@@ -6,6 +6,20 @@ The native binary currently provides a **single-client authenticated abstract Un
 
 The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-cross-app-ipc.md). Do not continue treating the abstract socket as the default cross-UID path.
 
+## Probe Termux:X11 and XWayland sockets
+
+The read-only diagnostic `tools/probe-termux-x11-sockets.sh` checks the runtime paths and Unix socket nodes visible to the Termux shell. It checks the Termux:X11 Wayland endpoint (commonly `$TMPDIR/termux-x11`) separately from the X11 display socket candidate (commonly `$TMPDIR/.X11-unix/X0` for `DISPLAY=:0`). Actual paths can vary with `TMPDIR`, `XDG_RUNTIME_DIR`, display number, and how the server was launched.
+
+From a Termux shell, start Termux:X11 first:
+
+    termux-x11 :0
+
+Leave it running, open another Termux session, go to the repository root, and run:
+
+    bash tools/probe-termux-x11-sockets.sh
+
+For a meaningful XWayland check, run the XWayland setup you want to test as well, then rerun the probe. The script does not start or stop servers, change permissions, or modify files. It reports socket paths and metadata only; a socket's presence does not prove that another Android app is authorized to connect to it. If no expected socket is found, check the printed runtime directories and process list. Do not treat a missing X11 `X0` socket as proof that Termux:X11 itself failed: its Wayland endpoint and the XWayland X11 socket are different endpoints.
+
 ## Build the native diagnostic server
 
 Install the native tools in Termux:
