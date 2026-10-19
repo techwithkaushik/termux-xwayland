@@ -47,7 +47,17 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Install Android NDK for Rust JNI
-        run: sdkmanager "ndk;27.2.12479018"
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager_path="$(find "$sdk_root/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          if [[ -z "$sdkmanager_path" || ! -x "$sdkmanager_path" ]]; then
+            echo "::error::Android sdkmanager was not found under $sdk_root/cmdline-tools."
+            exit 1
+          fi
+          yes | "$sdkmanager_path" --licenses >/dev/null
+          "$sdkmanager_path" --install "ndk;27.2.12479018"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: armv7-linux-androideabi,aarch64-linux-android
