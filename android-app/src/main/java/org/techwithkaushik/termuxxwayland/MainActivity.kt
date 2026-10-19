@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -15,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -35,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var tokenInput: EditText
     private lateinit var statusTitle: TextView
     private lateinit var statusDescription: TextView
+    private lateinit var previewImage: ImageView
     private lateinit var connectButton: Button
     @Volatile private var activeSocket: Socket? = null
     @Volatile private var connecting = false
@@ -73,6 +76,16 @@ class MainActivity : Activity() {
         )
         status.addView(statusTitle)
         status.addView(statusDescription)
+        previewImage = ImageView(this).apply {
+            visibility = View.GONE
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Synthetic bridge test frame"
+            setBackgroundColor(Color.rgb(20, 29, 43))
+        }
+        status.addView(previewImage, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
+        ).apply { topMargin = dp(12) })
         content.addView(status, margins(top = 22, bottom = 16))
 
         content.addView(label("Connect to Termux", 20, ink, true).apply {
@@ -161,6 +174,11 @@ class MainActivity : Activity() {
                 if (response.kind != BridgeMessageKind.WELCOME || response.payload.isNotEmpty()) {
                     throw IllegalStateException("Bridge rejected the handshake")
                 }
+                val frameMessage = BridgeProtocol.read(candidate.getInputStream())
+                if (frameMessage.kind != BridgeMessageKind.FRAME) {
+                    throw IllegalStateException("Expected a test frame after authentication")
+                }
+                val testFrame = decodeTestFrame(frameMessage.payload)
                 activeSocket = candidate
                 candidate = null
                 runOnUiThread {
@@ -168,9 +186,11 @@ class MainActivity : Activity() {
                     connectButton.isEnabled = true
                     connectButton.text = "Disconnect"
                     tokenInput.text.clear()
-                    statusTitle.text = "Bridge authenticated"
+                    statusTitle.text = "Test frame received"
+                    previewImage.setImageBitmap(testFrame)
+                    previewImage.visibility = View.VISIBLE
                     statusDescription.text =
-                        "Session token accepted. No desktop frames are being sent by this smoke-test server."
+                        "Authenticated successfully. The image below is a synthetic test pattern—not a Linux desktop or Wayland output."
                 }
             } catch (error: Exception) {
                 token.fill(0)
@@ -197,8 +217,36 @@ class MainActivity : Activity() {
             try { socket?.close() } catch (_: Exception) { }
         }
         connectButton.text = "Connect securely"
+        previewImage.setImageDrawable(null)
+        previewImage.visibility = View.GONE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
+    }
+
+    private fun decodeTestFrame(payload: ByteArray): Bitmap {
+        if (payload.size < 8) throw IllegalStateException("Truncated frame metadata")
+        val width = ((payload[0].toInt() and 0xff) shl 8) or (payload[1].toInt() and 0xff)
+        val height = ((payload[2].toInt() and 0xff) shl 8) or (payload[3].toInt() and 0xff)
+        val format = payload[4].toInt() and 0xff
+        if (width !in 1..640 || height !in 1..360 || format != 1 ||
+            payload[5] != 0.toByte() || payload[6] != 0.toByte() || payload[7] != 0.toByte()
+        ) {
+            throw IllegalStateException("Unsupported or invalid test frame metadata")
+        }
+        val expectedBytes = 8L + width.toLong() * height.toLong() * 4L
+        if (expectedBytes != payload.size.toLong()) {
+            throw IllegalStateException("Frame pixel length does not match its dimensions")
+        }
+        val pixels = IntArray(width * height)
+        var offset = 8
+        for (index in pixels.indices) {
+            val red = payload[offset++].toInt() and 0xff
+            val green = payload[offset++].toInt() and 0xff
+            val blue = payload[offset++].toInt() and 0xff
+            val alpha = payload[offset++].toInt() and 0xff
+            pixels[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+        }
+        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     private fun showError(message: String) {
