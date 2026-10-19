@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Assemble debug APK
+        run: gradle --no-daemon :android-app:assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xwayland-debug-apk
+          path: android-app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  native-scaffold:
+    name: Native scaffold checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check repository structure
+        run: bash tools/check-scaffold.sh
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Rust format check
+        working-directory: native/compositor
+        run: cargo fmt --check
+      - name: Rust check
+        working-directory: native/compositor
+        run: cargo check --locked
