@@ -112,8 +112,8 @@ status_handler() {
     printf 'DENIED\n'
     return 0
   fi
+  date +%s > "$HOST_POLL_FILE"
   if server_is_running && [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
-    date +%s > "$HOST_POLL_FILE"
     printf 'RUNNING %s\n' "$session_id"
   else
     printf 'STOPPED %s\n' "$session_id"
@@ -161,7 +161,6 @@ start_server() {
   fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 5 seconds; inspect $LOG_FILE"
 }
 stop_server() {
-  stop_monitor
   if ! server_is_running; then
     rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
     printf 'Wayland server: not running\n'
@@ -218,10 +217,12 @@ start_session() {
   }
   [ -x "$TERMUX_OPEN" ] || {
     stop_server >/dev/null 2>&1 || true
+    stop_monitor
     fail "termux-open is unavailable; install/update termux-tools"
   }
   if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port&token=$token"; then
     stop_server >/dev/null 2>&1 || true
+    stop_monitor
     fail "could not open Android host deep link"
   fi
   notify_user "Termux-XWayland" "Wayland socket is ready. Android host launch request sent; live frame transport is still pending."
