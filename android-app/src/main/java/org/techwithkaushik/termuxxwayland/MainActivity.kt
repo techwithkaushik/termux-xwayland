@@ -156,6 +156,7 @@ class MainActivity : Activity() {
                 candidate.connect(InetSocketAddress(host, port), 3000)
                 candidate.soTimeout = 15000
                 BridgeProtocol.write(candidate.getOutputStream(), BridgeMessageKind.HELLO, token)
+                token.fill(0)
                 val response = BridgeProtocol.read(candidate.getInputStream())
                 if (response.kind != BridgeMessageKind.WELCOME || response.payload.isNotEmpty()) {
                     throw IllegalStateException("Bridge rejected the handshake")
@@ -166,11 +167,13 @@ class MainActivity : Activity() {
                     connecting = false
                     connectButton.isEnabled = true
                     connectButton.text = "Disconnect"
+                    tokenInput.text.clear()
                     statusTitle.text = "Bridge authenticated"
                     statusDescription.text =
                         "Session token accepted. No desktop frames are being sent by this smoke-test server."
                 }
             } catch (error: Exception) {
+                token.fill(0)
                 candidate?.close()
                 runOnUiThread {
                     connecting = false
@@ -225,6 +228,8 @@ class MainActivity : Activity() {
             if (secret) {
                 isSingleLine = true
                 typeface = Typeface.MONOSPACE
+                isSaveEnabled = false
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
             }
         }
 
