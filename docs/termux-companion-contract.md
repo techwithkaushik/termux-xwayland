@@ -99,3 +99,9 @@ The next implementation milestone should be a small, bounded Binder file-descrip
 ## Current status
 
 This is an architecture contract, not an implemented transport. The existing abstract AF_UNIX prototype is blocked by cross-UID `EACCES` on the target device. The current Binder probe is host-to-test-companion only. No FD handoff, Termux-side package, real compositor or real desktop frame path has been implemented or device-verified.
+
+## Authenticated control-plane IPC prototype (2026-10-19)
+
+The `feat/termux-authenticated-control-ipc` branch adds an exported Android `ContentProvider.call()` endpoint for low-rate control only. The provider checks the actual Binder caller UID against Android's package-manager mapping and accepts calls only from the installed `com.termux` package. The Termux CLI uses Android's `/system/bin/content` command to send a bounded protocol-v1 start/status/stop request; start carries a random 128-bit session identifier. The host UI reads the recorded state and explicitly labels it as a control handshake, not a live display stream.
+
+This is intentionally **not** the frame/input transport. It does not prove that Weston pixels reach Android, and it does not provide a persistent connection or file-descriptor transfer. The caller-UID check and `content call` behavior must be verified on the user's Android 10 / MIUI build. If the system command runs under the shell UID instead of the Termux app UID, the provider should reject it; do not weaken authorization to make the test pass. The next gate is device verification of this control handshake, then a documented authorized FD/stream channel before implementing live frames.
