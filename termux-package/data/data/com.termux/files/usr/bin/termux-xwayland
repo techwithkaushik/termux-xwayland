@@ -236,12 +236,13 @@ case "${1:-status}" in
   --version|-V) printf 'termux-xwayland companion 0.3.0 (authenticated control IPC; frame transport pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|server-start|stop|--version|--help]
+Usage: termux-xwayland [status|check|start|server-start|stop|monitor-stop|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
 start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
 stop          Stop the Weston process started by this companion.
+monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
 The control endpoint accepts calls only from the installed com.termux UID.
