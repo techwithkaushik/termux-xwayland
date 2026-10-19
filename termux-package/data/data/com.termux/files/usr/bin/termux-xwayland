@@ -4,8 +4,10 @@ set -u
 # Debug APKs append .debug via applicationIdSuffix; release APKs do not.
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
-SYSTEM_PM="/system/bin/pm"
-TERMUX_OPEN="${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open"
+# Optional executable overrides make the CLI testable outside Android. Normal
+# installations continue to use Android's package manager and Termux's opener.
+SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
+TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
 
 fail() {
   printf 'termux-xwayland: %s\n' "$*" >&2
