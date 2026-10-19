@@ -150,7 +150,7 @@ class MainActivity : Activity() {
                     socket.soTimeout = 1500
                     socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
                     val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.US_ASCII)
-                    writer.write("STATUS $token\\n")
+                    writer.write("STATUS $token\n")
                     writer.flush()
                     response = BufferedReader(
                         InputStreamReader(socket.getInputStream(), Charsets.US_ASCII)
