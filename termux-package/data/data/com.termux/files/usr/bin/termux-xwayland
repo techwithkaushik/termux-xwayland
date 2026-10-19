@@ -76,6 +76,7 @@ start_control_session() {
   [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a control session ID"
   response="$(control_call start "$session_id")" || {
     printf 'termux-xwayland: Android control handshake failed. Ensure the installed host supports this feature and that the caller is the official com.termux app.\n%s\n' "$response" >&2
+    stop_server >/dev/null 2>&1 || true
     return 1
   }
   if ! grep -Fq 'state=connected' <<<"$response"; then
