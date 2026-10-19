@@ -40,6 +40,25 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
+fn write_test_frame(stream: &mut TcpStream) -> io::Result<()> {
+    // Small deterministic RGBA test pattern, not a compositor-generated desktop.
+    const WIDTH: u16 = 320;
+    const HEIGHT: u16 = 180;
+    let mut payload = Vec::with_capacity(8 + WIDTH as usize * HEIGHT as usize * 4);
+    payload.extend_from_slice(&WIDTH.to_be_bytes());
+    payload.extend_from_slice(&HEIGHT.to_be_bytes());
+    payload.extend_from_slice(&[1, 0, 0, 0]); // RGBA8888, reserved bytes are zero.
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let r = ((x as u32 * 255) / (WIDTH as u32 - 1)) as u8;
+            let g = ((y as u32 * 255) / (HEIGHT as u32 - 1)) as u8;
+            let b = if ((x / 20) + (y / 20)) % 2 == 0 { 220 } else { 48 };
+            payload.extend_from_slice(&[r, g, b, 255]);
+        }
+    }
+    Message::new(MessageKind::Frame, payload)?.write_to(stream)
+}
+
 fn handle_client(mut stream: TcpStream, expected_token: &[u8; 32]) -> io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(15)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
