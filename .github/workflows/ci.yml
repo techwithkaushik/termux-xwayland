@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - "android-app/**"
+      - "ipc-companion/**"
+      - "ipc-companion/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
@@ -42,13 +44,21 @@ jobs:
           gradle-version: "8.9"
       - name: Run Android bridge protocol unit tests
         run: gradle --no-daemon :android-app:testDebugUnitTest
+      - name: Test and assemble Binder companion
+        run: gradle --no-daemon :ipc-companion:testDebugUnitTest :ipc-companion:assembleDebug
       - name: Assemble debug APK
         run: gradle --no-daemon :android-app:assembleDebug
-      - name: Upload APK
+      - name: Upload display host APK
         uses: actions/upload-artifact@v4
         with:
           name: termux-xwayland-debug-apk
           path: android-app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Upload Binder companion APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xwayland-ipc-companion-debug-apk
+          path: ipc-companion/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
   native-scaffold:
