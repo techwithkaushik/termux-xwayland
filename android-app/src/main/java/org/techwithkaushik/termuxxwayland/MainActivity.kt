@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -21,25 +23,22 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.net.InetSocketAddress
-import java.net.Socket
 
-/** Android endpoint for the authenticated bridge smoke test; no frame renderer yet. */
+/** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
     private val ink = Color.rgb(22, 32, 48)
     private val muted = Color.rgb(99, 113, 132)
     private val blue = Color.rgb(37, 99, 235)
     private val pale = Color.rgb(239, 246, 255)
     private val page = Color.rgb(246, 248, 252)
+    private val SOCKET_NAME = "termux_xwayland_bridge_v1"
 
-    private lateinit var hostInput: EditText
-    private lateinit var portInput: EditText
     private lateinit var tokenInput: EditText
     private lateinit var statusTitle: TextView
     private lateinit var statusDescription: TextView
     private lateinit var previewImage: ImageView
     private lateinit var connectButton: Button
-    @Volatile private var activeSocket: Socket? = null
+    @Volatile private var activeSocket: LocalSocket? = null
     @Volatile private var connecting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,11 +90,11 @@ class MainActivity : Activity() {
         content.addView(label("Connect to Termux", 20, ink, true).apply {
             setPadding(0, dp(6), 0, dp(8))
         })
-        hostInput = field("Host (same device)", "127.0.0.1")
-        portInput = field("Port", "38765", numeric = true)
+        content.addView(infoCard(
+            "Native local socket",
+            "Uses an Android abstract AF_UNIX socket. No localhost address, port, Wi-Fi or internet connection is required."
+        ), margins(bottom = 10))
         tokenInput = field("Session token (64 hex characters)", "", secret = true)
-        content.addView(hostInput, margins(bottom = 8))
-        content.addView(portInput, margins(bottom = 8))
         content.addView(tokenInput, margins(bottom = 8))
         connectButton = actionButton("Connect securely") { connectOrDisconnect() }
         content.addView(connectButton, margins(top = 4, bottom = 8))
@@ -145,29 +144,24 @@ class MainActivity : Activity() {
         }
         if (connecting) return
 
-        val host = hostInput.text.toString().trim()
-        val port = portInput.text.toString().toIntOrNull()
         val token = try {
             BridgeProtocol.parseToken(tokenInput.text.toString().trim())
         } catch (error: IllegalArgumentException) {
             showError(error.message ?: "Invalid session token")
             return
         }
-        if (host.isBlank() || port == null || port !in 1..65535) {
-            showError("Enter a valid host and port")
-            return
-        }
-
         connecting = true
         connectButton.isEnabled = false
         statusTitle.text = "Connecting…"
-        statusDescription.text = "Connecting to loopback bridge and checking the session token."
+        statusDescription.text = "Connecting to the local abstract Unix socket and checking the session token."
         Thread({
-            var candidate: Socket? = null
+            var candidate: LocalSocket? = null
             try {
-                candidate = Socket()
-                candidate.connect(InetSocketAddress(host, port), 3000)
-                candidate.soTimeout = 15000
+                candidate = LocalSocket()
+                candidate.connect(LocalSocketAddress(
+                    SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT
+                ))
+                candidate.setSoTimeout(15000)
                 BridgeProtocol.write(candidate.getOutputStream(), BridgeMessageKind.HELLO, token)
                 token.fill(0)
                 val response = BridgeProtocol.read(candidate.getInputStream())
