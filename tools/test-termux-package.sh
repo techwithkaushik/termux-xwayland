@@ -39,7 +39,7 @@ check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metad
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
-check_grep 'TERMUX_OPEN="${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open"' "$script" "Termux open command"
+check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start"' "$script" "Android host deep-link launch"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
