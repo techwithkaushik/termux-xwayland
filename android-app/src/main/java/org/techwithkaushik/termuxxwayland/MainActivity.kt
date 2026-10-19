@@ -164,7 +164,7 @@ class MainActivity : Activity() {
                 val nextState = when (response) {
                     "RUNNING $sessionId" -> "server_running"
                     "STOPPED $sessionId" -> "server_stopped"
-                    "DENIED" -> "monitor_auth_failed"
+                    "DENIED" -> "session_mismatch"
                     else -> "server_unreachable"
                 }
                 if (current.getString("state", "") != nextState) {
@@ -182,7 +182,7 @@ class MainActivity : Activity() {
         when (prefs.getString("state", "disconnected")) {
             "request_received" -> {
                 statusTitle.text = "Termux-Companion connection received"
-                statusDescription.text = "Launch request received. Verifying the live Wayland server over authenticated loopback status polling…"
+                statusDescription.text = "Launch request received. Verifying the live Wayland server over read-only loopback status polling…"
             }
             "server_running" -> {
                 statusTitle.text = "Termux-Companion connection received"
@@ -196,9 +196,9 @@ class MainActivity : Activity() {
                 statusTitle.text = "Termux server not reachable"
                 statusDescription.text = "The local status endpoint did not respond. Termux may be stopped, the monitor may have exited, or the session may have expired."
             }
-            "monitor_auth_failed" -> {
-                statusTitle.text = "Termux status authentication failed"
-                statusDescription.text = "The monitor rejected this session ID. Start a fresh session from Termux."
+            "session_mismatch" -> {
+                statusTitle.text = "Termux session mismatch"
+                statusDescription.text = "The status endpoint rejected a request for a different session. Start a fresh session from Termux."
             }
             "invalid_request" -> {
                 statusTitle.text = "Invalid Termux connection request"
