@@ -40,7 +40,6 @@ start_host() {
     exit 2
   }
   [ -x "$SYSTEM_AM" ] || fail "Android activity manager is unavailable"
-  # Explicit component launch; no RUN_COMMAND permission or external-app toggle.
   if "$SYSTEM_AM" start -W -n "$APP_ACTIVITY"; then
     printf 'Termux-XWayland host launch requested. A visible window is not proof that a Linux session is running.\n'
   else
