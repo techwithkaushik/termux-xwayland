@@ -15,6 +15,7 @@ grep -q 'Connect securely' android-app/src/main/java/org/techwithkaushik/termuxx
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
 grep -q 'LocalSocketAddress.Namespace.ABSTRACT' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Cross-UID IPC passed' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'candidate.peerCredentials' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'BridgeMessageKind.PING' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
