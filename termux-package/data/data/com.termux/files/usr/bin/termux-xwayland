@@ -7,7 +7,7 @@ TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/
 WESTON_BIN="${TERMUX_XWAYLAND_WESTON:-weston}"
 NOTIFY_BIN="${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
 CONTROL_BIN="${TERMUX_XWAYLAND_CONTENT:-/system/bin/content}"
-CONTROL_URI="content://org.techwithkaushik.termuxxwayland.control/session"
+CONTROL_URI=""
 RUNTIME_DIR="${TERMUX_XWAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-${UID:-$(id -u)}}}"
 WAYLAND_SOCKET="${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
 PID_FILE="$RUNTIME_DIR/weston.pid"
@@ -26,7 +26,7 @@ detect_host() {
   local app_id output
   for app_id in "${APP_IDS[@]}"; do
     output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
-    case "$output" in package:*) DETECTED_APP_ID="$app_id"; return 0 ;; esac
+    case "$output" in package:*) DETECTED_APP_ID="$app_id"; CONTROL_URI="content://${app_id}.control/session"; return 0 ;; esac
   done
   return 1
 }
@@ -110,6 +110,7 @@ start_server() {
   fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 5 seconds; inspect $LOG_FILE"
 }
 stop_server() {
+  detect_host >/dev/null 2>&1 || true
   control_call stop >/dev/null 2>&1 || true
   if ! server_is_running; then
     rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
