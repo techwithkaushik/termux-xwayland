@@ -1,0 +1,10 @@
+[package]
+name = "termux-xwayland-compositor"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Termux-hosted Wayland compositor prototype"
+
+[dependencies]
+log = "0.4"
+env_logger = "0.11"
