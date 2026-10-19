@@ -32,7 +32,7 @@ jobs:
           if-no-files-found: error
 
   native-scaffold:
-    name: Native scaffold checks
+    name: Native protocol and scaffold checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +44,9 @@ jobs:
       - name: Rust format check
         working-directory: native/compositor
         run: cargo fmt --check
+      - name: Rust unit tests
+        working-directory: native/compositor
+        run: cargo test
       - name: Rust check
         working-directory: native/compositor
         run: cargo check
