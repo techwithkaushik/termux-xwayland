@@ -11,8 +11,9 @@ val devSigningProperties = Properties().apply {
         devSigningPropertiesFile.inputStream().use { load(it) }
     }
 }
-val signingStoreFile = System.getenv("SIGNING_KEY_STORE")?.takeIf { it.isNotBlank() }
-    ?: devSigningProperties.getProperty("storeFile")?.takeIf { it.isNotBlank() }
+val signingStorePath = System.getenv("SIGNING_KEY_STORE")?.takeIf { it.isNotBlank() }
+val signingStoreFile = signingStorePath?.let { java.io.File(it) }
+    ?: devSigningProperties.getProperty("storeFile")?.takeIf { it.isNotBlank() }?.let { rootProject.file(it) }
 val signingKeyAlias = System.getenv("SIGNING_KEY_ALIAS")?.takeIf { it.isNotBlank() }
     ?: devSigningProperties.getProperty("keyAlias")?.takeIf { it.isNotBlank() }
 val signingKeyPassword = System.getenv("SIGNING_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
@@ -23,7 +24,11 @@ val hasDevSigning = signingStoreFile != null &&
     signingKeyAlias != null &&
     signingKeyPassword != null &&
     signingStorePassword != null &&
-    rootProject.file(signingStoreFile).isFile
+    signingStoreFile.isFile
+
+if (signingStorePath != null && !hasDevSigning) {
+    error("SIGNING_KEY_STORE was provided, but the shared development signing configuration is incomplete or the keystore file is missing.")
+}
 
 android {
     namespace = "org.techwithkaushik.termuxxwayland.companion"
@@ -32,7 +37,7 @@ android {
     signingConfigs {
         if (hasDevSigning) {
             create("dev") {
-                storeFile = rootProject.file(signingStoreFile!!)
+                storeFile = signingStoreFile!!
                 storePassword = signingStorePassword!!
                 keyAlias = signingKeyAlias!!
                 keyPassword = signingKeyPassword!!
