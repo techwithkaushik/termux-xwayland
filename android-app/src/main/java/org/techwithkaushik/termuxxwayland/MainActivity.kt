@@ -57,8 +57,6 @@ class MainActivity : Activity() {
     private lateinit var binderProbeDescription: TextView
     private lateinit var binderProbeButton: Button
     private var binderProbeConnection: ServiceConnection? = null
-    private lateinit var termuxStatusTitle: TextView
-    private lateinit var termuxStatusDescription: TextView
     @Volatile private var binderProbeRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -137,26 +135,6 @@ class MainActivity : Activity() {
             "What this test proves",
             "Cross-UID IPC passed means the token was accepted, the Termux process UID was reported, a synthetic frame arrived, and Android PING received a Termux PONG. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
-        content.addView(label("Termux integration", 20, ink, true).apply {
-            setPadding(0, dp(12), 0, dp(8))
-        })
-        content.addView(infoCard(
-            "Termux RUN_COMMAND control bridge",
-            "Requests a short diagnostic command from the installed Termux app using its documented permission-protected command API. This tests command launch only; it is not a live Binder binding or frame-stream transport. In Termux, set allow-external-apps=true in ~/.termux/termux.properties and grant this app the Run commands in Termux permission in Android Settings."
-        ), margins(bottom = 10))
-        termuxStatusTitle = label("Termux command not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        termuxStatusDescription = label(
-            "Run a harmless identity diagnostic through Termux before enabling session management.",
-            13, muted, false
-        )
-        content.addView(termuxStatusTitle)
-        content.addView(termuxStatusDescription, margins(bottom = 8))
-        content.addView(actionButton("Test Termux command bridge") {
-            testTermuxRunCommand()
-        }, margins(bottom = 16))
-
         content.addView(label("Binder IPC capability probe", 20, ink, true).apply {
             setPadding(0, dp(12), 0, dp(8))
         })
@@ -355,49 +333,6 @@ class MainActivity : Activity() {
         previewImage.visibility = View.GONE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
-    }
-
-    /**
-     * Exercises Termux's documented RUN_COMMAND control API. This only starts a
-     * harmless foreground diagnostic; it does not create a streaming transport.
-     */
-    private fun testTermuxRunCommand() {
-        termuxStatusTitle.text = "Checking Termux…"
-        termuxStatusDescription.text = "Requesting a harmless identity diagnostic from Termux."
-        try {
-            val packageInfo = packageManager.getPackageInfo("com.termux", 0)
-            @Suppress("UNUSED_VARIABLE")
-            val installedTermux = packageInfo.packageName
-
-            val intent = Intent("com.termux.RUN_COMMAND").apply {
-                component = ComponentName("com.termux", "com.termux.app.RunCommandService")
-                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-                putExtra(
-                    "com.termux.RUN_COMMAND_ARGUMENTS",
-                    arrayOf("-lc", "printf 'Termux RUN_COMMAND OK\\n'; id")
-                )
-                putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
-                putExtra("com.termux.RUN_COMMAND_BACKGROUND", false)
-                putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0")
-                putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", "Termux XWayland integration test")
-                putExtra(
-                    "com.termux.RUN_COMMAND_COMMAND_DESCRIPTION",
-                    "Runs a harmless id diagnostic to verify authorized Termux command launch."
-                )
-            }
-            startService(intent)
-            termuxStatusTitle.text = "Termux command request sent"
-            termuxStatusDescription.text =
-                "Check Termux for the diagnostic session. If it was not started, grant this app the Termux RUN_COMMAND permission and set allow-external-apps=true in ~/.termux/termux.properties, then retry. A request sent is not proof that a session ran."
-        } catch (error: SecurityException) {
-            termuxStatusTitle.text = "Termux permission required"
-            termuxStatusDescription.text =
-                "Grant this app the 'Run commands in Termux environment' permission in Android Settings → Apps → Termux XWayland → Permissions. Also enable allow-external-apps=true in Termux properties. Details: ${error.message ?: "permission denied"}"
-        } catch (error: Exception) {
-            termuxStatusTitle.text = "Termux command failed"
-            termuxStatusDescription.text =
-                "Install the standard Termux app and verify RUN_COMMAND support and permissions. Details: ${error.message ?: error.javaClass.simpleName}"
-        }
     }
 
     private fun runBinderProbe() {
