@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pkg="$root/termux-package"
 out="${1:-$root/dist}"
-archive="$out/termux-xwayland-bridge_0.1.0_all.deb"
+archive="$out/termux-xwayland-bridge_0.3.0_all.deb"
 
 command -v dpkg-deb >/dev/null 2>&1 || {
   echo "dpkg-deb is required. Install dpkg in Termux or on the build host." >&2
