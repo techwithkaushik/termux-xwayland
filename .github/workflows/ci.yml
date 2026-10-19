@@ -102,14 +102,26 @@ jobs:
           sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
           apksigner="$(find "$sdk_root/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$apksigner"
-          host_cert="$("$apksigner" verify --print-certs "$host_apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
-          companion_cert="$("$apksigner" verify --print-certs "$companion_apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+          host_verify="$("$apksigner" verify --verbose --print-certs "$host_apk" 2>&1)" || {
+            printf '%s\n' "$host_verify"
+            echo "::error::Host APK signature verification failed."
+            exit 1
+          }
+          companion_verify="$("$apksigner" verify --verbose --print-certs "$companion_apk" 2>&1)" || {
+            printf '%s\n' "$companion_verify"
+            echo "::error::Companion APK signature verification failed."
+            exit 1
+          }
           echo "Host APK: $host_apk"
+          printf 'Host apksigner report:\n%s\n' "$host_verify"
           echo "Companion APK: $companion_apk"
+          printf 'Companion apksigner report:\n%s\n' "$companion_verify"
+          host_cert="$(printf '%s\n' "$host_verify" | sed -nE 's/.*certificate SHA-256 digest: *([[:xdigit:]]+).*/\1/p' | head -n 1)"
+          companion_cert="$(printf '%s\n' "$companion_verify" | sed -nE 's/.*certificate SHA-256 digest: *([[:xdigit:]]+).*/\1/p' | head -n 1)"
           echo "Host signer SHA-256: ${host_cert:-<missing>}"
           echo "Companion signer SHA-256: ${companion_cert:-<missing>}"
           if [[ -z "$host_cert" || -z "$companion_cert" || "$host_cert" != "$companion_cert" ]]; then
-            echo "::error::Host and companion APK signing certificates do not match. See the two fingerprints above."
+            echo "::error::Host and companion APK signing certificates do not match. Inspect the apksigner reports above."
             exit 1
           fi
           echo "PASS: host and companion APKs have the same signer certificate."
