@@ -12,7 +12,7 @@ val devSigningProperties = Properties().apply {
     }
 }
 val signingStorePath = System.getenv("SIGNING_KEY_STORE")?.takeIf { it.isNotBlank() }
-val signingStoreFile = signingStorePath?.let { java.io.File(it) }
+val signingStoreFile = signingStorePath?.let { rootProject.file(it) }
     ?: devSigningProperties.getProperty("storeFile")?.takeIf { it.isNotBlank() }?.let { rootProject.file(it) }
 val signingKeyAlias = System.getenv("SIGNING_KEY_ALIAS")?.takeIf { it.isNotBlank() }
     ?: devSigningProperties.getProperty("keyAlias")?.takeIf { it.isNotBlank() }
