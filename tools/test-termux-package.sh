@@ -27,5 +27,12 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   test -s "$archive"
   test "$(dpkg-deb -f "$archive" Package)" = "termux-xwayland-bridge"
   test "$(dpkg-deb -f "$archive" Architecture)" = "all"
+  if dpkg-deb --contents "$archive" | grep -Eq ' \.?/build-deb\.sh
+echo "Termux companion package structure, shell syntax, and DEB build checks passed."
+; then
+    echo "Build tooling must not be installed at the package root." >&2
+    exit 1
+  fi
+  dpkg-deb --contents "$archive" | grep -Fq './data/data/com.termux/files/usr/bin/termux-xwayland'
 fi
 echo "Termux companion package structure, shell syntax, and DEB build checks passed."
