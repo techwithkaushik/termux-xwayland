@@ -82,7 +82,7 @@ Transport requirements:
 
 A new diagnostic transaction was added to the test companion. It receives two `ParcelFileDescriptor` handles through Binder: one pipe for a bounded request and one for the echoed response. The service checks the caller's signing certificate, caps payloads at 64 KiB, reads exactly the declared number of bytes, rejects trailing bytes, closes both received descriptors with auto-close streams, and zeroes its temporary payload buffer. The host uses worker threads so pipe reads/writes cannot block the UI thread, compares the exact returned bytes, and closes its pipe endpoints and Parcels in a `finally` block.
 
-This is an implementation spike only. It has **not** been built or device-tested yet. It proves neither Termux access nor sustained streaming, and should not be used as the production transport until the Android 10 test passes and lifecycle/error paths are exercised.
+This is an implementation spike only. The user verified the Binder FD handoff on the target Android 10 / API 29 device: exact 16 KiB round trip through two Binder-transferred pipe FDs passed. It proves neither Termux access nor sustained streaming, and must not be treated as the production transport until lifecycle/error paths and a persistent bidirectional channel are exercised.
 
 ## Low-bandwidth validation status (2026-10-19)
 
@@ -99,3 +99,14 @@ The next implementation milestone should be a small, bounded Binder file-descrip
 ## Current status
 
 This is an architecture contract, not an implemented transport. The existing abstract AF_UNIX prototype is blocked by cross-UID `EACCES` on the target device. The current Binder probe is host-to-test-companion only. No FD handoff, Termux-side package, real compositor or real desktop frame path has been implemented or device-verified.
+
+
+## Latest verified milestone (2026-10-20)
+
+- The Android 10 device UI reports **Binder capability probe passed**: authenticated PING/PONG, caller/service UID checks, and exact 16 KiB Binder echo.
+- The same device UI reports **Binder FD handoff passed**: exact 16 KiB round trip using two pipe file descriptors transferred over Binder.
+- CI for commit `988af2c63e567ebd82112630cf4c7d9b20c66bac` passed both native protocol/scaffold checks and Android build/protocol tests.
+
+### Next gate
+
+Implement and test a persistent, bounded, bidirectional Binder-mediated stream with explicit session start/stop, disconnect/reconnect, backpressure and descriptor cleanup. Then establish how the existing Termux shell process participates without generic RUN_COMMAND authorization or replacing Termux. Until that is proven, do not claim Termux connectivity, real Wayland frames, input forwarding, or desktop support.
