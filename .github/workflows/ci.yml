@@ -43,42 +43,59 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Prepare shared development signing keystore
+        id: keystore
         env:
-          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE || secrets.SIGNING_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.DEV_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS || secrets.SIGNING_ALIAS || secrets.DEV_KEY_ALIAS || secrets.KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD || secrets.DEV_KEY_PASSWORD || secrets.KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD || secrets.DEV_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.STORE_PASSWORD }}
+          SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 || secrets.SIGNING_KEYSTORE_BASE64 || secrets.SIGNING_KEYSTORE || secrets.KEYSTORE_BASE64 }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          for name in SIGNING_KEYSTORE SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD SIGNING_STORE_PASSWORD; do
+          for name in SIGNING_KEY_STORE_BASE64 SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD SIGNING_STORE_PASSWORD; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Required GitHub Actions secret $name is missing."
               exit 1
             fi
           done
           mkdir -p build/signing
-          printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > build/signing/dev-keystore.jks
-          test -s build/signing/dev-keystore.jks
-          if ! keytool -list -keystore build/signing/dev-keystore.jks -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" >/dev/null 2>&1; then
-            echo "::error::Keystore could not be opened with the configured store password and key alias. Check the existing GitHub secrets and confirm the keystore secret is base64-encoded once."
+          keystore_path="$GITHUB_WORKSPACE/build/signing/dev-keystore.jks"
+          printf '%s' "$SIGNING_KEY_STORE_BASE64" | base64 --decode > "$keystore_path"
+          test -s "$keystore_path"
+          if ! keytool -list -keystore "$keystore_path" -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Keystore validation failed. Check the base64 keystore secret, store password, and key alias."
             exit 1
           fi
-          echo "Keystore file and alias validated."
           umask 077
           cat > build/signing/key.properties <<EOF
-          storeFile=build/signing/dev-keystore.jks
+          storeFile=$keystore_path
           keyAlias=$SIGNING_KEY_ALIAS
           keyPassword=$SIGNING_KEY_PASSWORD
           storePassword=$SIGNING_STORE_PASSWORD
           EOF
-          chmod 600 build/signing/dev-keystore.jks build/signing/key.properties
-          echo "Shared development keystore prepared (secret values are not printed)."
+          chmod 600 "$keystore_path" build/signing/key.properties
+          echo "filePath=$keystore_path" >> "$GITHUB_OUTPUT"
+          echo "Shared development keystore prepared and validated."
       - name: Run Android bridge protocol unit tests
+        env:
+          SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: gradle --no-daemon :android-app:testDebugUnitTest
       - name: Test and assemble Binder companion
+        env:
+          SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: gradle --no-daemon :ipc-companion:testDebugUnitTest :ipc-companion:assembleDebug
       - name: Assemble display host APK
+        env:
+          SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: gradle --no-daemon :android-app:assembleDebug
       - name: Verify both APKs use the same signing certificate
         shell: bash
