@@ -9,7 +9,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <provider
             android:name=".TermuxControlProvider"
-            android:authorities="org.techwithkaushik.termuxxwayland.control"
+            android:authorities="${applicationId}.control"
             android:exported="true"
             android:grantUriPermissions="false" />
         <activity
