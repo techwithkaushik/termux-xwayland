@@ -85,6 +85,7 @@ mock_content="$cli_tmp/content"
 mock_weston="$cli_tmp/weston"
 open_log="$cli_tmp/open.log"
 control_log="$cli_tmp/control.log"
+control_state="$cli_tmp/control-state"
 cat > "$mock_pm" <<'MOCK_PM'
 #!/usr/bin/env bash
 if [[ "${1:-}" == path && "${MOCK_HOST_PRESENT:-yes}" == yes ]]; then
@@ -114,8 +115,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 case "$method" in
-  start|status) printf 'Result: Bundle[{state=connected, protocol_version=1}]\n' ;;
-  stop) printf 'Result: Bundle[{state=disconnected, protocol_version=1}]\n' ;;
+  start)
+    printf 'connected\n' > "$MOCK_CONTROL_STATE"
+    printf 'Result: Bundle[{state=connected, protocol_version=1}]\n'
+    ;;
+  status)
+    state=disconnected
+    [[ ! -f "$MOCK_CONTROL_STATE" ]] || state="$(cat "$MOCK_CONTROL_STATE")"
+    printf 'Result: Bundle[{state=%s, protocol_version=1}]\n' "$state"
+    ;;
+  stop)
+    printf 'disconnected\n' > "$MOCK_CONTROL_STATE"
+    printf 'Result: Bundle[{state=disconnected, protocol_version=1}]\n'
+    ;;
   *) exit 2 ;;
 esac
 MOCK_CONTENT
@@ -136,13 +148,13 @@ while True:
 PYTHON_WESTON
 MOCK_WESTON
 chmod +x "$mock_pm" "$mock_open" "$mock_content" "$mock_weston"
-cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_CONTENT="$mock_content" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log" MOCK_CONTROL_LOG="$control_log")
+cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_CONTENT="$mock_content" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log" MOCK_CONTROL_LOG="$control_log" MOCK_CONTROL_STATE="$control_state")
 
 status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Android control connection: authenticated (protocol v1)' <<<"$status_output" || {
+grep -Fq 'Android control handshake: accepted (protocol v1)' <<<"$status_output" || {
   echo "FAIL: status should report an authenticated mock control channel" >&2; exit 1;
 }
 grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
