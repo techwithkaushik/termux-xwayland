@@ -266,10 +266,14 @@ class MainActivity : Activity() {
             var accepted: LocalSocket? = null
             try {
                 val name = "txw_jni_${Process.myPid()}_${System.nanoTime()}"
+                Log.i("TermuxXWayland", "Creating app-local server socket")
                 server = LocalServerSocket(name)
+                Log.i("TermuxXWayland", "Server ready; connecting client socket")
                 client = LocalSocket()
                 client.connect(LocalSocketAddress(name, LocalSocketAddress.Namespace.ABSTRACT))
+                Log.i("TermuxXWayland", "Client connected; accepting server socket")
                 accepted = server.accept()
+                Log.i("TermuxXWayland", "Server accepted client; writing probe bytes")
 
                 client.outputStream.use { output ->
                     output.write(byteArrayOf(0x54, 0x58, 0x57, 0x42, 0x01, 0x02))
