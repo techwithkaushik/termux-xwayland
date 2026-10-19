@@ -8,7 +8,7 @@ The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-
 
 ## Probe Termux:X11 and XWayland sockets
 
-The read-only diagnostic `tools/probe-termux-x11-sockets.sh` checks the runtime paths and Unix socket nodes visible to the Termux shell. It checks the Termux:X11 Wayland endpoint (commonly `$TMPDIR/termux-x11`) separately from the X11 display socket candidate (commonly `$TMPDIR/.X11-unix/X0` for `DISPLAY=:0`). Actual paths can vary with `TMPDIR`, `XDG_RUNTIME_DIR`, display number, and how the server was launched.
+The read-only diagnostic `tools/probe-termux-x11-sockets.sh` checks the runtime paths and Unix socket nodes visible to the Termux shell. Termux:X11 is itself a fully fledged X server; its X11 display socket is commonly `$TMPDIR/.X11-unix/X0` for `DISPLAY=:0`. That is not a Wayland socket. The probe separately checks common Wayland compositor socket names such as `wayland-0` and `wayland-1`, but their absence does not by itself identify every possible transport. Actual paths can vary with `TMPDIR`, `XDG_RUNTIME_DIR`, display number, and how the server was launched.
 
 From a Termux shell, start Termux:X11 first:
 
@@ -18,7 +18,7 @@ Leave it running, open another Termux session, go to the repository root, and ru
 
     bash tools/probe-termux-x11-sockets.sh
 
-For a meaningful XWayland check, run the XWayland setup you want to test as well, then rerun the probe. The script does not start or stop servers, change permissions, or modify files. It reports socket paths and metadata only; a socket's presence does not prove that another Android app is authorized to connect to it. If no expected socket is found, check the printed runtime directories and process list. Do not treat a missing X11 `X0` socket as proof that Termux:X11 itself failed: its Wayland endpoint and the XWayland X11 socket are different endpoints.
+For a meaningful XWayland check, an actual Wayland compositor/backend and an XWayland server must be running; the current project does not implement those yet. The script does not start or stop servers, change permissions, or modify files. It reports socket paths and metadata only; a socket's presence does not prove that another Android app is authorized to connect to it. If no expected socket is found, check the printed runtime directories and process list.
 
 ## Build the native diagnostic server
 
