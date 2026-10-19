@@ -526,6 +526,7 @@ class MainActivity : Activity() {
         }, "binder-fd-reader")
         val request = Parcel.obtain()
         val response = Parcel.obtain()
+        var parcelsRecycled = false
         try {
             request.writeInterfaceToken(BINDER_PROBE_DESCRIPTOR)
             request.writeInt(payload.size)
@@ -552,6 +553,11 @@ class MainActivity : Activity() {
             } finally {
                 unbindProbeForFd(binding.second)
             }
+            // Parcel retains duplicated FD references. Recycle it before waiting for EOF,
+            // otherwise the output pipe can stay open and the reader blocks indefinitely.
+            request.recycle()
+            response.recycle()
+            parcelsRecycled = true
             try { inputPipe[0].close() } catch (_: Exception) { }
             try { outputPipe[1].close() } catch (_: Exception) { }
             writer.join(5000)
@@ -568,8 +574,10 @@ class MainActivity : Activity() {
             try { inputPipe[1].close() } catch (_: Exception) { }
             try { outputPipe[0].close() } catch (_: Exception) { }
             try { outputPipe[1].close() } catch (_: Exception) { }
-            request.recycle()
-            response.recycle()
+            if (!parcelsRecycled) {
+                request.recycle()
+                response.recycle()
+            }
             payload.fill(0)
         }
     }
