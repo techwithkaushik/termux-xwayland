@@ -133,7 +133,9 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
     let path_result = (|| -> Result<String, jni::errors::Error> {
         let mut env = unsafe { jni::JNIEnv::from_raw(raw_env)? };
         let path = unsafe { jni::objects::JString::from_raw(raw_path) };
-        Ok(env.get_string(&path)?.to_string_lossy().into_owned())
+        let java_path = env.get_string(&path)?;
+        let owned_path = java_path.to_string_lossy().into_owned();
+        Ok(owned_path)
     })();
     let path = match path_result {
         Ok(path) => path,
@@ -184,7 +186,9 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
         info!("Filesystem Unix socket connect succeeded: {path}");
         0
     } else {
-        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+        let errno = std::io::Error::last_os_error()
+            .raw_os_error()
+            .unwrap_or(libc::EIO);
         warn!("Filesystem Unix socket connect failed for {path}; errno={errno}");
         -errno
     };
