@@ -85,6 +85,24 @@ class MainActivity : Activity() {
         window.statusBarColor = ink
         window.navigationBarColor = ink
         setContentView(buildScreen())
+        refreshTermuxControlStatus()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshTermuxControlStatus()
+    }
+
+    private fun refreshTermuxControlStatus() {
+        if (!::statusTitle.isInitialized || !::statusDescription.isInitialized) return
+        val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
+        if (prefs.getString("state", "disconnected") == "connected") {
+            statusTitle.text = "Termux control connected"
+            statusDescription.text = "Authenticated Termux control handshake succeeded. Live Wayland frames and input are not connected yet."
+        } else {
+            statusTitle.text = "Not connected"
+            statusDescription.text = "No authenticated Termux control session is active. Live desktop rendering is not implemented yet."
+        }
     }
 
     private fun buildScreen(): View {
