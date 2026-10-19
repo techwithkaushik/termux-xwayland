@@ -78,6 +78,18 @@ Transport requirements:
 - No TCP, localhost port, root, SELinux policy change, or temporary-file frame streaming.
 - The app displays a real compositor frame before the project claims desktop support.
 
+## Low-bandwidth validation status (2026-10-19)
+
+The user verified these diagnostics on the target Android 10 device:
+- Binder host-to-test-companion: exact 16 KiB echo passed.
+- Temporary loopback TCP echo on port 38471: passed.
+- Temporary TXWB v1 PING/PONG on port 38472: 12-byte header and exact 27-byte payload passed.
+- Local Python negative tests for the diagnostic header validator: 9 tests passed.
+
+These results do not establish Termux-to-Binder integration, file-descriptor transfer, persistent full-duplex streaming, real compositor frames, or input forwarding. The TCP probes are temporary experiments only. The production acceptance criteria above still prohibit a permanent TCP listener/fallback.
+
+The next implementation milestone should be a small, bounded Binder file-descriptor handoff prototype between the host and the test companion, with explicit ownership/close semantics and a bidirectional echo test. Only after that should the project investigate how the existing Termux installation can safely participate without replacement or generic RUN_COMMAND authorization. Avoid requiring another APK download for documentation or Python-only changes; batch Android changes into a later build when a device test is needed.
+
 ## Current status
 
 This is an architecture contract, not an implemented transport. The existing abstract AF_UNIX prototype is blocked by cross-UID `EACCES` on the target device. The current Binder probe is host-to-test-companion only. No FD handoff, Termux-side package, real compositor or real desktop frame path has been implemented or device-verified.
