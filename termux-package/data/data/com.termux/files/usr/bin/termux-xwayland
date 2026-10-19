@@ -71,7 +71,7 @@ start_server() {
 }
 stop_server() {
   if ! server_is_running; then
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
     printf 'Wayland server: not running\n'
     return 0
   fi
@@ -105,7 +105,7 @@ show_status() {
     printf 'Wayland server: not running\n'
   fi
   printf 'Android stream connection: not established (authenticated frame transport is not integrated yet)\n'
-  if [ "$host_found" -eq 1 ] && server_is_running; then return 0; fi
+  if [ "$host_found" -eq 1 ]; then return 0; fi
   return 1
 }
 start_session() {
