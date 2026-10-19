@@ -14,6 +14,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.IBinder
 import android.os.Parcel
 import android.os.Process
@@ -38,6 +40,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -79,6 +82,14 @@ class MainActivity : Activity() {
     private lateinit var framedProbeDescription: TextView
     private lateinit var framedProbeButton: Button
     @Volatile private var framedProbeRunning = false
+    private val statusPollHandler = Handler(Looper.getMainLooper())
+    private val statusPollInFlight = AtomicBoolean(false)
+    private val statusPollRunnable = object : Runnable {
+        override fun run() {
+            pollTermuxServerStatus()
+            statusPollHandler.postDelayed(this, 2000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,7 +112,12 @@ class MainActivity : Activity() {
         if (uri.scheme != "termuxxwayland" || uri.host != "start") return
         val sessionId = uri.getQueryParameter("session_id").orEmpty()
         val serverState = uri.getQueryParameter("server").orEmpty()
-        if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) || serverState != "running") {
+        val port = uri.getQueryParameter("port")?.toIntOrNull() ?: -1
+        val token = uri.getQueryParameter("token").orEmpty()
+        if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
+            serverState != "running" ||
+            port !in 30000..49999 ||
+            !token.matches(Regex("^[a-f0-9]{64}$"))) {
             getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
                 .putString("state", "invalid_request").apply()
             return
@@ -110,8 +126,58 @@ class MainActivity : Activity() {
             .putString("state", "request_received")
             .putString("session_id", sessionId)
             .putString("server_state", serverState)
+            .putInt("monitor_port", port)
+            .putString("monitor_token", token)
             .putLong("received_at", System.currentTimeMillis())
             .apply()
+        pollTermuxServerStatus()
+    }
+
+    private fun pollTermuxServerStatus() {
+        val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
+        val sessionId = prefs.getString("session_id", "").orEmpty()
+        val token = prefs.getString("monitor_token", "").orEmpty()
+        val port = prefs.getInt("monitor_port", -1)
+        if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
+            !token.matches(Regex("^[a-f0-9]{64}$")) ||
+            port !in 30000..49999 ||
+            !statusPollInFlight.compareAndSet(false, true)) return
+
+        Thread({
+            var response: String? = null
+            try {
+                Socket().use { socket ->
+                    socket.soTimeout = 1500
+                    socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
+                    val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.US_ASCII)
+                    writer.write("STATUS $token\\n")
+                    writer.flush()
+                    response = BufferedReader(
+                        InputStreamReader(socket.getInputStream(), Charsets.US_ASCII)
+                    ).readLine()
+                }
+            } catch (_: IOException) {
+                response = null
+            } finally {
+                statusPollInFlight.set(false)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val current = getSharedPreferences("termux_control_session", MODE_PRIVATE)
+                if (current.getString("session_id", "").orEmpty() != sessionId) return@runOnUiThread
+                val nextState = when (response) {
+                    "RUNNING $sessionId" -> "server_running"
+                    "STOPPED $sessionId" -> "server_stopped"
+                    "DENIED" -> "monitor_auth_failed"
+                    else -> "server_unreachable"
+                }
+                if (current.getString("state", "") != nextState) {
+                    current.edit().putString("state", nextState)
+                        .putLong("last_status_check", System.currentTimeMillis()).apply()
+                    refreshTermuxControlStatus()
+                }
+            }
+        }, "termux-server-status").start()
     }
 
     private fun refreshTermuxControlStatus() {
@@ -120,15 +186,31 @@ class MainActivity : Activity() {
         when (prefs.getString("state", "disconnected")) {
             "request_received" -> {
                 statusTitle.text = "Termux-Companion connection received"
-                statusDescription.text = "Wayland server start was reported by Termux and the host received its launch request. Live frame/input transport is not connected yet."
+                statusDescription.text = "Launch request received. Verifying the live Wayland server over authenticated loopback status polling…"
             }
-            "connected" -> {
-                statusTitle.text = "Legacy control session active"
-                statusDescription.text = "A prior control session is recorded. This is not proof of a live desktop stream."
+            "server_running" -> {
+                statusTitle.text = "Termux-Companion connection received"
+                statusDescription.text = "Connected to the Termux status endpoint. Weston and its Wayland socket are confirmed running. Live desktop frames and input are still pending."
+            }
+            "server_stopped" -> {
+                statusTitle.text = "Termux server stopped"
+                statusDescription.text = "The Termux status endpoint confirms Weston is not running. Run termux-xwayland start to start a new session."
+            }
+            "server_unreachable" -> {
+                statusTitle.text = "Termux server not reachable"
+                statusDescription.text = "The local status endpoint did not respond. Termux may be stopped, the monitor may have exited, or the session may have expired."
+            }
+            "monitor_auth_failed" -> {
+                statusTitle.text = "Termux status authentication failed"
+                statusDescription.text = "The monitor rejected the session token. Start a fresh session from Termux."
+            }
+            "invalid_request" -> {
+                statusTitle.text = "Invalid Termux connection request"
+                statusDescription.text = "The launch request did not contain valid session details. Start a fresh session from Termux."
             }
             else -> {
                 statusTitle.text = "Waiting for Termux"
-                statusDescription.text = "Run termux-xwayland start in Termux. The host will show a connection request after the Wayland socket is created."
+                statusDescription.text = "Run termux-xwayland start in Termux. The host will open when the Wayland socket is ready."
             }
         }
     }
