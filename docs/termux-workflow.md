@@ -30,7 +30,7 @@ Generate a fresh 256-bit token for each run and start the server. The token is p
     printf 'Session token: %s\n' "$TERMUX_XWAYLAND_TOKEN_HEX"
     ./target/release/termux-xwayland-compositor
 
-The server listens on the abstract AF_UNIX socket a session-specific abstract AF_UNIX socket derived from the first 8 token bytes. In the Android app, enter the 64-character session token and tap **Connect securely**. No host, port, Wi-Fi, localhost TCP listener or Internet permission is needed. The UI should report **Test frame received** after the handshake succeeds and the synthetic test pattern is rendered. Tap **Disconnect** to close the session. When finished, stop the server with Ctrl+C and unset the token with `unset TERMUX_XWAYLAND_TOKEN_HEX`.
+The server listens on a session-specific abstract AF_UNIX socket derived from the first 8 token bytes of the token. In the Android app, enter the 64-character session token and tap **Connect securely**. No host, port, Wi-Fi, localhost TCP listener or Internet permission is needed. The UI should report **Test frame received** after the handshake succeeds and the synthetic test pattern is rendered. Tap **Disconnect** to close the session. When finished, stop the server with Ctrl+C and unset the token with `unset TERMUX_XWAYLAND_TOKEN_HEX`.
 
 If connection fails, verify that the server is running and the token has exactly 64 hexadecimal characters. Abstract-socket access between separate Android app UIDs may be affected by device SELinux policy. This needs on-device testing; do not expose a TCP listener as a workaround.
 
