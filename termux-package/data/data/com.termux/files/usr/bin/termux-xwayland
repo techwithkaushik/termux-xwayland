@@ -53,19 +53,19 @@ start_control_session() {
     printf 'termux-xwayland: Android control handshake was rejected.\n%s\n' "$response" >&2
     return 1
   fi
-  printf 'Android control connection: authenticated (protocol v1)\n'
+  printf 'Android control handshake: accepted (protocol v1)\n'
 }
 
 show_control_status() {
   local response
   if ! response="$(control_call status)"; then
-    printf 'Android control connection: unavailable (host IPC endpoint not reachable)\n'
+    printf 'Android control handshake: unavailable (host IPC endpoint not reachable)\n'
     return 0
   fi
   case "$response" in
-    *"state=connected"*) printf 'Android control connection: authenticated (protocol v1)\n' ;;
-    *"state=disconnected"*) printf 'Android control connection: disconnected\n' ;;
-    *) printf 'Android control connection: unknown (endpoint returned an unrecognized response)\n' ;;
+    *"state=connected"*) printf 'Android control handshake: accepted (protocol v1)\n' ;;
+    *"state=disconnected"*) printf 'Android control handshake: no active session\n' ;;
+    *) printf 'Android control handshake: unknown (endpoint returned an unrecognized response)\n' ;;
   esac
 }
 prepare_runtime_dir() {
