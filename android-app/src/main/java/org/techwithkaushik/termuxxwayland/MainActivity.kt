@@ -275,16 +275,27 @@ class MainActivity : Activity() {
                 accepted = server.accept()
                 Log.i("TermuxXWayland", "Server accepted client; writing probe bytes")
 
-                client.outputStream.use { output ->
-                    output.write(byteArrayOf(0x54, 0x58, 0x57, 0x42, 0x01, 0x02))
-                    output.flush()
-                }
+                val writer = Thread({
+                    try {
+                        Log.i("TermuxXWayland", "Writing six probe bytes")
+                        client?.outputStream?.write(byteArrayOf(0x54, 0x58, 0x57, 0x42, 0x01, 0x02))
+                        client?.outputStream?.flush()
+                        Log.i("TermuxXWayland", "Probe bytes written; shutting down client output")
+                        client?.shutdownOutput()
+                        Log.i("TermuxXWayland", "Client output shutdown complete")
+                    } catch (error: Throwable) {
+                        Log.e("TermuxXWayland", "Probe writer failed", error)
+                    }
+                }, "rust-jni-probe-writer")
+                writer.start()
 
                 val fd = accepted.fileDescriptor
                     ?: throw IOException("Connected diagnostic socket has no file descriptor")
                 Log.i("TermuxXWayland", "Local socket connected; invoking native reader")
                 val result = NativeBridge.nativeReadSocket(fd)
                 Log.i("TermuxXWayland", "Native reader returned $result")
+                writer.join(2000)
+                if (writer.isAlive) Log.w("TermuxXWayland", "Probe writer did not finish within 2 seconds")
                 runOnUiThread {
                     Toast.makeText(
                         this,
