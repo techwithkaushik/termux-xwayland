@@ -262,7 +262,7 @@ class MainActivity : Activity() {
                     previewImage.visibility = View.VISIBLE
                     statusDescription.text = String.format(
                         java.util.Locale.US,
-                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\\nPING/PONG round trip: %.2f ms\\nInitial frame received. Waiting for subsequent FRAME messages; the current bridge still sends only a synthetic frame.",
+                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\nPING/PONG round trip: %.2f ms\nInitial frame received. Waiting for subsequent FRAME messages; the current bridge still sends only a synthetic frame.",
                         kernelPeerUid, androidUid, roundTripMs
                     )
                 }
@@ -441,7 +441,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun socketNameForToken(token: ByteArray) {
+    private fun socketNameForToken(token: ByteArray): String {
         val fingerprint = token.take(8).joinToString("") { byte ->
             (byte.toInt() and 0xff).toString(16).padStart(2, '0')
         }
