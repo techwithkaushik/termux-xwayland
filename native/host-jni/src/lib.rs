@@ -74,16 +74,33 @@ fn read_stream(mut stream: UnixStream) -> io::Result<()> {
     }
 }
 
-/// Kotlin declaration: NativeBridge.nativeReadSocket(fd: Int): Int
+/// Kotlin declaration: NativeBridge.nativeReadSocket(fileDescriptor: FileDescriptor): Int
+/// Android's FileDescriptor stores its integer handle in the "descriptor" field.
 /// Returns 0 on orderly peer close, -1 on failure or timeout.
-/// Invoke from a background thread because this performs blocking I/O.
 #[no_mangle]
 pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nativeReadSocket(
-    _env: *mut jni::sys::JNIEnv,
+    raw_env: *mut jni::sys::JNIEnv,
     _receiver: jni::sys::jobject,
-    fd: jni::sys::jint,
+    file_descriptor: jni::sys::jobject,
 ) -> jni::sys::jint {
     init_logger();
+
+    let fd = (|| -> Result<jni::sys::jint, jni::errors::Error> {
+        let mut env = unsafe { jni::JNIEnv::from_raw(raw_env)? };
+        let field = env.get_field(
+            unsafe { jni::objects::JObject::from_raw(file_descriptor) },
+            "descriptor",
+            "I",
+        )?;
+        Ok(field.i()?)
+    })();
+    let fd = match fd {
+        Ok(fd) => fd,
+        Err(error) => {
+            error!("Unable to access Android FileDescriptor: {error}");
+            return -1;
+        }
+    };
 
     // Kotlin must pass a live, connected AF_UNIX/SOCK_STREAM descriptor.
     let stream = match unsafe { duplicate_connected_stream(fd) } {
