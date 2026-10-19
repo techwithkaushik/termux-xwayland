@@ -79,6 +79,7 @@ cli_tmp="$(mktemp -d)"
 trap 'rm -rf "$cli_tmp" "${tmp_out:-}"' EXIT
 mock_pm="$cli_tmp/pm"
 mock_open="$cli_tmp/termux-open"
+mock_weston="$cli_tmp/weston"
 open_log="$cli_tmp/open.log"
 cat > "$mock_pm" <<'MOCK_PM'
 #!/usr/bin/env bash
@@ -97,20 +98,44 @@ cat > "$mock_open" <<'MOCK_OPEN'
 [[ "${MOCK_OPEN_FAIL:-no}" != yes ]] || exit 1
 printf '%s\n' "$*" >> "$MOCK_OPEN_LOG"
 MOCK_OPEN
-chmod +x "$mock_pm" "$mock_open"
-cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" MOCK_OPEN_LOG="$open_log")
+cat > "$mock_weston" <<'MOCK_WESTON'
+#!/usr/bin/env bash
+set -euo pipefail
+socket_name=wayland-1
+for arg in "$@"; do
+  case "$arg" in --socket=*) socket_name="\${arg#--socket=}" ;; esac
+done
+exec python3 - "$XDG_RUNTIME_DIR/$socket_name" <<'PYTHON_WESTON'
+import signal, socket, sys, time
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(sys.argv[1])
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+while True:
+    time.sleep(1)
+PYTHON_WESTON
+MOCK_WESTON
+chmod +x "$mock_pm" "$mock_open" "$mock_weston"
+cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log")
 
 status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Live compositor/stream: not implemented yet' <<<"$status_output" || {
+grep -Fq 'Android stream connection: not established' <<<"$status_output" || {
   echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
 }
 
 "${cli_env[@]}" bash "$script" start >/dev/null
 grep -Fxq 'termuxxwayland://start' "$open_log" || {
   echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+}
+grep -S "$cli_tmp/runtime/wayland-1" >/dev/null 2>&1 || true
+running_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland server: running' <<<"$running_status" || {
+  echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
+}
+grep -Fq 'Android stream connection: not established' <<<"$running_status" || {
+  echo "FAIL: status must not claim a connected stream without a transport" >&2; exit 1;
 }
 
 if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
@@ -119,10 +144,11 @@ fi
 if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
   echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
 fi
-stop_status=0
-"${cli_env[@]}" bash "$script" stop >/dev/null 2>&1 || stop_status=$?
-[[ "$stop_status" -eq 3 ]] || {
-  echo "FAIL: stop should clearly return exit code 3 while session control is unimplemented" >&2; exit 1;
+"${cli_env[@]}" bash "$script" stop >/dev/null
+stopped_status=0
+"${cli_env[@]}" bash "$script" status >/dev/null 2>&1 || stopped_status=$?
+[[ "$stopped_status" -ne 0 ]] || {
+  echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
 }
 
-echo "PASS: Termux companion package structure, shell syntax, and DEB build checks passed."
+echo "PASS: Termux companion package, Weston lifecycle, CLI and notification-safe status checks passed."
