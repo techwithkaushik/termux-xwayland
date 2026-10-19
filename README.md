@@ -2,7 +2,7 @@
 
 A standalone Android display host for graphical sessions launched from Termux. The intended goal is to let users start graphical sessions in Termux and view them in this app, including XFCE through XWayland and native Wayland applications.
 
-> **Status: authenticated bridge smoke test with synthetic frame rendering; no real desktop rendering yet.** The Rust binary now listens on an abstract AF_UNIX stream socket (a session-specific abstract socket derived from the first 8 token bytes), authenticates a per-session token, and sends one synthetic RGBA test frame. The Android app connects with `LocalSocket`, validates the frame and renders a test pattern. This is not real desktop output; Wayland compositor integration, input forwarding, XWayland and XFCE/LXQt display are still pending. Do not run `xfce4-session` expecting it to appear here.
+> **Status: authenticated cross-UID IPC smoke test with UID reporting, PING/PONG and synthetic frame rendering; no real desktop rendering yet.** The Rust binary now listens on an abstract AF_UNIX stream socket (a session-specific abstract socket derived from the first 8 token bytes), authenticates a per-session token, reports the Termux process UID, and sends one synthetic RGBA test frame. The Android app connects with `LocalSocket`, compares the Termux UID with its own UID, validates and renders the frame, then verifies bidirectional communication with a PING/PONG round trip. This is not real desktop output; Wayland compositor integration, input forwarding, XWayland and XFCE/LXQt display are still pending. Do not run `xfce4-session` expecting it to appear here.
 
 ## Current implementation
 
