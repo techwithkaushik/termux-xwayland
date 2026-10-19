@@ -561,7 +561,7 @@ class MainActivity : Activity() {
             if (!echoed.toByteArray().contentEquals(payload)) {
                 throw IOException("FD echo bytes did not match the original payload")
             }
-            return "PASS • Android API ${android.os.Build.VERSION.SDK_INT} • exact ${payload.size}-byte round trip through two Binder-transferred pipe FDs. Android API $apiLevel • one-shot companion test only; Termux integration and sustained streaming remain unverified."
+            return "PASS • Android API $apiLevel • exact ${payload.size}-byte round trip through two Binder-transferred pipe FDs. One-shot companion test only; Termux integration and sustained streaming remain unverified."
         } finally {
             try { inputPipe[0].close() } catch (_: Exception) { }
             try { inputPipe[1].close() } catch (_: Exception) { }
