@@ -8,11 +8,9 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
-import java.io.EOFException
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.IOException
 import android.os.Process
+import java.io.EOFException
+import java.io.IOException
 
 /**
  * Minimal capability probe only. This is not yet a Termux bridge or frame transport.
