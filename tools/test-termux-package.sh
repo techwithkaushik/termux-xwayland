@@ -161,8 +161,8 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
 }
 
 "${cli_env[@]}" bash "$script" start >/dev/null
-grep -Eq '^termuxxwayland://start\?session_id=[a-f0-9]{32}&server=running
-  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+grep -Eq "^termuxxwayland://start\\?session_id=[a-f0-9]{32}&server=running$" "$open_log" || {
+  echo "FAIL: start must open the host with a server-ready session ID" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
@@ -187,37 +187,4 @@ grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
 }
  
-echo "PASS: Termux companion package, control handshake, Weston lifecycle and status checks passed."
- "$open_log" || {
-  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
-}
-running_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Wayland server: running' <<<"$running_status" || {
-  echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
-}
-grep -Fq 'Android control handshake: accepted (protocol v1)' <<<"$running_status" || {
-  echo "FAIL: status should report the accepted control handshake" >&2; exit 1;
-}
-grep -Fq 'Wayland frame stream: not connected' <<<"$running_status" || {
-  echo "FAIL: status must not claim a connected stream without a transport" >&2; exit 1;
-}
-grep -Fq -- '--method start' "$control_log" || {
-  echo "FAIL: start should perform the control handshake" >&2; exit 1;
-}
-
-if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
-  echo "FAIL: start should fail when no host package is detected" >&2; exit 1
-fi
-if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
-  echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
-fi
-"${cli_env[@]}" bash "$script" stop >/dev/null
-stopped_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
-  echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
-}
-grep -Fq 'Android control handshake: no active session' <<<"$stopped_status" || {
-  echo "FAIL: stop should clear the control session" >&2; exit 1;
-}
-
-echo "PASS: Termux companion package, control handshake, Weston lifecycle and status checks passed."
+echo "PASS: Termux companion package, host handoff, Weston lifecycle and status checks passed."
