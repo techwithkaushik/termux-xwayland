@@ -11,7 +11,19 @@ val devSigningProperties = Properties().apply {
         devSigningPropertiesFile.inputStream().use { load(it) }
     }
 }
-val hasDevSigning = devSigningPropertiesFile.isFile
+val signingStoreFile = System.getenv("SIGNING_KEY_STORE")?.takeIf { it.isNotBlank() }
+    ?: devSigningProperties.getProperty("storeFile")?.takeIf { it.isNotBlank() }
+val signingKeyAlias = System.getenv("SIGNING_KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    ?: devSigningProperties.getProperty("keyAlias")?.takeIf { it.isNotBlank() }
+val signingKeyPassword = System.getenv("SIGNING_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+    ?: devSigningProperties.getProperty("keyPassword")?.takeIf { it.isNotBlank() }
+val signingStorePassword = System.getenv("SIGNING_STORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    ?: devSigningProperties.getProperty("storePassword")?.takeIf { it.isNotBlank() }
+val hasDevSigning = signingStoreFile != null &&
+    signingKeyAlias != null &&
+    signingKeyPassword != null &&
+    signingStorePassword != null &&
+    rootProject.file(signingStoreFile).isFile
 
 android {
     namespace = "org.techwithkaushik.termuxxwayland.companion"
@@ -20,10 +32,10 @@ android {
     signingConfigs {
         if (hasDevSigning) {
             create("dev") {
-                storeFile = rootProject.file(devSigningProperties.getProperty("storeFile"))
-                storePassword = devSigningProperties.getProperty("storePassword")
-                keyAlias = devSigningProperties.getProperty("keyAlias")
-                keyPassword = devSigningProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(signingStoreFile!!)
+                storePassword = signingStorePassword!!
+                keyAlias = signingKeyAlias!!
+                keyPassword = signingKeyPassword!!
             }
         }
     }
