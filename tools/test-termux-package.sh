@@ -103,7 +103,7 @@ cat > "$mock_weston" <<'MOCK_WESTON'
 set -euo pipefail
 socket_name=wayland-1
 for arg in "$@"; do
-  case "$arg" in --socket=*) socket_name="\${arg#--socket=}" ;; esac
+  case "$arg" in --socket=*) socket_name="${arg#--socket=}" ;; esac
 done
 exec python3 - "$XDG_RUNTIME_DIR/$socket_name" <<'PYTHON_WESTON'
 import signal, socket, sys, time
@@ -129,7 +129,6 @@ grep -Fq 'Android stream connection: not established' <<<"$status_output" || {
 grep -Fxq 'termuxxwayland://start' "$open_log" || {
   echo "FAIL: start must open the registered host deep link" >&2; exit 1;
 }
-grep -S "$cli_tmp/runtime/wayland-1" >/dev/null 2>&1 || true
 running_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
