@@ -31,7 +31,7 @@ class IpcProbeService : Service() {
                 reply?.writeString(DESCRIPTOR)
                 return true
             }
-            if (code != TRANSACTION_ECHO && code != TRANSACTION_FD_ECHO) return super.onTransact(code, data, reply, flags)
+            if (code != TRANSACTION_ECHO && code != TRANSACTION_FD_ECHO && code != TRANSACTION_PING) return super.onTransact(code, data, reply, flags)
             if (reply == null) return false
 
             return try {
@@ -43,7 +43,16 @@ class IpcProbeService : Service() {
                     throw SecurityException("Binder probe caller signature is not trusted")
                 }
 
-                if (code == TRANSACTION_ECHO) {
+                if (code == TRANSACTION_PING) {
+                    val nonce = data.readLong()
+                    reply.writeNoException()
+                    reply.writeInt(Process.myUid())
+                    reply.writeInt(callerUid)
+                    reply.writeInt(Build.VERSION.SDK_INT)
+                    reply.writeLong(nonce)
+                    reply.writeLong(android.os.SystemClock.elapsedRealtime())
+                    true
+                } else if (code == TRANSACTION_ECHO) {
                     val payloadSize = data.readInt()
                     if (payloadSize !in 0..MAX_PAYLOAD_BYTES) {
                         throw IllegalArgumentException(
@@ -113,6 +122,7 @@ class IpcProbeService : Service() {
         private const val DESCRIPTOR = "org.techwithkaushik.termuxxwayland.ipc.PROBE"
         private const val TRANSACTION_ECHO = IBinder.FIRST_CALL_TRANSACTION + 17
         private const val TRANSACTION_FD_ECHO = IBinder.FIRST_CALL_TRANSACTION + 18
+        private const val TRANSACTION_PING = IBinder.FIRST_CALL_TRANSACTION + 19
         private const val MAX_PAYLOAD_BYTES = 64 * 1024
     }
 }
