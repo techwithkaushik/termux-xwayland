@@ -6,6 +6,16 @@ The native binary currently provides a **single-client authenticated abstract Un
 
 The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-cross-app-ipc.md). Do not continue treating the abstract socket as the default cross-UID path.
 
+## Binder companion capability probe (experimental)
+
+Build both debug APKs with the same Gradle/JDK environment so Android signs them with the same debug certificate:
+
+    gradle --no-daemon :ipc-companion:assembleDebug :android-app:assembleDebug
+
+Install `ipc-companion/build/outputs/apk/debug/ipc-companion-debug.apk` first, then `android-app/build/outputs/apk/debug/android-app-debug.apk`. The companion declares a signature-level permission and the display host requests it. Open the display-host app and tap **Run Binder capability probe**. A pass requires a 16 KiB exact echo, a caller UID matching the host process, and a different service UID. If Android rejects the bind, check install order and signing certificate; do not weaken the permission to `normal` or `dangerous`.
+
+This probe verifies only display-host ↔ companion Binder IPC. It does **not** verify access from the existing Termux app, a long-lived bidirectional stream, file-descriptor passing, or frame performance. Those remain separate device acceptance tests. No network permission, TCP listener, root, or SELinux change is introduced.
+
 ## Probe Termux:X11 and XWayland sockets
 
 The read-only diagnostic `tools/probe-termux-x11-sockets.sh` checks the runtime paths and Unix socket nodes visible to the Termux shell. Termux:X11 is itself a fully fledged X server; its X11 display socket is commonly `$TMPDIR/.X11-unix/X0` for `DISPLAY=:0`. That is not a Wayland socket. The probe separately checks common Wayland compositor socket names such as `wayland-0` and `wayland-1`, but their absence does not by itself identify every possible transport. Actual paths can vary with `TMPDIR`, `XDG_RUNTIME_DIR`, display number, and how the server was launched.
