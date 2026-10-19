@@ -55,6 +55,7 @@ class MainActivity : Activity() {
         const val BINDER_PROBE_PAYLOAD_BYTES = 16 * 1024
         const val BINDER_PROBE_MAX_PAYLOAD_BYTES = 64 * 1024
         const val BINDER_FD_PROBE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 18
+        const val BINDER_PING_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 19
     }
 
     private lateinit var tokenInput: EditText
@@ -817,6 +818,31 @@ class MainActivity : Activity() {
     }
 
     private fun performBinderProbe(remote: IBinder): String {
+        val nonce = System.nanoTime()
+        val pingRequest = Parcel.obtain()
+        val pingResponse = Parcel.obtain()
+        try {
+            pingRequest.writeInterfaceToken(BINDER_PROBE_DESCRIPTOR)
+            pingRequest.writeLong(nonce)
+            if (!remote.transact(BINDER_PING_TRANSACTION, pingRequest, pingResponse, 0)) {
+                throw IOException("Companion does not implement authenticated PING/PONG")
+            }
+            pingResponse.readException()
+            val pingServiceUid = pingResponse.readInt()
+            val pingCallerUid = pingResponse.readInt()
+            val pingApiLevel = pingResponse.readInt()
+            val echoedNonce = pingResponse.readLong()
+            val serviceUptime = pingResponse.readLong()
+            if (pingCallerUid != Process.myUid() || pingServiceUid == pingCallerUid) {
+                throw IOException("PING/PONG UID authorization check failed")
+            }
+            if (echoedNonce != nonce || serviceUptime <= 0L) {
+                throw IOException("PING/PONG response did not match request")
+            }
+        } finally {
+            pingRequest.recycle()
+            pingResponse.recycle()
+        }
         val payload = ByteArray(BINDER_PROBE_PAYLOAD_BYTES) { index ->
             ((index * 31 + 7) and 0xff).toByte()
         }
@@ -848,7 +874,7 @@ class MainActivity : Activity() {
             if (echoedSize != payload.size || !echoed.contentEquals(payload)) {
                 throw IOException("Binder echo payload did not match the request")
             }
-            return "PASS • host UID $callerUid → companion UID $serviceUid • Android API $apiLevel • exact ${payload.size}-byte echo. This verifies one bounded Binder round trip only; Termux integration and streaming remain unverified."
+            return "PASS • authenticated PING/PONG (API $apiLevel, service uptime ${android.os.SystemClock.elapsedRealtime()} ms) + host UID $callerUid → companion UID $serviceUid • exact ${payload.size}-byte echo. One Binder session verified; Termux integration and long-lived streaming remain unverified."
         } finally {
             request.recycle()
             response.recycle()
