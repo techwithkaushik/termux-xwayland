@@ -32,7 +32,7 @@ Native protocol/server checks from native/compositor:
     cargo check
     cargo build --release
 
-See docs/termux-workflow.md for the current diagnostic server workflow and docs/termux-companion-contract.md for the planned three-part integration. Use feat/phase1-android-host until the PR is merged.
+See docs/termux-workflow.md for the diagnostic server workflow, docs/termux-companion-contract.md for the three-part integration contract, and docs/termux-deb-install.md for building/installing the initial Termux DEB package. Use feat/phase1-android-host until the PR is merged.
 
 ## Architecture and next milestones
 
