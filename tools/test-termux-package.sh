@@ -41,7 +41,7 @@ check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host packag
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
-check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running"' "$script" "Android host receives server-ready launch event"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port&token=$token"' "$script" "Android host receives authenticated server monitor details"
 check_grep 'Wayland server started; Android host launch request sent.' "$script" "start reports host launch handoff"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
@@ -88,7 +88,7 @@ cat > "$mock_pm" <<'MOCK_PM'
 if [[ "${1:-}" == path && "${MOCK_HOST_PRESENT:-yes}" == yes ]]; then
   case "${2:-}" in
     org.techwithkaushik.termuxxwayland|org.techwithkaushik.termuxxwayland.debug)
-      printf 'package:/mock/base.apk\\n'
+      printf 'package:/mock/base.apk\n'
       exit 0
       ;;
   esac
@@ -98,7 +98,7 @@ MOCK_PM
 cat > "$mock_open" <<'MOCK_OPEN'
 #!/usr/bin/env bash
 [[ "${MOCK_OPEN_FAIL:-no}" != yes ]] || exit 1
-printf '%s\\n' "$*" >> "$MOCK_OPEN_LOG"
+printf '%s\n' "$*" >> "$MOCK_OPEN_LOG"
 MOCK_OPEN
 cat > "$mock_weston" <<'MOCK_WESTON'
 #!/usr/bin/env bash
@@ -124,7 +124,7 @@ for arg in "$@"; do
   case "$arg" in TCP-LISTEN:*) port="${arg#TCP-LISTEN:}"; port="${port%%,*}" ;; esac
 done
 [[ "$port" =~ ^[0-9]+$ ]] || exit 2
-printf 'N listening on AF=2 127.0.0.1:%s\\n' "$port" >&2
+printf 'N listening on AF=2 127.0.0.1:%s\n' "$port" >&2
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 MOCK_SOCAT
@@ -147,9 +147,11 @@ launch_uri="$(cat "$open_log")"
 grep -Eq '^termuxxwayland://start\\?session_id=[a-f0-9]{32}&server=running&port=[0-9]{5}&token=[a-f0-9]{64}$' <<<"$launch_uri" || {
   echo "FAIL: start must send session ID, monitor port, and authenticated token" >&2; exit 1;
 }
-session_id="$(sed -n 's/.*session_id=\\([a-f0-9]\\{32\\}\\).*/\\1/p' <<<"$launch_uri")"
-port="$(sed -n 's/.*&port=\\([0-9]\\{5\\}\\).*/\\1/p' <<<"$launch_uri")"
-token="$(sed -n 's/.*&token=\\([a-f0-9]\\{64\\}\\).*/\\1/p' <<<"$launch_uri")"
+session_id="${launch_uri#*session_id=}"
+session_id="${session_id%%&*}"
+port="${launch_uri#*&port=}"
+port="${port%%&*}"
+token="${launch_uri#*&token=}"
 [[ "$session_id" =~ ^[a-f0-9]{32}$ && "$port" =~ ^[0-9]{5}$ && "$token" =~ ^[a-f0-9]{64}$ ]] || {
   echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
@@ -160,11 +162,11 @@ grep -Fq 'Wayland server: running' <<<"$running_status" || {
 grep -Fq 'Android host detection: waiting for host app' <<<"$running_status" || {
   echo "FAIL: status should report monitor awaiting first host poll" >&2; exit 1;
 }
-valid_response="$(printf 'STATUS %s\\n' "$token" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
+valid_response="$(printf 'STATUS %s\n' "$token" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
 [[ "$valid_response" == "RUNNING $session_id" ]] || {
   echo "FAIL: authenticated status request should report running Weston" >&2; exit 1;
 }
-invalid_response="$(printf 'STATUS %s\\n' "$(printf '0%.0s' {1..64})" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
+invalid_response="$(printf 'STATUS %s\n' "$(printf '0%.0s' {1..64})" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
 [[ "$invalid_response" == "DENIED" ]] || {
   echo "FAIL: monitor must reject an incorrect token" >&2; exit 1;
 }
