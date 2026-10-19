@@ -146,8 +146,7 @@ fn handle_client<S: TimedStream>(mut stream: S, expected_token: &[u8; 32]) -> io
     // Report the Termux process effective UID so the Android app can verify
     // that this connection really crosses Android application UID boundaries.
     let termux_uid = unsafe { libc::geteuid() };
-    Message::new(MessageKind::Welcome, termux_uid.to_be_bytes().to_vec())?
-        .write_to(&mut stream)?;
+    Message::new(MessageKind::Welcome, termux_uid.to_be_bytes().to_vec())?.write_to(&mut stream)?;
     write_test_frame(&mut stream)?;
     // The handshake timeout must not silently expire an otherwise idle session.
     stream.set_read_timeout(None)?;
