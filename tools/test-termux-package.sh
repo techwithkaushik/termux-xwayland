@@ -35,6 +35,7 @@ if ! bash -n "$script"; then
 fi
 
 check_grep 'Package: termux-xwayland-bridge' "$pkg/DEBIAN/control" "package name metadata"
+check_grep 'Version: 0.3.0' "$pkg/DEBIAN/control" "package version metadata"
 check_grep 'Depends: bash, coreutils, socat' "$pkg/DEBIAN/control" "loopback status monitor dependency"
 check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metadata"
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
@@ -56,7 +57,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
     echo "FAIL: DEB package build" >&2
     exit 1
   fi
-  archive="$tmp_out/termux-xwayland-bridge_0.1.0_all.deb"
+  archive="$tmp_out/termux-xwayland-bridge_0.3.0_all.deb"
   check_file "$archive"
   [[ "$(dpkg-deb -f "$archive" Package)" == "termux-xwayland-bridge" ]] || {
     echo "FAIL: wrong package name in built DEB" >&2; exit 1;
