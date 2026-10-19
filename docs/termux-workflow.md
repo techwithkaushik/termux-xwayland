@@ -2,16 +2,18 @@
 
 ## Current milestone
 
-The native binary now provides a **single-client authenticated abstract Unix-domain socket smoke test** and sends one synthetic RGBA frame that the Android app validates and renders. It does not use TCP or localhost ports. This is not a compositor: no Wayland socket, real desktop frame capture, input forwarding, XWayland, XFCE or LXQt session is available yet.
+The native binary currently provides a **single-client authenticated abstract Unix-domain socket smoke test** and sends one synthetic RGBA frame. On the target Android 10 device, the Android app reports `EACCES` when connecting to this socket across app UIDs. The handshake and synthetic frame therefore have **not** been verified on that device. This prototype does not provide a working cross-app transport or compositor.
 
-## Build the native smoke-test server
+The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-cross-app-ipc.md). Do not continue treating the abstract socket as the default cross-UID path.
+
+## Build the native diagnostic server
 
 Install the native tools in Termux:
 
     pkg update
     pkg install git rust clang pkg-config
 
-Clone this repository and build the Rust binary:
+Clone this repository and build the Rust diagnostic binary:
 
     git clone https://github.com/techwithkaushik/termux-xwayland.git
     cd termux-xwayland
@@ -22,18 +24,24 @@ Clone this repository and build the Rust binary:
 
 Use `feat/phase1-android-host` until its PR is merged.
 
-## Start a local authenticated test session
+## Run the diagnostic socket test (optional)
 
-Generate a fresh 256-bit token for each run and start the server. The token is printed only so you can manually enter it in the Android app; do not share screenshots or logs containing it.
+This test can still be useful for protocol development, but it is expected to fail at the Android connection step on devices that deny cross-UID abstract sockets. It is not a workaround for the Android security policy.
+
+Generate a fresh 256-bit token and start the server:
 
     export TERMUX_XWAYLAND_TOKEN_HEX="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     printf 'Session token: %s\n' "$TERMUX_XWAYLAND_TOKEN_HEX"
     ./target/release/termux-xwayland-compositor
 
-The server listens on a session-specific abstract AF_UNIX socket derived from the first 8 token bytes of the token. In the Android app, enter the 64-character session token and tap **Connect securely**. No host, port, Wi-Fi, localhost TCP listener or Internet permission is needed. After connecting, the app checks the Termux process UID against the Android app UID, receives the synthetic frame, and sends a `PING` that must receive a `PONG`. When the UIDs differ and all checks pass, the status should say **Cross-UID IPC passed**, with both UIDs and the measured PING/PONG round-trip time. Tap **Disconnect** to close the session. When finished, stop the server with Ctrl+C and unset the token with `unset TERMUX_XWAYLAND_TOKEN_HEX`.
+Enter the 64-character token in the app and tap **Connect securely**. If the app reports `EACCES`, stop the test; changing the token or running `chmod` will not resolve a policy denial. Stop the server with Ctrl+C and clear the token with `unset TERMUX_XWAYLAND_TOKEN_HEX`. Do not share screenshots or logs containing the token.
 
-If the app reports `Android blocked the cross-app AF_UNIX connection (EACCES)`, the socket connection is being denied before token authentication. On Android 9/10 this is commonly SELinux per-app isolation; abstract sockets have no filesystem permission bits, so `chmod` cannot fix it. A shared-UID build requires the Android app and Termux to use the same shared UID and signing certificate (the ordinary CI debug APK does not satisfy that requirement). The alternative is to add an explicitly authorized Termux-mediated IPC endpoint. Do not disable SELinux or expose a TCP listener as a workaround. If the error is different, verify the server is running and the token has exactly 64 hexadecimal characters.
+## Transport requirements before compositor work
 
-## What this test proves
+The next milestone is a device-verified, explicitly authorized IPC mechanism that works with the user's existing Termux installation. Investigate a Termux-side companion/plugin exposing a permission-protected Binder endpoint. Termux's command-launch API may be useful for control-plane requests, but it has not been established as a low-latency bidirectional stream for frames and input.
 
-It validates local AF_UNIX socket connection across the two app UIDs (when they differ), the versioned authenticated handshake, the reported Termux UID, bounded frame delivery, Android bitmap rendering and a bidirectional PING/PONG round trip. It does not display Linux applications. The next milestone is integrating a real Wayland compositor and forwarding its actual output; input forwarding and XWayland/XFCE should follow after real frame capture is stable.
+Do not disable SELinux, require root, or add localhost TCP as a fallback. Do not begin real desktop frame streaming until the IPC probe proves bidirectional bounded messaging, session lifecycle handling, and Android 10 compatibility.
+
+## What is still missing
+
+No real Wayland compositor, desktop frame capture, input forwarding, XWayland, XFCE or LXQt session is available yet. The current synthetic frame is not Linux desktop output. Android CI and Rust tests validate compilation/protocol logic only; actual Android IPC policy must be tested on the target device.
