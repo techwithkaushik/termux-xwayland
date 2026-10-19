@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Read-only feasibility check: launch Weston headless briefly and inspect its log.
-# Does not install packages, alter permissions outside a private temporary dir,
-# or expose a network listener.
+# Feasibility check: launch Weston headless briefly and inspect its log.
+# Does not install packages, change permissions on existing paths, or expose a
+# network listener. If Termux's conventional X11 socket directory is missing,
+# create it with standard sticky-directory permissions and remove it only if
+# this probe created it and it is empty on exit.
 set -u
 
 for cmd in weston Xwayland mktemp; do
@@ -17,6 +19,22 @@ runtime="$workdir/runtime"
 mkdir -m 700 "$runtime"
 log="$workdir/weston.log"
 pid=""
+x11_socket_dir="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix"
+created_x11_socket_dir=0
+
+# XWayland needs the conventional Unix-socket directory to exist. Do not
+# modify an existing directory: it may belong to a running Termux:X11 session.
+if [[ ! -e "$x11_socket_dir" ]]; then
+  if mkdir -m 1777 "$x11_socket_dir" 2>/dev/null; then
+    created_x11_socket_dir=1
+  else
+    printf 'ERROR: X11 socket directory is missing and could not be created: %s\\n' "$x11_socket_dir" >&2
+    exit 2
+  fi
+elif [[ ! -d "$x11_socket_dir" ]]; then
+  printf 'ERROR: X11 socket path exists but is not a directory: %s\\n' "$x11_socket_dir" >&2
+  exit 2
+fi
 
 cleanup() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
