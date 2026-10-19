@@ -56,10 +56,9 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: Build Rust JNI library for 32-bit and 64-bit ARM
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
         run: |
           set -euo pipefail
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"
           cargo ndk --platform 26 -t armeabi-v7a -t arm64-v8a -o android-app/src/main/jniLibs build --manifest-path native/host-jni/Cargo.toml --release
           test -s android-app/src/main/jniLibs/armeabi-v7a/libtermux_xwayland_host.so
           test -s android-app/src/main/jniLibs/arm64-v8a/libtermux_xwayland_host.so
