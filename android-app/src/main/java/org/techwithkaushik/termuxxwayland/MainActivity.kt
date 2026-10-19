@@ -85,23 +85,51 @@ class MainActivity : Activity() {
         window.statusBarColor = ink
         window.navigationBarColor = ink
         setContentView(buildScreen())
+        handleTermuxIntent(intent)
         refreshTermuxControlStatus()
     }
 
-    override fun onResume() {
-        super.onResume()
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleTermuxIntent(intent)
         refreshTermuxControlStatus()
+    }
+
+    private fun handleTermuxIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "termuxxwayland" || uri.host != "start") return
+        val sessionId = uri.getQueryParameter("session_id").orEmpty()
+        val serverState = uri.getQueryParameter("server").orEmpty()
+        if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) || serverState != "running") {
+            getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
+                .putString("state", "invalid_request").apply()
+            return
+        }
+        getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
+            .putString("state", "request_received")
+            .putString("session_id", sessionId)
+            .putString("server_state", serverState)
+            .putLong("received_at", System.currentTimeMillis())
+            .apply()
     }
 
     private fun refreshTermuxControlStatus() {
         if (!::statusTitle.isInitialized || !::statusDescription.isInitialized) return
         val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
-        if (prefs.getString("state", "disconnected") == "connected") {
-            statusTitle.text = "Termux control handshake verified"
-            statusDescription.text = "Termux control handshake accepted. This is not a live frame/input connection; Wayland streaming is still pending."
-        } else {
-            statusTitle.text = "Not connected"
-            statusDescription.text = "No authenticated Termux control session is active. Live desktop rendering is not implemented yet."
+        when (prefs.getString("state", "disconnected")) {
+            "request_received" -> {
+                statusTitle.text = "Termux-Companion connection received"
+                statusDescription.text = "Wayland server start was reported by Termux and the host received its launch request. Live frame/input transport is not connected yet."
+            }
+            "connected" -> {
+                statusTitle.text = "Legacy control session active"
+                statusDescription.text = "A prior control session is recorded. This is not proof of a live desktop stream."
+            }
+            else -> {
+                statusTitle.text = "Waiting for Termux"
+                statusDescription.text = "Run termux-xwayland start in Termux. The host will show a connection request after the Wayland socket is created."
+            }
         }
     }
 
