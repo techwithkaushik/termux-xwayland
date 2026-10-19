@@ -56,6 +56,7 @@ class MainActivity : Activity() {
         const val BINDER_PROBE_MAX_PAYLOAD_BYTES = 64 * 1024
         const val BINDER_FD_PROBE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 18
         const val BINDER_PING_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 19
+        const val BINDER_STREAM_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 20
     }
 
     private lateinit var tokenInput: EditText
@@ -616,92 +617,97 @@ class MainActivity : Activity() {
     }
 
     private fun performBinderFdProbe(): String {
-        val payload = ByteArray(16 * 1024) { index -> ((index * 17 + 11) and 0xff).toByte() }
+        val payloads = listOf(
+            "HELLO • persistent stream".toByteArray(Charsets.UTF_8),
+            ByteArray(16 * 1024) { index -> ((index * 17 + 11) and 0xff).toByte() },
+            "CLOSE • clean EOF".toByteArray(Charsets.UTF_8)
+        )
         val inputPipe = ParcelFileDescriptor.createPipe()
         val outputPipe = ParcelFileDescriptor.createPipe()
-        val echoed = java.io.ByteArrayOutputStream(payload.size)
+        val echoed = java.util.Collections.synchronizedList(mutableListOf<ByteArray>())
         var writerFailure: Throwable? = null
         var readerFailure: Throwable? = null
         val writer = Thread({
             try {
-                ParcelFileDescriptor.AutoCloseOutputStream(inputPipe[1]).use { it.write(payload) }
+                ParcelFileDescriptor.AutoCloseOutputStream(inputPipe[1]).use { raw ->
+                    val output = java.io.DataOutputStream(raw)
+                    payloads.forEach { payload ->
+                        output.writeInt(payload.size)
+                        output.write(payload)
+                        output.flush()
+                    }
+                }
             } catch (error: Throwable) {
                 writerFailure = error
             }
-        }, "binder-fd-writer")
+        }, "binder-stream-writer")
         val reader = Thread({
             try {
-                ParcelFileDescriptor.AutoCloseInputStream(outputPipe[0]).use { input ->
-                    val buffer = ByteArray(2048)
+                ParcelFileDescriptor.AutoCloseInputStream(outputPipe[0]).use { raw ->
+                    val input = java.io.DataInputStream(raw)
                     while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        if (count == 0) continue
-                        if (echoed.size() + count > payload.size) {
-                            throw IOException("FD echo exceeded expected payload size")
-                        }
-                        echoed.write(buffer, 0, count)
+                        val size = try { input.readInt() } catch (_: java.io.EOFException) { break }
+                        if (size !in 0..(64 * 1024)) throw IOException("Invalid stream frame size: $size")
+                        val payload = ByteArray(size)
+                        input.readFully(payload)
+                        echoed.add(payload)
                     }
                 }
             } catch (error: Throwable) {
                 readerFailure = error
             }
-        }, "binder-fd-reader")
+        }, "binder-stream-reader")
         val request = Parcel.obtain()
         val response = Parcel.obtain()
         var parcelsRecycled = false
         try {
             request.writeInterfaceToken(BINDER_PROBE_DESCRIPTOR)
-            request.writeInt(payload.size)
             inputPipe[0].writeToParcel(request, 0)
             outputPipe[1].writeToParcel(request, 0)
-            writer.start()
-            reader.start()
-            var apiLevel = -1
             val binding = bindProbeForFd()
-            val binder = binding.first
             try {
-                if (!binder.transact(BINDER_FD_PROBE_TRANSACTION, request, response, 0)) {
-                    throw IOException("Companion does not implement FD handoff transaction")
+                if (!binding.first.transact(BINDER_STREAM_TRANSACTION, request, response, 0)) {
+                    throw IOException("Companion does not implement persistent stream transaction")
                 }
                 response.readException()
                 val serviceUid = response.readInt()
                 val callerUid = response.readInt()
-                apiLevel = response.readInt()
-                val echoedSize = response.readInt()
+                val apiLevel = response.readInt()
                 if (serviceUid == callerUid || callerUid != Process.myUid()) {
-                    throw IOException("Unexpected Binder caller/service UID")
+                    throw IOException("Unexpected Binder stream caller/service UID")
                 }
-                if (echoedSize != payload.size) throw IOException("FD echo size mismatch: $echoedSize")
+                if (apiLevel < 26) throw IOException("Unsupported Android API: $apiLevel")
             } finally {
                 unbindProbeForFd(binding.second)
             }
-            // Parcel retains duplicated FD references. Recycle it before waiting for EOF,
-            // otherwise the output pipe can stay open and the reader blocks indefinitely.
             request.recycle()
             response.recycle()
             parcelsRecycled = true
             try { inputPipe[0].close() } catch (_: Exception) { }
             try { outputPipe[1].close() } catch (_: Exception) { }
-            writer.join(5000)
-            reader.join(5000)
-            if (writer.isAlive || reader.isAlive) throw IOException("FD pipe worker timed out")
-            writerFailure?.let { throw IOException("FD input pipe failed", it) }
-            readerFailure?.let { throw IOException("FD output pipe failed", it) }
-            if (!echoed.toByteArray().contentEquals(payload)) {
-                throw IOException("FD echo bytes did not match the original payload")
+            writer.start()
+            reader.start()
+            writer.join(8000)
+            reader.join(8000)
+            if (writer.isAlive || reader.isAlive) throw IOException("Persistent stream workers timed out")
+            writerFailure?.let { throw IOException("Stream writer failed", it) }
+            readerFailure?.let { throw IOException("Stream reader failed", it) }
+            if (echoed.size != payloads.size || payloads.indices.any { !echoed[it].contentEquals(payloads[it]) }) {
+                throw IOException("Persistent stream frame count/content mismatch")
             }
-            return "PASS • Android API $apiLevel • exact ${payload.size}-byte round trip through two Binder-transferred pipe FDs. One-shot companion test only; Termux integration and sustained streaming remain unverified."
+            return "PASS • Android API 29-compatible Binder pipe stream • " + payloads.size +
+                " length-prefixed frames (including 16 KiB), exact ordered echo, clean EOF. " +
+                "Diagnostic stream only; Termux integration and sustained desktop streaming remain unverified."
         } finally {
-            try { inputPipe[0].close() } catch (_: Exception) { }
-            try { inputPipe[1].close() } catch (_: Exception) { }
-            try { outputPipe[0].close() } catch (_: Exception) { }
-            try { outputPipe[1].close() } catch (_: Exception) { }
+            listOf(inputPipe[0], inputPipe[1], outputPipe[0], outputPipe[1]).forEach {
+                try { it.close() } catch (_: Exception) { }
+            }
             if (!parcelsRecycled) {
                 request.recycle()
                 response.recycle()
             }
-            payload.fill(0)
+            payloads.forEach { it.fill(0) }
+            echoed.forEach { it.fill(0) }
         }
     }
 
