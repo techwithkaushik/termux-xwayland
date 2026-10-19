@@ -40,3 +40,10 @@ grep -q 'protectionLevel="signature"' ipc-companion/src/main/AndroidManifest.xml
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
+
+test -f termux-package/DEBIAN/control
+test -f termux-package/DEBIAN/postinst
+test -f termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+test -f termux-package/build-deb.sh
+bash -n termux-package/build-deb.sh
+bash tools/test-termux-package.sh
