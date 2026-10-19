@@ -67,6 +67,10 @@ class MainActivity : Activity() {
     private lateinit var tcpProbeDescription: TextView
     private lateinit var tcpProbeButton: Button
     @Volatile private var tcpProbeRunning = false
+    private lateinit var framedProbeTitle: TextView
+    private lateinit var framedProbeDescription: TextView
+    private lateinit var framedProbeButton: Button
+    @Volatile private var framedProbeRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -180,7 +184,18 @@ class MainActivity : Activity() {
         content.addView(tcpProbeTitle)
         content.addView(tcpProbeDescription, margins(bottom = 8))
         tcpProbeButton = actionButton("Test Termux TCP connection") { runTcpProbe() }
-        content.addView(tcpProbeButton, margins(bottom = 16))
+        content.addView(tcpProbeButton, margins(bottom = 10))
+        framedProbeTitle = label("Not tested", 17, ink, true).apply {
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        framedProbeDescription = label(
+            "Checks the existing TXWB v1 12-byte frame header, PING/PONG message types, payload length, and exact payload echo. Diagnostic only.",
+            13, muted, false
+        )
+        content.addView(framedProbeTitle)
+        content.addView(framedProbeDescription, margins(bottom = 8))
+        framedProbeButton = actionButton("Test framed TXWB protocol") { runFramedProbe() }
+        content.addView(framedProbeButton, margins(bottom = 16))
 
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
@@ -460,6 +475,44 @@ class MainActivity : Activity() {
                 tcpProbeDescription.text = result
             }
         }, "tcp-loopback-probe").start()
+    }
+
+    private fun runFramedProbe() {
+        if (framedProbeRunning) return
+        framedProbeRunning = true
+        framedProbeButton.isEnabled = false
+        framedProbeTitle.text = "Testing TXWB v1 framing…"
+        framedProbeDescription.text = "Sending one bounded PING frame to the loopback diagnostic server."
+        Thread({
+            val result = try {
+                val payload = "TERMUX_XWAYLAND_FRAME_PROBE".toByteArray(Charsets.UTF_8)
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress("127.0.0.1", 38472), 3000)
+                    socket.soTimeout = 3000
+                    BridgeProtocol.write(socket.getOutputStream(), BridgeMessageKind.PING, payload)
+                    val response = BridgeProtocol.read(socket.getInputStream())
+                    if (response.kind != BridgeMessageKind.PONG) {
+                        throw IOException("Expected PONG frame, received ${response.kind}")
+                    }
+                    if (!response.payload.contentEquals(payload)) {
+                        throw IOException("PONG payload did not exactly match PING payload")
+                    }
+                    "PASS • TXWB v1 header, PING/PONG types, bounded payload length and exact echo verified on 127.0.0.1:38472. Diagnostic only; no desktop frames or production bridge."
+                }
+            } catch (error: Exception) {
+                "FAIL • ${error.message ?: error.javaClass.simpleName}. Start tools/tcp-framed-protocol-probe.py in Termux."
+            }
+            runOnUiThread {
+                framedProbeRunning = false
+                framedProbeButton.isEnabled = true
+                framedProbeTitle.text = if (result.startsWith("PASS")) {
+                    "TXWB framed protocol passed"
+                } else {
+                    "TXWB framed protocol failed"
+                }
+                framedProbeDescription.text = result
+            }
+        }, "tcp-framed-protocol-probe").start()
     }
 
     private fun performBinderProbe(remote: IBinder): String {
