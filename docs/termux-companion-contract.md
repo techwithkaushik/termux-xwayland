@@ -8,7 +8,7 @@ Provide a three-part integration without requiring the user to enable Termux's g
 2. **Termux-side companion package/CLI** is installed inside the Termux environment. The user starts a session by invoking its command from Termux. It manages session intent and starts/observes the Linux-side compositor process.
 3. **Termux-XWayland Android host** owns the display surface, Android input, session UI and Android lifecycle.
 
-The companion package is not the same thing as the existing experimental `:ipc-companion` APK. That APK currently only tests same-certificate host-to-companion Binder calls.
+The production companion must live inside Termux as the `termux-xwayland-bridge` package/CLI. Do not distribute or require a separate companion APK. The old `:ipc-companion` module was a same-certificate Binder experiment; it is no longer included in the Gradle build or CI APK artifacts. Its results are only historical feasibility evidence, not the production integration.
 
 ## Responsibilities
 
@@ -110,3 +110,12 @@ This is an architecture contract, not an implemented transport. The existing abs
 ### Next gate
 
 Implement and test a persistent, bounded, bidirectional Binder-mediated stream with explicit session start/stop, disconnect/reconnect, backpressure and descriptor cleanup. Then establish how the existing Termux shell process participates without generic RUN_COMMAND authorization or replacing Termux. Until that is proven, do not claim Termux connectivity, real Wayland frames, input forwarding, or desktop support.
+
+
+## Packaging decision (2026-10-20)
+
+- The only Android APK target is the display host (`:android-app`).
+- The companion is delivered as a Termux package/CLI via `termux-package/build-deb.sh`, installed in the existing Termux environment; it is not a separately installable Android APK.
+- CI no longer assembles, signs, or uploads a companion APK.
+- Binder tests against the old separate APK do not satisfy the production acceptance criteria. The next implementation must discover a supported way for the Termux-side process to initiate an authorized session without relying on a second Android package, generic RUN_COMMAND authorization, a permanent TCP listener, root, or SELinux changes.
+- Do not show a successful Binder test as proof of Termux connectivity. Remove or clearly mark old host UI controls that require the retired test APK before releasing the next build.
