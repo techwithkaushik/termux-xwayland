@@ -265,8 +265,7 @@ mod tests {
         assert_eq!(address.sun_family as i32, libc::AF_UNIX);
         assert_eq!(address.sun_path[0], 0);
         assert_eq!(
-            &address.sun_path[1..1 + test_name.len()]
-                .to_vec(),
+            &address.sun_path[1..1 + test_name.len()].to_vec(),
             test_name.as_bytes()
         );
         assert_eq!(
