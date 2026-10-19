@@ -12,6 +12,7 @@ test -f native/compositor/src/protocol.rs
 test -f native/compositor/src/bridge.rs
 test -f docs/bridge-protocol.md
 grep -q 'Connect securely' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q '127, 0, 0, 1' native/compositor/src/bridge.rs
+grep -q 'termux_xwayland_bridge_v1' native/compositor/src/bridge.rs
+grep -q 'LocalSocketAddress.Namespace.ABSTRACT' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
 echo "Bridge and scaffold structure checks passed."
