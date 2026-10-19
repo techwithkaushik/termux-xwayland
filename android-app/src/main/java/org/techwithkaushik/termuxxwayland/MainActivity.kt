@@ -12,6 +12,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Process
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -23,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.nio.ByteBuffer
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -166,14 +168,26 @@ class MainActivity : Activity() {
                 BridgeProtocol.write(candidate.getOutputStream(), BridgeMessageKind.HELLO, token)
                 token.fill(0)
                 val response = BridgeProtocol.read(candidate.getInputStream())
-                if (response.kind != BridgeMessageKind.WELCOME || response.payload.isNotEmpty()) {
-                    throw IllegalStateException("Bridge rejected the handshake")
+                if (response.kind != BridgeMessageKind.WELCOME || response.payload.size != 4) {
+                    throw IllegalStateException("Bridge handshake did not include a valid Termux UID")
                 }
+                val termuxUid = ByteBuffer.wrap(response.payload).int.toLong() and 0xffffffffL
+                val androidUid = Process.myUid().toLong()
                 val frameMessage = BridgeProtocol.read(candidate.getInputStream())
                 if (frameMessage.kind != BridgeMessageKind.FRAME) {
                     throw IllegalStateException("Expected a test frame after authentication")
                 }
                 val testFrame = decodeTestFrame(frameMessage.payload)
+
+                // A successful authenticated handshake proves Android -> Termux;
+                // PING/PONG verifies traffic in both directions over this socket.
+                val pingStartedAt = System.nanoTime()
+                BridgeProtocol.write(candidate.getOutputStream(), BridgeMessageKind.PING)
+                val pong = BridgeProtocol.read(candidate.getInputStream())
+                if (pong.kind != BridgeMessageKind.PONG || pong.payload.isNotEmpty()) {
+                    throw IllegalStateException("Termux bridge did not answer the PING with PONG")
+                }
+                val roundTripMs = (System.nanoTime() - pingStartedAt) / 1_000_000.0
                 activeSocket = candidate
                 candidate = null
                 runOnUiThread {
@@ -181,11 +195,18 @@ class MainActivity : Activity() {
                     connectButton.isEnabled = true
                     connectButton.text = "Disconnect"
                     tokenInput.text.clear()
-                    statusTitle.text = "Test frame received"
+                    statusTitle.text = if (termuxUid != androidUid) {
+                        "Cross-UID IPC passed"
+                    } else {
+                        "IPC passed (same UID)"
+                    }
                     previewImage.setImageBitmap(testFrame)
                     previewImage.visibility = View.VISIBLE
-                    statusDescription.text =
-                        "Authenticated successfully. The image below is a synthetic test pattern—not a Linux desktop or Wayland output."
+                    statusDescription.text = String.format(
+                        java.util.Locale.US,
+                        "Termux process UID: %d • Android app UID: %d\nPING/PONG round trip: %.2f ms\nAuthenticated socket and two-way communication verified. The image is synthetic, not desktop output.",
+                        termuxUid, androidUid, roundTripMs
+                    )
                 }
             } catch (error: Exception) {
                 token.fill(0)
