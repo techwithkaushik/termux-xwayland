@@ -209,7 +209,10 @@ class MainActivity : Activity() {
                     throw IllegalStateException("Termux bridge did not answer the PING with PONG")
                 }
                 val roundTripMs = (System.nanoTime() - pingStartedAt) / 1_000_000.0
-                activeSocket = candidate
+                // Keep the authenticated connection open for later FRAME messages.
+                candidate.soTimeout = 0
+                val sessionSocket = candidate
+                activeSocket = sessionSocket
                 candidate = null
                 runOnUiThread {
                     connecting = false
@@ -217,18 +220,56 @@ class MainActivity : Activity() {
                     connectButton.text = "Disconnect"
                     tokenInput.text.clear()
                     statusTitle.text = if (termuxUid != androidUid) {
-                        "Cross-UID IPC passed"
+                        "Connected • waiting for frames"
                     } else {
-                        "IPC passed (same UID)"
+                        "Connected (same UID)"
                     }
                     previewImage.setImageBitmap(testFrame)
                     previewImage.visibility = View.VISIBLE
                     statusDescription.text = String.format(
                         java.util.Locale.US,
-                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\nPING/PONG round trip: %.2f ms\nKernel peer credentials, token authentication and two-way communication verified. The image is synthetic, not desktop output.",
+                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\\nPING/PONG round trip: %.2f ms\\nInitial frame received. Waiting for subsequent FRAME messages; the current bridge still sends only a synthetic frame.",
                         kernelPeerUid, androidUid, roundTripMs
                     )
                 }
+                Thread({
+                    try {
+                        while (!sessionSocket.isClosed && activeSocket === sessionSocket) {
+                            val message = BridgeProtocol.read(sessionSocket.getInputStream())
+                            when (message.kind) {
+                                BridgeMessageKind.FRAME -> {
+                                    val bitmap = decodeTestFrame(message.payload)
+                                    runOnUiThread {
+                                        if (activeSocket === sessionSocket) {
+                                            previewImage.setImageBitmap(bitmap)
+                                            statusTitle.text = "Frame received"
+                                            statusDescription.text =
+                                                "Receiving bridge frames. Desktop capture is not yet wired into the Termux server."
+                                        } else {
+                                            bitmap.recycle()
+                                        }
+                                    }
+                                }
+                                BridgeMessageKind.PONG -> {
+                                    if (message.payload.isNotEmpty()) {
+                                        throw IOException("Invalid PONG payload")
+                                    }
+                                }
+                                BridgeMessageKind.CLOSE -> break
+                                else -> throw IOException("Unexpected message while receiving frames: ${message.kind}")
+                            }
+                        }
+                    } catch (error: Exception) {
+                        if (activeSocket === sessionSocket && !sessionSocket.isClosed) {
+                            runOnUiThread {
+                                if (activeSocket === sessionSocket) {
+                                    statusTitle.text = "Stream stopped"
+                                    statusDescription.text = error.message ?: "Bridge frame stream ended"
+                                }
+                            }
+                        }
+                    }
+                }, "bridge-frame-reader").start()
             } catch (error: Exception) {
                 token.fill(0)
                 candidate?.close()
