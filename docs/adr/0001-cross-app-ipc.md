@@ -13,7 +13,9 @@ The project must not require disabling SELinux, weakening Android security polic
 
 Do not treat abstract AF_UNIX as a supported cross-UID transport for the normal install. Keep the current socket code only as a diagnostic prototype and do not report the cross-UID smoke test as working until it has passed on a real Android 10 device.
 
-A production bridge needs an Android-authorized IPC endpoint whose access policy permits the two apps to communicate. Evaluate these options in order:
+A production bridge uses three parts: the existing Termux app, a Termux-side companion package/CLI invoked from the Termux shell, and the Termux-XWayland Android display host. The companion package owns Linux session lifecycle; the Android host owns display and input. The full proposed contract is in [termux-companion-contract.md](../termux-companion-contract.md).
+
+A production bridge needs an Android-authorized IPC endpoint whose access policy permits the components to communicate. Evaluate these options in order:
 
 1. **Termux-side companion/plugin with an explicitly exported, permission-protected Binder service.** The service authenticates the display host, owns the Termux-side session, and brokers a framed bidirectional channel. This preserves the main Termux APK but requires installing a companion component and verifying whether Android permits the desired service-to-app connection and long-lived data flow.
 2. **A coordinated Termux build and display-host build sharing the Termux UID and signing certificate.** This can enable same-UID IPC but is not compatible with arbitrary existing Termux installations and is not the default path.
