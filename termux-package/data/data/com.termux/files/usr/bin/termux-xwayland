@@ -42,6 +42,16 @@ detect_host() {
 
 control_call() {
   local method="$1" arg="${2:-}"
+  # Keep the injectable legacy command only for hermetic package tests.
+  # Production defaults to the app_process helper below.
+  if [ -n "${TERMUX_XWAYLAND_CONTENT:-}" ]; then
+    if [ -n "$arg" ]; then
+      "$TERMUX_XWAYLAND_CONTENT" call --uri "$CONTROL_URI" --method "$method" --arg "$arg" 2>&1
+    else
+      "$TERMUX_XWAYLAND_CONTENT" call --uri "$CONTROL_URI" --method "$method" 2>&1
+    fi
+    return $?
+  fi
   [ -x "$SYSTEM_APP_PROCESS" ] || {
     printf 'Android app_process is unavailable: %s\n' "$SYSTEM_APP_PROCESS" >&2
     return 127
@@ -176,10 +186,7 @@ start_session() {
     fail "Android host not detected; checked ${APP_IDS[*]}"
   }
   start_server
-  if ! start_control_session; then
-    stop_server >/dev/null 2>&1 || true
-    fail "Android control handshake failed; Weston was stopped"
-  fi
+  start_control_session || fail "Android control handshake failed"
   [ -x "$TERMUX_OPEN" ] || {
     control_call stop >/dev/null 2>&1 || true
     fail "termux-open is unavailable; install/update termux-tools"
