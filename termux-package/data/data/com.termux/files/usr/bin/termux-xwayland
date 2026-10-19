@@ -231,6 +231,7 @@ start_session() {
 case "${1:-status}" in
   status|check) show_status ;;
   status-handler) status_handler "${2:-}" "${3:-}" ;;
+  monitor-stop) stop_monitor ;;
   start) start_session ;;
   server-start) start_server ;;
   stop|server-stop) stop_server ;;
