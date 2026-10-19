@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="org.techwithkaushik.termuxxwayland.permission.BIND_IPC_PROBE" />
     <application
         android:allowBackup="false"
         android:label="Termux XWayland"
