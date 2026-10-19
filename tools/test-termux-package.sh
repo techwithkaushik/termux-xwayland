@@ -39,7 +39,7 @@ check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metad
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
-check_grep '"$SYSTEM_AM" start -W -n' "$script" "Android host launch command"
+check_grep '"$SYSTEM_AM" start -n' "$script" "Android host launch command"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
