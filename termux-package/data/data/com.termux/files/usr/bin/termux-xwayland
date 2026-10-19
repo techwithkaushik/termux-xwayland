@@ -35,7 +35,7 @@ detect_host() {
 }
 
 show_control_status() {
-  printf 'Android host connection: intent handoff only (host acknowledgement channel not integrated)\\n'
+  printf 'Android host connection: intent handoff only (host acknowledgement channel not integrated)\n'
 }
 prepare_runtime_dir() {
   mkdir -p "$RUNTIME_DIR" || fail "cannot create runtime directory: $RUNTIME_DIR"
@@ -125,7 +125,7 @@ start_session() {
   }
   start_server
   local session_id
-  session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \\n')"
+  session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
   [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a host launch session ID"
   [ -x "$TERMUX_OPEN" ] || {
     stop_server >/dev/null 2>&1 || true
@@ -136,7 +136,7 @@ start_session() {
     fail "could not open Android host deep link"
   fi
   notify_user "Termux-XWayland" "Wayland socket is ready. Android host launch request sent; live frame transport is still pending."
-  printf 'Wayland server started; Android host launch request sent. Live Wayland frames are not connected yet.\\n'
+  printf 'Wayland server started; Android host launch request sent. Live Wayland frames are not connected yet.\n'
 }
 case "${1:-status}" in
   status|check) show_status ;;
