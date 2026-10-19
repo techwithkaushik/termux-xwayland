@@ -9,7 +9,7 @@ A standalone Android display host for graphical sessions launched from Termux. T
 - Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
 - Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype; no TCP listener or localhost port.
 - Binder probe: a separately installed companion APK exposes a signature-permission-protected Binder service; the display host verifies a bounded 16 KiB echo and distinct app UIDs. This is only a host-to-companion capability test, not a Termux connection or streaming transport.
-- Termux integration: no dependency on Termux RUN_COMMAND or `allow-external-apps=true`. The intended next milestone is a Termux-side package plus a versioned, authorized session/FD handoff contract; it is not implemented yet.
+- Termux integration: intended flow is **Termux app → Termux-side companion package/CLI → Termux-XWayland Android host**. No dependency on Termux RUN_COMMAND or `allow-external-apps=true`. The design contract is documented in [docs/termux-companion-contract.md](docs/termux-companion-contract.md); the package and authorized FD/stream transport are not implemented yet.
 - Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
 - Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
@@ -32,7 +32,7 @@ Native protocol/server checks from native/compositor:
     cargo check
     cargo build --release
 
-See docs/termux-workflow.md for building and starting the diagnostic server. Use feat/phase1-android-host until the PR is merged.
+See docs/termux-workflow.md for the current diagnostic server workflow and docs/termux-companion-contract.md for the planned three-part integration. Use feat/phase1-android-host until the PR is merged.
 
 ## Architecture and next milestones
 
