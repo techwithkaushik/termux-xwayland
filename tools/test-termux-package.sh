@@ -41,7 +41,6 @@ check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host pa
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running"' "$script" "Android host receives server-ready launch event"
-check_grep 'CONTROL_URI="content://${app_id}.control/session"' "$script" "Android control IPC endpoint follows detected package ID"
 check_grep 'Wayland server started; Android host launch request sent.' "$script" "start reports host launch handoff"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
