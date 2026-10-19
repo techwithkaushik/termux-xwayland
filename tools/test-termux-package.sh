@@ -41,7 +41,7 @@ check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host pa
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start"' "$script" "Android host deep-link launch"
-check_grep 'content://org.techwithkaushik.termuxxwayland.control/session' "$script" "Android control IPC endpoint"
+check_grep 'CONTROL_URI="content://${app_id}.control/session"' "$script" "Android control IPC endpoint follows detected package ID"
 check_grep 'start_control_session || fail "Android control handshake failed"' "$script" "start requires authenticated control handshake"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
