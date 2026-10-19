@@ -18,7 +18,8 @@ trap cleanup EXIT
 
 # Build from a staging copy so Android/Termux umask or checkout modes cannot
 # leave DEBIAN at mode 0700 (dpkg-deb rejects that control-directory mode).
-cp -R "$pkg/." "$stage/"
+mkdir -p "$stage"
+cp -R "$pkg/DEBIAN" "$pkg/data" "$stage/"
 find "$stage" -type d -exec chmod 0755 {} +
 chmod 0644 "$stage/DEBIAN/control"
 chmod 0755 "$stage/DEBIAN/postinst"
