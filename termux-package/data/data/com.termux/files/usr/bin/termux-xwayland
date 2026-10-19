@@ -1,87 +1,143 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -u
-
-# Debug APKs append .debug via applicationIdSuffix; release APKs do not.
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
-# Optional executable overrides make the CLI testable outside Android. Normal
-# installations continue to use Android's package manager and Termux's opener.
-SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
-TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
+SYSTEM_PM="\${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
+TERMUX_OPEN="\${TERMUX_XWAYLAND_OPEN:-\${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
+WESTON_BIN="\${TERMUX_XWAYLAND_WESTON:-weston}"
+NOTIFY_BIN="\${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
+RUNTIME_DIR="\${TERMUX_XWAYLAND_RUNTIME_DIR:-\${XDG_RUNTIME_DIR:-\${TMPDIR:-\${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-\${UID:-$(id -u)}}}"
+WAYLAND_SOCKET="\${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
+PID_FILE="$RUNTIME_DIR/weston.pid"
+LOG_FILE="$RUNTIME_DIR/weston.log"
 
-fail() {
-  printf 'termux-xwayland: %s\n' "$*" >&2
-  exit 1
+fail() { printf 'termux-xwayland: %s\n' "$*" >&2; exit 1; }
+notify_user() {
+  local title="$1" message="$2"
+  if command -v "$NOTIFY_BIN" >/dev/null 2>&1; then
+    "$NOTIFY_BIN" --title "$title" --content "$message" --id 73101 >/dev/null 2>&1 || true
+  fi
+  printf '%s: %s\n' "$title" "$message"
 }
-
 detect_host() {
   [ -x "$SYSTEM_PM" ] || return 1
   local app_id output
-  for app_id in "${APP_IDS[@]}"; do
+  for app_id in "\${APP_IDS[@]}"; do
     output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
-    case "$output" in
-      package:*)
-        DETECTED_APP_ID="$app_id"
-        return 0
-        ;;
-    esac
+    case "$output" in package:*) DETECTED_APP_ID="$app_id"; return 0 ;; esac
   done
   return 1
 }
-
+prepare_runtime_dir() {
+  mkdir -p "$RUNTIME_DIR" || fail "cannot create runtime directory: $RUNTIME_DIR"
+  chmod 700 "$RUNTIME_DIR" 2>/dev/null || true
+  [ -d "$RUNTIME_DIR" ] && [ -w "$RUNTIME_DIR" ] || fail "runtime directory is not writable: $RUNTIME_DIR"
+}
+server_is_running() {
+  [ -f "$PID_FILE" ] || return 1
+  local pid
+  pid="$(cat "$PID_FILE" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+start_server() {
+  prepare_runtime_dir
+  if server_is_running; then
+    printf 'Wayland server: already running (PID %s)\n' "$(cat "$PID_FILE")"
+    return 0
+  fi
+  rm -f "$PID_FILE"
+  command -v "$WESTON_BIN" >/dev/null 2>&1 || fail "Weston is not installed. Run: pkg install weston"
+  rm -f "$RUNTIME_DIR/$WAYLAND_SOCKET"
+  XDG_RUNTIME_DIR="$RUNTIME_DIR" "$WESTON_BIN" --backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" >/dev/null 2>&1 &
+  local pid=$!
+  printf '%s\n' "$pid" > "$PID_FILE"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
+      printf 'Wayland server: started (PID %s)\nWAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\n' "$pid" "$WAYLAND_SOCKET" "$RUNTIME_DIR"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$PID_FILE"
+      tail -n 30 "$LOG_FILE" 2>/dev/null || true
+      fail "Weston exited before creating its Wayland socket; inspect $LOG_FILE"
+    fi
+    sleep 0.5
+  done
+  kill "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE"
+  fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 5 seconds; inspect $LOG_FILE"
+}
+stop_server() {
+  if ! server_is_running; then
+    rm -f "$PID_FILE"
+    printf 'Wayland server: not running\n'
+    return 0
+  fi
+  local pid
+  pid="$(cat "$PID_FILE")"
+  kill "$pid" 2>/dev/null || fail "could not stop Weston PID $pid"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+      notify_user "Termux-XWayland" "Wayland server stopped."
+      return 0
+    fi
+    sleep 0.2
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+  notify_user "Termux-XWayland" "Wayland server stopped."
+}
 show_status() {
+  local host_found=0
   if detect_host; then
+    host_found=1
     printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
   else
-    printf 'Android host: NOT DETECTED\n'
-    printf 'Checked package IDs:\n'
-    printf '  - %s\n' "${APP_IDS[@]}"
-    printf 'Install the Termux-XWayland Android APK, then retry.\n'
-    return 1
+    printf 'Android host: NOT DETECTED\nChecked package IDs: %s\n' "\${APP_IDS[*]}"
   fi
-  printf 'Termux companion: installed (deb package)\n'
-  printf 'Live compositor/stream: not implemented yet\n'
-}
-
-start_host() {
-  detect_host || {
-    printf 'Android host: NOT DETECTED\n' >&2
-    printf 'Checked package IDs: %s\n' "${APP_IDS[*]}" >&2
-    printf 'Install the Termux-XWayland Android APK first.\n' >&2
-    exit 2
-  }
-  # Launch through Android's VIEW intent so MIUI does not need the app UID
-  # to call protected am/monkey shell entry points. The host registers this URI.
-  [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
-  if "$TERMUX_OPEN" "termuxxwayland://start"; then
-    printf 'Termux-XWayland host launch requested (%s). Confirm the host UI opens; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
+  if server_is_running && [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
+    printf 'Wayland server: running (PID %s, socket %s)\n' "$(cat "$PID_FILE")" "$RUNTIME_DIR/$WAYLAND_SOCKET"
   else
-    fail "Could not open the Termux-XWayland launcher URI. Rebuild/reinstall the Android host APK with the latest manifest."
+    printf 'Wayland server: not running\n'
   fi
+  printf 'Android stream connection: not established (authenticated frame transport is not integrated yet)\n'
+  if [ "$host_found" -eq 1 ] && server_is_running; then return 0; fi
+  return 1
 }
-
-case "${1:-status}" in
+start_session() {
+  detect_host || {
+    notify_user "Termux-XWayland" "Android host not found. Install the Termux-XWayland APK first."
+    fail "Android host not detected; checked \${APP_IDS[*]}"
+  }
+  start_server
+  [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
+  "$TERMUX_OPEN" "termuxxwayland://start" || fail "could not open Android host deep link"
+  notify_user "Termux-XWayland" "Android host found (\$DETECTED_APP_ID); Weston is running. Waiting for authenticated host connection; frame transport is not integrated yet."
+  printf 'Android host launch requested. Connection is pending until authenticated frame transport is implemented.\n'
+}
+case "\${1:-status}" in
   status|check) show_status ;;
-  start) start_host ;;
-  stop)
-    printf 'Session stop is not available yet: the persistent session controller is not implemented.\n' >&2
-    exit 3
-    ;;
-  --version|-V)
-    printf 'termux-xwayland companion 0.1.0 (session streaming not implemented)\n'
-    ;;
+  start) start_session ;;
+  server-start) start_server ;;
+  stop|server-stop) stop_server ;;
+  --version|-V) printf 'termux-xwayland companion 0.2.0 (Wayland server lifecycle; Android frame transport pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|stop|--version|--help]
+Usage: termux-xwayland [status|check|start|server-start|stop|--version|--help]
 
-status/check  Detect release or debug Android host package.
-start         Open the Android host (does not start a compositor yet).
-stop          Reserved; session lifecycle is not implemented yet.
+status/check  Show Android host discovery and Wayland server status.
+start         Start Weston headless, then open the Android host.
+server-start Start Weston without opening the Android host.
+stop          Stop the Weston process started by this companion.
+--version     Print version and current implementation status.
+
+The server uses a private local runtime directory. Android frame/input
+transport is not integrated yet; do not interpret host discovery as connected.
 EOF
     ;;
-  *)
-    printf 'Unknown command: %s\n' "$1" >&2
-    printf 'Run termux-xwayland --help\n' >&2
-    exit 64
-    ;;
+  *) printf 'Unknown command: %s\nRun termux-xwayland --help\n' "$1" >&2; exit 64 ;;
 esac
