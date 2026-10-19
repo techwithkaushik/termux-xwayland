@@ -154,8 +154,8 @@ status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Android control handshake: accepted (protocol v1)' <<<"$status_output" || {
-  echo "FAIL: status should report an authenticated mock control channel" >&2; exit 1;
+grep -Fq 'Android control handshake: no active session' <<<"$status_output" || {
+  echo "FAIL: status should report no control session before start" >&2; exit 1;
 }
 grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
   echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
@@ -169,8 +169,8 @@ running_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
 }
-grep -Fq 'Android control connection: authenticated (protocol v1)' <<<"$running_status" || {
-  echo "FAIL: status should report the authenticated control channel" >&2; exit 1;
+grep -Fq 'Android control handshake: accepted (protocol v1)' <<<"$running_status" || {
+  echo "FAIL: status should report the accepted control handshake" >&2; exit 1;
 }
 grep -Fq 'Wayland frame stream: not connected' <<<"$running_status" || {
   echo "FAIL: status must not claim a connected stream without a transport" >&2; exit 1;
