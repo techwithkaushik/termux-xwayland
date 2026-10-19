@@ -32,6 +32,12 @@ Before selecting a production implementation, prove all of the following with a 
 - A measured frame path suitable for interactive display, not repeated shell invocations or temporary files as the real-time transport.
 - Android 10 compatibility, including the actual Termux distribution/signing setup.
 
+## Temporary TCP diagnostic results (2026-10-19)
+
+The user verified the one-shot loopback echo on the target Android 10 device: the Android host connected to `127.0.0.1:38471` and received the exact response. A second, separate one-shot probe now checks the existing TXWB v1 12-byte header and a bounded PING/PONG payload on `127.0.0.1:38472`. Both diagnostic servers bind only to `127.0.0.1`; neither is a production bridge, and neither is used automatically by the app. The Android app requires the user to start the matching Termux script manually.
+
+These temporary probes are a deliberate feasibility experiment requested by the user, not a reversal of the production constraint: no permanent TCP listener or TCP fallback is accepted for the production transport. The framed-protocol result must be verified on-device before proceeding to malformed-frame tests or selecting a production IPC architecture.
+
 ## Consequences
 
 The current synthetic frame is only a protocol/UI test and cannot display a Linux desktop. Real Wayland frame transport and input forwarding must wait until the cross-app IPC transport passes the device test. CI compilation and unit tests cannot establish Android SELinux/Binder policy behavior; device verification is mandatory.
