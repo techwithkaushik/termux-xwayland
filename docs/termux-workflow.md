@@ -14,7 +14,9 @@ Install the native tools in Termux:
 Clone this repository and build the Rust binary:
 
     git clone https://github.com/techwithkaushik/termux-xwayland.git
-    cd termux-xwayland/native/compositor
+    cd termux-xwayland
+    git checkout feat/phase1-android-host
+    cd native/compositor
     cargo test
     cargo build --release
 
@@ -24,9 +26,9 @@ For the current development branch, use `feat/phase1-android-host` until its PR 
 
 Generate a fresh 256-bit token for each run and start the server. The token is printed only so you can manually enter it in the Android app; do not share screenshots or logs containing it.
 
-    export TERMUX_XWAYLAND_TOKEN_HEX="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \\n')"
+    export TERMUX_XWAYLAND_TOKEN_HEX="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     export TERMUX_XWAYLAND_PORT=38765
-    printf 'Session token: %s\\n' "$TERMUX_XWAYLAND_TOKEN_HEX"
+    printf 'Session token: %s\n' "$TERMUX_XWAYLAND_TOKEN_HEX"
     ./target/release/termux-xwayland-compositor
 
 The server binds only to `127.0.0.1`. In the Android app, enter host `127.0.0.1`, port `38765`, and the session token, then tap **Connect securely**. The UI should report **Bridge authenticated** only after the token handshake succeeds. Tap **Disconnect** to close the session. The token is held in the shell environment for this test run; unset it when finished with `unset TERMUX_XWAYLAND_TOKEN_HEX`.
