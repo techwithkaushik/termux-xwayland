@@ -5,11 +5,13 @@ test -f build.gradle.kts
 test -f android-app/build.gradle.kts
 test -f android-app/src/main/AndroidManifest.xml
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeProtocol.kt
 test -f native/compositor/Cargo.toml
 test -f native/compositor/src/main.rs
 test -f native/compositor/src/protocol.rs
+test -f native/compositor/src/bridge.rs
 test -f docs/bridge-protocol.md
-grep -q 'Not connected' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'bridge protocol v' native/compositor/src/main.rs
+grep -q 'Connect securely' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q '127, 0, 0, 1' native/compositor/src/bridge.rs
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
-echo "Scaffold and protocol structure checks passed."
+echo "Bridge and scaffold structure checks passed."
