@@ -185,6 +185,10 @@ class MainActivity : Activity() {
         content.addView(tcpProbeDescription, margins(bottom = 8))
         tcpProbeButton = actionButton("Test Termux TCP connection") { runTcpProbe() }
         content.addView(tcpProbeButton, margins(bottom = 10))
+        content.addView(infoCard(
+            "TXWB v1 framing diagnostic • 127.0.0.1:38472",
+            "Uses the existing 12-byte TXWB header and checks magic, version, reserved bits, message type, payload length and exact PING/PONG payload. One-shot test only; not a production transport."
+        ), margins(bottom = 10))
         framedProbeTitle = label("Not tested", 17, ink, true).apply {
             setPadding(0, dp(4), 0, dp(4))
         }
