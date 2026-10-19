@@ -79,7 +79,9 @@ cli_tmp="$(mktemp -d)"
 trap 'rm -rf "$cli_tmp" "${tmp_out:-}"' EXIT
 mock_pm="$cli_tmp/pm"
 mock_open="$cli_tmp/termux-open"
+mock_notify="$cli_tmp/termux-notification"
 open_log="$cli_tmp/open.log"
+notify_log="$cli_tmp/notify.log"
 cat > "$mock_pm" <<'MOCK_PM'
 #!/usr/bin/env bash
 if [[ "${1:-}" == path && "${MOCK_HOST_PRESENT:-yes}" == yes ]]; then
@@ -97,8 +99,12 @@ cat > "$mock_open" <<'MOCK_OPEN'
 [[ "${MOCK_OPEN_FAIL:-no}" != yes ]] || exit 1
 printf '%s\n' "$*" >> "$MOCK_OPEN_LOG"
 MOCK_OPEN
-chmod +x "$mock_pm" "$mock_open"
-cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" MOCK_OPEN_LOG="$open_log")
+cat > "$mock_notify" <<'MOCK_NOTIFY'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$MOCK_NOTIFY_LOG"
+MOCK_NOTIFY
+chmod +x "$mock_pm" "$mock_open" "$mock_notify"
+cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_NOTIFY="$mock_notify" MOCK_OPEN_LOG="$open_log" MOCK_NOTIFY_LOG="$notify_log")
 
 status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
@@ -108,9 +114,15 @@ grep -Fq 'Live compositor/stream: not implemented yet' <<<"$status_output" || {
   echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
 }
 
-"${cli_env[@]}" bash "$script" start >/dev/null
+start_output="$("${cli_env[@]}" bash "$script" start)"
 grep -Fxq 'termuxxwayland://start' "$open_log" || {
   echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+}
+grep -Fq 'Connection is not confirmed' <<<"$start_output" || {
+  echo "FAIL: start must not claim the host is connected before a handshake" >&2; exit 1;
+}
+grep -Fq -- '--title Termux XWayland --content Android host found; launch requested. Connection is not confirmed yet.' "$notify_log" || {
+  echo "FAIL: start should issue a truthful Termux notification when host launch is requested" >&2; exit 1;
 }
 
 if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then

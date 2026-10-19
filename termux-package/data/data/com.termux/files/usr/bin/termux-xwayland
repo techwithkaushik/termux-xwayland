@@ -8,6 +8,7 @@ DETECTED_APP_ID=""
 # installations continue to use Android's package manager and Termux's opener.
 SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
 TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
+TERMUX_NOTIFY="${TERMUX_XWAYLAND_NOTIFY:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-notification}"
 
 fail() {
   printf 'termux-xwayland: %s\n' "$*" >&2
@@ -27,6 +28,12 @@ detect_host() {
     esac
   done
   return 1
+}
+
+notify_status() {
+  # Notifications are best-effort; never make launching the host depend on them.
+  [ -x "$TERMUX_NOTIFY" ] || return 0
+  "$TERMUX_NOTIFY" --title "Termux XWayland" --content "$1" --id 7331 >/dev/null 2>&1 || true
 }
 
 show_status() {
@@ -54,7 +61,8 @@ start_host() {
   # to call protected am/monkey shell entry points. The host registers this URI.
   [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
   if "$TERMUX_OPEN" "termuxxwayland://start"; then
-    printf 'Termux-XWayland host launch requested (%s). Confirm the host UI opens; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
+    notify_status "Android host found; launch requested. Connection is not confirmed yet."
+    printf 'Termux-XWayland host launch requested (%s). Connection is not confirmed; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
   else
     fail "Could not open the Termux-XWayland launcher URI. Rebuild/reinstall the Android host APK with the latest manifest."
   fi
