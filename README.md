@@ -7,9 +7,9 @@ A standalone Android display host for graphical sessions launched from Termux. T
 ## Current implementation
 
 - Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
-- Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype; no TCP listener or localhost port.
+- Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype for synthetic-frame diagnostics. Separately, the Termux CLI uses a loopback-only read-only status monitor; it is not a desktop transport.
 - Binder probe: a separately installed companion APK exposes a signature-permission-protected Binder service; the display host verifies a bounded 16 KiB echo and distinct app UIDs. The 16 KiB probe has been confirmed passing on the target phone. This is only a host-to-companion capability test, not a Termux connection or streaming transport.
-- Termux integration: intended flow is **Termux app → Termux-side companion package/CLI → Termux-XWayland Android host**. No dependency on Termux RUN_COMMAND or `allow-external-apps=true`. The design contract is documented in [docs/termux-companion-contract.md](docs/termux-companion-contract.md); the package and authorized FD/stream transport are not implemented yet.
+- Termux integration: run `termux-xwayland start`; once Weston creates its Wayland socket, the CLI opens the Android host with a session ID and a loopback status port. The host displays “Termux-Companion connection received” and polls whether Weston is still running. The read-only status endpoint binds to `127.0.0.1` and carries no frame/input data. No dependency on Termux RUN_COMMAND or `allow-external-apps=true`.
 - Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
 - Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
@@ -50,10 +50,10 @@ See docs/xwayland-integration-plan.md for the detailed process topology, rootful
 ## Security notes
 
 - The abstract AF_UNIX socket is diagnostic only; do not assume it works across Android UIDs.
-- Generate a new high-entropy token per session. Never place secrets in exported intents, command-line arguments, or logs.
+- The host handoff contains only a random session ID and the monitor port; it does not export a secret token. The status endpoint reports only whether this session's Wayland socket is running.
 - A token cannot override Android IPC authorization; the connection must be permitted before authentication can happen.
 - The Binder probe service is guarded by a signature-level permission. Install the companion APK first, then the display-host APK, and sign both with the same certificate. Do not treat this test as evidence that the existing Termux app can bind to this service.
-- Do not add a public TCP/LAN or localhost fallback if Android SELinux blocks cross-UID access.
+- Do not use TCP/localhost as a desktop-frame or input transport to bypass Android SELinux. The loopback status endpoint is read-only and carries no desktop data.
 - Do not disable SELinux or require root.
 - Do not assume GPU acceleration, DMA-BUF, zero-copy transport, or ARM32 dependency availability; test each explicitly.
 

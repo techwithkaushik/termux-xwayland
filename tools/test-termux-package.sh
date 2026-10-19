@@ -35,14 +35,15 @@ if ! bash -n "$script"; then
 fi
 
 check_grep 'Package: termux-xwayland-bridge' "$pkg/DEBIAN/control" "package name metadata"
+check_grep 'Version: 0.3.0' "$pkg/DEBIAN/control" "package version metadata"
+check_grep 'Depends: bash, coreutils, socat' "$pkg/DEBIAN/control" "loopback status monitor dependency"
 check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metadata"
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
-check_grep '"$TERMUX_OPEN" "termuxxwayland://start"' "$script" "Android host deep-link launch"
-check_grep 'CONTROL_URI="content://${app_id}.control/session"' "$script" "Android control IPC endpoint follows detected package ID"
-check_grep 'start_control_session || fail "Android control handshake failed"' "$script" "start requires authenticated control handshake"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
+check_grep 'Wayland server started; Android host launch request sent.' "$script" "start reports host launch handoff"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
@@ -56,7 +57,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
     echo "FAIL: DEB package build" >&2
     exit 1
   fi
-  archive="$tmp_out/termux-xwayland-bridge_0.1.0_all.deb"
+  archive="$tmp_out/termux-xwayland-bridge_0.3.0_all.deb"
   check_file "$archive"
   [[ "$(dpkg-deb -f "$archive" Package)" == "termux-xwayland-bridge" ]] || {
     echo "FAIL: wrong package name in built DEB" >&2; exit 1;
@@ -76,16 +77,13 @@ fi
 
 
 # Exercise the CLI behavior without Android by injecting mock executables.
-# Production defaults remain /system/bin/pm and Termux's termux-open.
 cli_tmp="$(mktemp -d)"
 trap 'rm -rf "$cli_tmp" "${tmp_out:-}"' EXIT
 mock_pm="$cli_tmp/pm"
 mock_open="$cli_tmp/termux-open"
-mock_content="$cli_tmp/content"
 mock_weston="$cli_tmp/weston"
+mock_socat="$cli_tmp/socat"
 open_log="$cli_tmp/open.log"
-control_log="$cli_tmp/control.log"
-control_state="$cli_tmp/control-state"
 cat > "$mock_pm" <<'MOCK_PM'
 #!/usr/bin/env bash
 if [[ "${1:-}" == path && "${MOCK_HOST_PRESENT:-yes}" == yes ]]; then
@@ -103,34 +101,6 @@ cat > "$mock_open" <<'MOCK_OPEN'
 [[ "${MOCK_OPEN_FAIL:-no}" != yes ]] || exit 1
 printf '%s\n' "$*" >> "$MOCK_OPEN_LOG"
 MOCK_OPEN
-cat > "$mock_content" <<'MOCK_CONTENT'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> "$MOCK_CONTROL_LOG"
-method=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --method) method="${2:-}"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-case "$method" in
-  start)
-    printf 'connected\n' > "$MOCK_CONTROL_STATE"
-    printf 'Result: Bundle[{state=connected, protocol_version=1}]\n'
-    ;;
-  status)
-    state=disconnected
-    [[ ! -f "$MOCK_CONTROL_STATE" ]] || state="$(cat "$MOCK_CONTROL_STATE")"
-    printf 'Result: Bundle[{state=%s, protocol_version=1}]\n' "$state"
-    ;;
-  stop)
-    printf 'disconnected\n' > "$MOCK_CONTROL_STATE"
-    printf 'Result: Bundle[{state=disconnected, protocol_version=1}]\n'
-    ;;
-  *) exit 2 ;;
-esac
-MOCK_CONTENT
 cat > "$mock_weston" <<'MOCK_WESTON'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -147,37 +117,76 @@ while True:
     time.sleep(1)
 PYTHON_WESTON
 MOCK_WESTON
-chmod +x "$mock_pm" "$mock_open" "$mock_content" "$mock_weston"
-cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_CONTENT="$mock_content" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log" MOCK_CONTROL_LOG="$control_log" MOCK_CONTROL_STATE="$control_state")
+cat > "$mock_socat" <<'MOCK_SOCAT'
+#!/usr/bin/env bash
+set -euo pipefail
+port=""
+for arg in "$@"; do
+  case "$arg" in TCP-LISTEN:*) port="${arg#TCP-LISTEN:}"; port="${port%%,*}" ;; esac
+done
+[[ "$port" =~ ^[0-9]+$ ]] || exit 2
+printf 'N listening on AF=2 127.0.0.1:%s\n' "$port" >&2
+trap 'exit 0' TERM INT
+while :; do sleep 1; done
+MOCK_SOCAT
+chmod +x "$mock_pm" "$mock_open" "$mock_weston" "$mock_socat"
+cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_SOCAT="$mock_socat" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log")
 
 status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Android control handshake: no active session' <<<"$status_output" || {
-  echo "FAIL: status should report no control session before start" >&2; exit 1;
+grep -Fq 'Android host detection: not active' <<<"$status_output" || {
+  echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
 grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
   echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
 }
 
 "${cli_env[@]}" bash "$script" start >/dev/null
-grep -Fxq 'termuxxwayland://start' "$open_log" || {
-  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+launch_uri="$(cat "$open_log")"
+[[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
+   "$launch_uri" == *"&server=running&port="* &&
+   "$launch_uri" != *"&token="* ]] || {
+  echo "FAIL: start must send session ID and monitor port (got: $launch_uri)" >&2; exit 1;
+}
+session_id="${launch_uri#*session_id=}"
+session_id="${session_id%%&*}"
+port="${launch_uri#*&port=}"
+port="${port%%&*}"
+[[ "$session_id" =~ ^[a-f0-9]{32}$ && "$port" =~ ^[0-9]{5}$ ]] || {
+  echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
 }
-grep -Fq 'Android control handshake: accepted (protocol v1)' <<<"$running_status" || {
-  echo "FAIL: status should report the accepted control handshake" >&2; exit 1;
+grep -Fq 'Android host detection: waiting for host app' <<<"$running_status" || {
+  echo "FAIL: status should report monitor awaiting first host poll" >&2; exit 1;
 }
-grep -Fq 'Wayland frame stream: not connected' <<<"$running_status" || {
-  echo "FAIL: status must not claim a connected stream without a transport" >&2; exit 1;
+valid_response="$(printf 'STATUS %s\n' "$session_id" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
+[[ "$valid_response" == "RUNNING $session_id" ]] || {
+  echo "FAIL: matching session request should report running Weston" >&2; exit 1;
 }
-grep -Fq -- '--method start' "$control_log" || {
-  echo "FAIL: start should perform the control handshake" >&2; exit 1;
+invalid_session="$(printf '0%.0s' {1..32})"
+invalid_response="$(printf 'STATUS %s\n' "$invalid_session" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
+[[ "$invalid_response" == "DENIED" ]] || {
+  echo "FAIL: monitor must reject an incorrect token" >&2; exit 1;
 }
+active_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Android host detection: active (host polling server status)' <<<"$active_status" || {
+  echo "FAIL: status should record host polling" >&2; exit 1;
+}
+grep -Fq 'Wayland frame stream: not connected' <<<"$active_status" || {
+  echo "FAIL: status must not claim desktop streaming exists" >&2; exit 1;
+}
+
+"${cli_env[@]}" bash "$script" stop >/dev/null
+stopped_response="$(printf 'STATUS %s\n' "$session_id" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
+[[ "$stopped_response" == "STOPPED $session_id" ]] || {
+  echo "FAIL: host monitor should detect when Weston stops" >&2; exit 1;
+}
+"${cli_env[@]}" bash "$script" monitor-stop
 
 if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
   echo "FAIL: start should fail when no host package is detected" >&2; exit 1
@@ -188,10 +197,6 @@ fi
 "${cli_env[@]}" bash "$script" stop >/dev/null
 stopped_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
-  echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
+  echo "FAIL: status should report the stopped server" >&2; exit 1;
 }
-grep -Fq 'Android control handshake: no active session' <<<"$stopped_status" || {
-  echo "FAIL: stop should clear the control session" >&2; exit 1;
-}
-
-echo "PASS: Termux companion package, control handshake, Weston lifecycle and status checks passed."
+echo "PASS: Termux package, host status polling, Weston lifecycle and status checks passed."
