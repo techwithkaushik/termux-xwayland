@@ -533,6 +533,7 @@ class MainActivity : Activity() {
             outputPipe[1].writeToParcel(request, 0)
             writer.start()
             reader.start()
+            var apiLevel = -1
             val binding = bindProbeForFd()
             val binder = binding.first
             try {
@@ -542,7 +543,7 @@ class MainActivity : Activity() {
                 response.readException()
                 val serviceUid = response.readInt()
                 val callerUid = response.readInt()
-                val apiLevel = response.readInt()
+                apiLevel = response.readInt()
                 val echoedSize = response.readInt()
                 if (serviceUid == callerUid || callerUid != Process.myUid()) {
                     throw IOException("Unexpected Binder caller/service UID")
