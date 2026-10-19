@@ -22,20 +22,6 @@ pid=""
 x11_socket_dir="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix"
 created_x11_socket_dir=0
 
-# XWayland needs the conventional Unix-socket directory to exist. Do not
-# modify an existing directory: it may belong to a running Termux:X11 session.
-if [[ ! -e "$x11_socket_dir" ]]; then
-  if mkdir -m 1777 "$x11_socket_dir" 2>/dev/null; then
-    created_x11_socket_dir=1
-  else
-    printf 'ERROR: X11 socket directory is missing and could not be created: %s\\n' "$x11_socket_dir" >&2
-    exit 2
-  fi
-elif [[ ! -d "$x11_socket_dir" ]]; then
-  printf 'ERROR: X11 socket path exists but is not a directory: %s\\n' "$x11_socket_dir" >&2
-  exit 2
-fi
-
 cleanup() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     kill -TERM "$pid" 2>/dev/null || true
@@ -46,10 +32,29 @@ cleanup() {
     kill -KILL "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
+  if [[ "$created_x11_socket_dir" -eq 1 ]]; then
+    if ! rmdir "$x11_socket_dir" 2>/dev/null; then
+      printf 'NOTE: Keeping non-empty X11 socket directory created by probe: %s\n' "$x11_socket_dir"
+    fi
+  fi
   printf '\nLog: %s\n' "$log"
   printf 'Probe files retained in: %s\n' "$workdir"
 }
 trap cleanup EXIT INT TERM
+
+# XWayland needs the conventional Unix-socket directory to exist. Do not
+# modify an existing directory: it may belong to a running Termux:X11 session.
+if [[ ! -e "$x11_socket_dir" ]]; then
+  if mkdir -m 1777 "$x11_socket_dir" 2>/dev/null; then
+    created_x11_socket_dir=1
+  else
+    printf 'ERROR: X11 socket directory is missing and could not be created: %s\n' "$x11_socket_dir" >&2
+    exit 2
+  fi
+elif [[ ! -d "$x11_socket_dir" ]]; then
+  printf 'ERROR: X11 socket path exists but is not a directory: %s\n' "$x11_socket_dir" >&2
+  exit 2
+fi
 
 export XDG_RUNTIME_DIR="$runtime"
 export WAYLAND_DISPLAY=wayland-probe
