@@ -25,6 +25,24 @@ def recv_exact(conn: socket.socket, size: int) -> bytes:
     return bytes(data)
 
 
+def validate_header(header: bytes) -> tuple[int, int]:
+    """Validate a complete TXWB header and return (message_type, payload_length)."""
+    if len(header) != HEADER.size:
+        raise ValueError(f"invalid header size: expected {HEADER.size}, got {len(header)}")
+    magic, version, kind, reserved, length = HEADER.unpack(header)
+    if magic != MAGIC:
+        raise ValueError("invalid TXWB magic")
+    if version != VERSION:
+        raise ValueError(f"unsupported protocol version: {version}")
+    if reserved != 0:
+        raise ValueError("reserved header bits must be zero")
+    if kind != PING:
+        raise ValueError(f"expected PING (7), got message type {kind}")
+    if length > MAX_PAYLOAD:
+        raise ValueError(f"payload length {length} exceeds {MAX_PAYLOAD}-byte diagnostic limit")
+    return kind, length
+
+
 def main() -> int:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
@@ -41,17 +59,7 @@ def main() -> int:
             with conn:
                 conn.settimeout(3)
                 header = recv_exact(conn, HEADER.size)
-                magic, version, kind, reserved, length = HEADER.unpack(header)
-                if magic != MAGIC:
-                    raise ValueError("invalid TXWB magic")
-                if version != VERSION:
-                    raise ValueError(f"unsupported protocol version: {version}")
-                if reserved != 0:
-                    raise ValueError("reserved header bits must be zero")
-                if kind != PING:
-                    raise ValueError(f"expected PING (7), got message type {kind}")
-                if length > MAX_PAYLOAD:
-                    raise ValueError(f"payload length {length} exceeds {MAX_PAYLOAD}-byte diagnostic limit")
+                _kind, length = validate_header(header)
                 payload = recv_exact(conn, length)
                 if payload != EXPECTED_PAYLOAD:
                     raise ValueError("payload did not match the expected diagnostic marker")
