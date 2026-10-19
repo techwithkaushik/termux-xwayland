@@ -17,7 +17,7 @@ A production bridge needs an Android-authorized IPC endpoint whose access policy
 
 1. **Termux-side companion/plugin with an explicitly exported, permission-protected Binder service.** The service authenticates the display host, owns the Termux-side session, and brokers a framed bidirectional channel. This preserves the main Termux APK but requires installing a companion component and verifying whether Android permits the desired service-to-app connection and long-lived data flow.
 2. **A coordinated Termux build and display-host build sharing the Termux UID and signing certificate.** This can enable same-UID IPC but is not compatible with arbitrary existing Termux installations and is not the default path.
-3. **A Termux-mediated command API only for control-plane operations.** The Termux RUN_COMMAND API can be used to request a command launch when the installed Termux version and permission configuration support it. It is not, by itself, a proven low-latency, full-duplex frame/input transport; do not claim it solves streaming.
+3. **Generic Termux RUN_COMMAND only as an optional diagnostic/control path.** It requires external-command authorization and is not the Termux:X11 integration model. The display host must not depend on `allow-external-apps=true`; do not use RUN_COMMAND for frames or input.
 
 ## Required transport contract
 
