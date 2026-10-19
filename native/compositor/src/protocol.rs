@@ -39,7 +39,10 @@ impl TryFrom<u8> for MessageKind {
             7 => Ok(Self::Ping),
             8 => Ok(Self::Pong),
             9 => Ok(Self::Close),
-            _ => Err(io::Error::new(io::ErrorKind::InvalidData, "unknown message kind")),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unknown message kind",
+            )),
         }
     }
 }
@@ -53,14 +56,20 @@ pub struct Message {
 impl Message {
     pub fn new(kind: MessageKind, payload: Vec<u8>) -> io::Result<Self> {
         if payload.len() > MAX_PAYLOAD_LEN {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "payload too large"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "payload too large",
+            ));
         }
         Ok(Self { kind, payload })
     }
 
     pub fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
         if self.payload.len() > MAX_PAYLOAD_LEN {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "payload too large"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "payload too large",
+            ));
         }
         writer.write_all(&MAGIC)?;
         writer.write_all(&[VERSION, self.kind as u8, 0, 0])?;
@@ -72,18 +81,31 @@ impl Message {
         let mut header = [0_u8; HEADER_LEN];
         reader.read_exact(&mut header)?;
         if header[0..4] != MAGIC {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid bridge magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid bridge magic",
+            ));
         }
         if header[4] != VERSION {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported bridge version"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported bridge version",
+            ));
         }
         if header[6] != 0 || header[7] != 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "reserved header bits must be zero"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "reserved header bits must be zero",
+            ));
         }
         let kind = MessageKind::try_from(header[5])?;
-        let payload_len = u32::from_be_bytes([header[8], header[9], header[10], header[11]]) as usize;
+        let payload_len =
+            u32::from_be_bytes([header[8], header[9], header[10], header[11]]) as usize;
         if payload_len > MAX_PAYLOAD_LEN {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "payload exceeds limit"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "payload exceeds limit",
+            ));
         }
         let mut payload = vec![0; payload_len];
         reader.read_exact(&mut payload)?;
