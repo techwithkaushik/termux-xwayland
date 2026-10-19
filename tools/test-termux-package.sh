@@ -85,7 +85,7 @@ cat > "$mock_pm" <<'MOCK_PM'
 if [[ "${1:-}" == path && "${MOCK_HOST_PRESENT:-yes}" == yes ]]; then
   case "${2:-}" in
     org.techwithkaushik.termuxxwayland|org.techwithkaushik.termuxxwayland.debug)
-      printf 'package:/mock/base.apk\\n'
+      printf 'package:/mock/base.apk\n'
       exit 0
       ;;
   esac
@@ -95,7 +95,7 @@ MOCK_PM
 cat > "$mock_open" <<'MOCK_OPEN'
 #!/usr/bin/env bash
 [[ "${MOCK_OPEN_FAIL:-no}" != yes ]] || exit 1
-printf '%s\\n' "$*" >> "$MOCK_OPEN_LOG"
+printf '%s\n' "$*" >> "$MOCK_OPEN_LOG"
 MOCK_OPEN
 chmod +x "$mock_pm" "$mock_open"
 cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" MOCK_OPEN_LOG="$open_log")
