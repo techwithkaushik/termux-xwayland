@@ -232,6 +232,17 @@ class MainActivity : Activity() {
         content.addView(actionButton("Run Rust JNI socket test") { runNativeJniProbe() },
             margins(bottom = 16))
 
+        content.addView(label("Termux filesystem socket access", 20, ink, true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        content.addView(infoCard(
+            "Cross-app access diagnostic",
+            "Tries one connection to the Termux control-socket path without sending data. This reports path/permission errors only; it does not change permissions or bypass Android sandboxing."
+        ), margins(bottom = 10))
+        content.addView(actionButton("Probe Termux control socket") {
+            runTermuxFilesystemSocketProbe()
+        }, margins(bottom = 16))
+
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
@@ -256,6 +267,33 @@ class MainActivity : Activity() {
      * App-local smoke test for the Rust JNI FD handoff. It deliberately uses
      * a separate socket so it cannot consume frames from the active bridge.
      */
+    private fun runTermuxFilesystemSocketProbe() {
+        val socketPath = "/data/data/com.termux/files/usr/tmp/termux-xwayland-control.sock"
+        Log.i("TermuxXWayland", "Filesystem socket probe requested")
+        Toast.makeText(this, "Checking Termux socket path…", Toast.LENGTH_SHORT).show()
+        Thread({
+            val result = try {
+                NativeBridge.nativeProbeUnixSocket(socketPath)
+            } catch (error: Throwable) {
+                Log.e("TermuxXWayland", "Filesystem socket probe crashed", error)
+                Int.MIN_VALUE
+            }
+            val message = when (result) {
+                0 -> "Connected: Termux control socket is reachable"
+                -2 -> "ENOENT: socket path does not exist yet"
+                -13 -> "EACCES: Android denied cross-app socket access"
+                -1 -> "EPERM: operation not permitted"
+                -111 -> "ECONNREFUSED: no listener at that socket"
+                Int.MIN_VALUE -> "JNI probe failed; see logcat"
+                else -> "Socket probe returned $result (negative errno); see logcat"
+            }
+            Log.i("TermuxXWayland", "Filesystem socket probe result=$result; $message")
+            runOnUiThread {
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        }, "termux-filesystem-socket-probe").start()
+    }
+
     private fun runNativeJniProbe() {
         Log.i("TermuxXWayland", "JNI probe button tapped")
         Toast.makeText(this, "Starting Rust JNI socket test…", Toast.LENGTH_SHORT).show()
