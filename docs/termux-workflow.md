@@ -21,6 +21,8 @@ Implementation contract and acceptance tests: [Termux companion integration cont
 3. Verify a supported authorization mechanism and Binder/file-descriptor handoff with the actual Termux installation and signing keys on Android 10. Do not assume a signature permission authorizes unrelated certificates.
 4. Add bounded, bidirectional streaming and lifecycle tests. Real compositor work begins only after device acceptance; no shell polling or temporary-file frame transport.
 
+The initial Termux DEB package lives under `termux-package/`. Build it with `bash termux-package/build-deb.sh`, install the generated `.deb` inside Termux using `dpkg -i`, then run `termux-xwayland status` and `termux-xwayland start`. See [termux-deb-install.md](termux-deb-install.md). It currently detects/launches the Android host only; no real session streaming is implemented.
+
 The existing `:ipc-companion` APK remains only a same-certificate Binder feasibility test. It is not the Termux-side service, does not hand off file descriptors, and does not provide live frame/input transport.
 
 ## Binder companion capability probe (experimental)
