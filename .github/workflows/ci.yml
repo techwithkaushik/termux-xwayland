@@ -76,27 +76,21 @@ jobs:
           chmod 600 "$keystore_path" build/signing/key.properties
           echo "filePath=$keystore_path" >> "$GITHUB_OUTPUT"
           echo "Shared development keystore prepared and validated."
-      - name: Run Android bridge protocol unit tests
+      - name: Test and assemble both APKs with the shared signing key
         env:
           SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-        run: gradle --no-daemon :android-app:testDebugUnitTest
-      - name: Test and assemble Binder companion
-        env:
-          SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-        run: gradle --no-daemon :ipc-companion:testDebugUnitTest :ipc-companion:assembleDebug
-      - name: Assemble display host APK
-        env:
-          SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-        run: gradle --no-daemon :android-app:assembleDebug
+        run: |
+          set -euo pipefail
+          # Remove any stale outputs and disable cached signed APK outputs.
+          gradle --no-daemon --no-build-cache clean
+          gradle --no-daemon --no-build-cache \
+            :android-app:testDebugUnitTest \
+            :ipc-companion:testDebugUnitTest \
+            :android-app:assembleDebug \
+            :ipc-companion:assembleDebug
       - name: Verify both APKs use the same signing certificate
         shell: bash
         run: |
