@@ -13,6 +13,10 @@ test -f native/compositor/src/bridge.rs
 test -f docs/bridge-protocol.md
 test -f tools/probe-termux-x11-sockets.sh
 bash -n tools/probe-termux-x11-sockets.sh
+test -x tools/capture-x11-frame.sh
+test -f docs/x11-capture-probe.md
+bash -n tools/capture-x11-frame.sh
+grep -q 'not yet wired to the Android bridge' README.md
 grep -q 'Connect securely' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
 grep -q 'LocalSocketAddress.Namespace.ABSTRACT' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
