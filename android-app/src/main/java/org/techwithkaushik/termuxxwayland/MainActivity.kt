@@ -119,6 +119,7 @@ class MainActivity : Activity() {
             port !in 30000..49999 ||
             !token.matches(Regex("^[a-f0-9]{64}$"))) {
             getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
+                .clear()
                 .putString("state", "invalid_request").apply()
             return
         }
