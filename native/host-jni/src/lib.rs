@@ -120,6 +120,77 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
     }
 }
 
+
+/// Attempts a single AF_UNIX filesystem-socket connect and returns 0 or -errno.
+/// This is a permission/path diagnostic only; it sends no application payload.
+#[no_mangle]
+pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nativeProbeUnixSocket(
+    raw_env: *mut jni::sys::JNIEnv,
+    _receiver: jni::sys::jobject,
+    raw_path: jni::sys::jstring,
+) -> jni::sys::jint {
+    init_logger();
+
+    let path_result = (|| -> Result<String, jni::errors::Error> {
+        let mut env = unsafe { jni::JNIEnv::from_raw(raw_env)? };
+        let path = unsafe { jni::objects::JString::from_raw(raw_path) };
+        Ok(env.get_string(&path)?.to_string_lossy().into_owned())
+    })();
+    let path = match path_result {
+        Ok(path) => path,
+        Err(error) => {
+            error!("Unable to read filesystem socket path: {error}");
+            return -(libc::EINVAL as jni::sys::jint);
+        }
+    };
+
+    use std::os::unix::ffi::OsStrExt;
+    let path_bytes = std::ffi::OsStr::new(&path).as_bytes();
+    let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    if path_bytes.is_empty()
+        || path_bytes[0] != b'/'
+        || path_bytes.contains(&0)
+        || path_bytes.len() >= address.sun_path.len()
+    {
+        error!("Filesystem socket path is invalid or too long");
+        return -(libc::ENAMETOOLONG as jni::sys::jint);
+    }
+    address.sun_family = libc::AF_UNIX as libc::sa_family_t;
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            path_bytes.as_ptr(),
+            address.sun_path.as_mut_ptr().cast::<u8>(),
+            path_bytes.len(),
+        );
+    }
+    let address_len = (std::mem::size_of::<libc::sa_family_t>() + path_bytes.len() + 1)
+        as libc::socklen_t;
+    let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+    if fd < 0 {
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+        error!("Unable to create Unix socket; errno={errno}");
+        return -errno;
+    }
+
+    let result = unsafe {
+        libc::connect(
+            fd,
+            (&address as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
+            address_len,
+        )
+    };
+    let errno = if result == 0 {
+        info!("Filesystem Unix socket connect succeeded: {path}");
+        0
+    } else {
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+        warn!("Filesystem Unix socket connect failed for {path}; errno={errno}");
+        -errno
+    };
+    unsafe { libc::close(fd) };
+    errno
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
