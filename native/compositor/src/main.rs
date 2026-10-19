@@ -1,7 +1,12 @@
+mod protocol;
+
 fn main() {
     env_logger::init();
-    log::info!("Termux XWayland compositor scaffold started");
+    log::info!(
+        "Termux XWayland native scaffold started (bridge protocol v{})",
+        protocol::VERSION
+    );
     eprintln!(
-        "Scaffold only: Wayland socket creation, frame transport, input forwarding,          and XWayland integration are not implemented yet."
+        "Protocol framing and tests are available. This executable still does not create a Wayland socket, authenticate peers, transport frames, forward input, or start XWayland."
     );
 }
