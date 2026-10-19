@@ -11,7 +11,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-const SOCKET_NAME: &str = "termux_xwayland_bridge_v1";
+const SOCKET_PREFIX: &str = "termux_xwayland_";
 const TOKEN_ENV: &str = "TERMUX_XWAYLAND_TOKEN_HEX";
 
 fn decode_token(value: &str) -> io::Result<[u8; 32]> {
@@ -29,6 +29,14 @@ fn decode_token(value: &str) -> io::Result<[u8; 32]> {
         })?;
     }
     Ok(token)
+}
+
+fn socket_name_for_token(token: &[u8; 32]) -> String {
+    let fingerprint = token[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("{SOCKET_PREFIX}{fingerprint}")
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
@@ -178,8 +186,9 @@ pub fn run() -> io::Result<()> {
     let token = decode_token(&raw_token)?;
     drop(raw_token);
 
-    let listener = bind_abstract_listener(SOCKET_NAME)?;
-    println!("Termux XWayland bridge listening on abstract AF_UNIX socket @{SOCKET_NAME}");
+    let socket_name = socket_name_for_token(&token);
+    let listener = bind_abstract_listener(&socket_name)?;
+    println!("Termux XWayland bridge listening on abstract AF_UNIX socket @{socket_name}");
     println!("Open the Android app and enter the fresh session token; token is not printed.");
 
     // One client at a time in this smoke-test implementation.
@@ -229,12 +238,23 @@ mod tests {
     }
 
     #[test]
+    fn socket_name_is_derived_from_session_token_without_exposing_full_token() {
+        let token = [0xab; 32];
+        assert_eq!(
+            socket_name_for_token(&token),
+            "termux_xwayland_abababababababab"
+        );
+        assert!(!socket_name_for_token(&token).contains(&"ab".repeat(32)));
+    }
+
+    #[test]
     fn abstract_socket_address_uses_linux_abstract_namespace() {
-        let (address, length) = abstract_address(SOCKET_NAME).unwrap();
+        let test_name = format!("{SOCKET_PREFIX}0123456789abcdef");
+        let (address, length) = abstract_address(&test_name).unwrap();
         assert_eq!(address.sun_family as i32, libc::AF_UNIX);
         assert_eq!(address.sun_path[0], 0);
         assert_eq!(
-            &address.sun_path[1..1 + SOCKET_NAME.len()]
+            &address.sun_path[1..1 + test_name.len()]
                 .iter()
                 .map(|value| *value as u8)
                 .collect::<Vec<_>>(),
