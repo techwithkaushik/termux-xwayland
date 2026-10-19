@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - "android-app/**"
-      - "ipc-companion/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
@@ -17,7 +16,6 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - "android-app/**"
-      - "ipc-companion/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
@@ -106,7 +104,7 @@ jobs:
           chmod 600 "$keystore_path" build/signing/key.properties
           echo "filePath=$keystore_path" >> "$GITHUB_OUTPUT"
           echo "Shared development keystore prepared and validated."
-      - name: Test and assemble both APKs with the shared signing key
+      - name: Test and assemble the Android host APK
         env:
           SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
@@ -118,55 +116,15 @@ jobs:
           gradle --no-daemon --no-build-cache clean
           gradle --no-daemon --no-build-cache \
             :android-app:testDebugUnitTest \
-            :ipc-companion:testDebugUnitTest \
             :android-app:assembleDebug \
-            :ipc-companion:assembleDebug
-      - name: Verify both APKs use the same signing certificate
-        shell: bash
-        run: |
-          set -euo pipefail
-          host_apk="$(find android-app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
-          companion_apk="$(find ipc-companion/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
-          test -n "$host_apk"
-          test -n "$companion_apk"
-          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
-          apksigner="$(find "$sdk_root/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          test -x "$apksigner"
-          host_verify="$("$apksigner" verify --verbose --print-certs "$host_apk" 2>&1)" || {
-            printf '%s\n' "$host_verify"
-            echo "::error::Host APK signature verification failed."
-            exit 1
-          }
-          companion_verify="$("$apksigner" verify --verbose --print-certs "$companion_apk" 2>&1)" || {
-            printf '%s\n' "$companion_verify"
-            echo "::error::Companion APK signature verification failed."
-            exit 1
-          }
-          echo "Host APK: $host_apk"
-          printf 'Host apksigner report:\n%s\n' "$host_verify"
-          echo "Companion APK: $companion_apk"
-          printf 'Companion apksigner report:\n%s\n' "$companion_verify"
-          host_cert="$(printf '%s\n' "$host_verify" | sed -nE 's/.*certificate SHA-256 digest: *([[:xdigit:]]+).*/\1/p' | head -n 1)"
-          companion_cert="$(printf '%s\n' "$companion_verify" | sed -nE 's/.*certificate SHA-256 digest: *([[:xdigit:]]+).*/\1/p' | head -n 1)"
-          echo "Host signer SHA-256: ${host_cert:-<missing>}"
-          echo "Companion signer SHA-256: ${companion_cert:-<missing>}"
-          if [[ -z "$host_cert" || -z "$companion_cert" || "$host_cert" != "$companion_cert" ]]; then
-            echo "::error::Host and companion APK signing certificates do not match. Inspect the apksigner reports above."
-            exit 1
-          fi
-          echo "PASS: host and companion APKs have the same signer certificate."
+            :android-app:assembleDebug
       - name: Upload display host APK
         uses: actions/upload-artifact@v4
         with:
           name: termux-xwayland-debug-apk
           path: android-app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-      - name: Upload Binder companion APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: termux-xwayland-ipc-companion-debug-apk
-          path: ipc-companion/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+
 
   native-scaffold:
     name: Native protocol and scaffold checks
