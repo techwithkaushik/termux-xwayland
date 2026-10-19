@@ -1,0 +1,79 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -u
+
+APP_ID="org.techwithkaushik.termuxxwayland"
+APP_ACTIVITY="$APP_ID/.MainActivity"
+SYSTEM_PM="/system/bin/pm"
+SYSTEM_AM="/system/bin/am"
+
+fail() {
+  printf 'termux-xwayland: %s\n' "$*" >&2
+  exit 1
+}
+
+is_host_installed() {
+  [ -x "$SYSTEM_PM" ] || return 1
+  local output
+  output="$("$SYSTEM_PM" path "$APP_ID" 2>/dev/null)" || return 1
+  case "$output" in
+    package:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+show_status() {
+  if is_host_installed; then
+    printf 'Android host: installed (%s)\n' "$APP_ID"
+  else
+    printf 'Android host: NOT DETECTED (%s)\n' "$APP_ID"
+    printf 'Install the Termux-XWayland Android APK, then retry.\n'
+    return 1
+  fi
+  printf 'Termux companion: installed (deb package)\n'
+  printf 'Live compositor/stream: not implemented yet\n'
+}
+
+start_host() {
+  is_host_installed || {
+    printf 'Android host: NOT DETECTED (%s)\n' "$APP_ID" >&2
+    printf 'Install the Termux-XWayland Android APK first.\n' >&2
+    exit 2
+  }
+  [ -x "$SYSTEM_AM" ] || fail "Android activity manager is unavailable"
+  # Explicit component launch; no RUN_COMMAND permission or external-app toggle.
+  if "$SYSTEM_AM" start -W -n "$APP_ACTIVITY"; then
+    printf 'Termux-XWayland host launch requested. A visible window is not proof that a Linux session is running.\n'
+  else
+    fail "Could not launch the Android host. Check the installed package and Android restrictions."
+  fi
+}
+
+case "${1:-status}" in
+  status|check)
+    show_status
+    ;;
+  start)
+    start_host
+    ;;
+  stop)
+    printf 'Session stop is not available yet: the persistent session controller is not implemented.\n' >&2
+    exit 3
+    ;;
+  --version|-V)
+    printf 'termux-xwayland companion 0.1.0 (session streaming not implemented)\n'
+    ;;
+  --help|-h|help)
+    cat <<'EOF'
+Usage: termux-xwayland [status|check|start|stop|--version|--help]
+
+status/check  Detect the Termux-XWayland Android host package.
+start         Open the Android host (does not start a compositor yet).
+stop          Reserved; session lifecycle is not implemented yet.
+EOF
+    ;;
+  *)
+    printf 'Unknown command: %s\n' "$1" >&2
+    printf 'Run termux-xwayland --help\n' >&2
+    exit 64
+    ;;
+esac
