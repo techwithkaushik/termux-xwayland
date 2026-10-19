@@ -1,8 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -u
 
-APP_ID="org.techwithkaushik.termuxxwayland"
-APP_ACTIVITY="$APP_ID/.MainActivity"
+# Debug APKs append .debug via applicationIdSuffix; release APKs do not.
+APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
+DETECTED_APP_ID=""
 SYSTEM_PM="/system/bin/pm"
 SYSTEM_AM="/system/bin/am"
 
@@ -11,21 +12,28 @@ fail() {
   exit 1
 }
 
-is_host_installed() {
+detect_host() {
   [ -x "$SYSTEM_PM" ] || return 1
-  local output
-  output="$("$SYSTEM_PM" path "$APP_ID" 2>/dev/null)" || return 1
-  case "$output" in
-    package:*) return 0 ;;
-    *) return 1 ;;
-  esac
+  local app_id output
+  for app_id in "${APP_IDS[@]}"; do
+    output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
+    case "$output" in
+      package:*)
+        DETECTED_APP_ID="$app_id"
+        return 0
+        ;;
+    esac
+  done
+  return 1
 }
 
 show_status() {
-  if is_host_installed; then
-    printf 'Android host: installed (%s)\n' "$APP_ID"
+  if detect_host; then
+    printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
   else
-    printf 'Android host: NOT DETECTED (%s)\n' "$APP_ID"
+    printf 'Android host: NOT DETECTED\n'
+    printf 'Checked package IDs:\n'
+    printf '  - %s\n' "${APP_IDS[@]}"
     printf 'Install the Termux-XWayland Android APK, then retry.\n'
     return 1
   fi
@@ -34,26 +42,23 @@ show_status() {
 }
 
 start_host() {
-  is_host_installed || {
-    printf 'Android host: NOT DETECTED (%s)\n' "$APP_ID" >&2
+  detect_host || {
+    printf 'Android host: NOT DETECTED\n' >&2
+    printf 'Checked package IDs: %s\n' "${APP_IDS[*]}" >&2
     printf 'Install the Termux-XWayland Android APK first.\n' >&2
     exit 2
   }
   [ -x "$SYSTEM_AM" ] || fail "Android activity manager is unavailable"
-  if "$SYSTEM_AM" start -W -n "$APP_ACTIVITY"; then
-    printf 'Termux-XWayland host launch requested. A visible window is not proof that a Linux session is running.\n'
+  if "$SYSTEM_AM" start -W -n "$DETECTED_APP_ID/.MainActivity"; then
+    printf 'Termux-XWayland host launch requested (%s). A visible window is not proof that a Linux session is running.\n' "$DETECTED_APP_ID"
   else
-    fail "Could not launch the Android host. Check the installed package and Android restrictions."
+    fail "Could not launch Android host $DETECTED_APP_ID. Check the installed package and Android restrictions."
   fi
 }
 
 case "${1:-status}" in
-  status|check)
-    show_status
-    ;;
-  start)
-    start_host
-    ;;
+  status|check) show_status ;;
+  start) start_host ;;
   stop)
     printf 'Session stop is not available yet: the persistent session controller is not implemented.\n' >&2
     exit 3
@@ -65,7 +70,7 @@ case "${1:-status}" in
     cat <<'EOF'
 Usage: termux-xwayland [status|check|start|stop|--version|--help]
 
-status/check  Detect the Termux-XWayland Android host package.
+status/check  Detect release or debug Android host package.
 start         Open the Android host (does not start a compositor yet).
 stop          Reserved; session lifecycle is not implemented yet.
 EOF
