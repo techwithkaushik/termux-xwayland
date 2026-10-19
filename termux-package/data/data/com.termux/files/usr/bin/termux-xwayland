@@ -2,12 +2,12 @@
 set -u
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
-SYSTEM_PM="\${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
-TERMUX_OPEN="\${TERMUX_XWAYLAND_OPEN:-\${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
-WESTON_BIN="\${TERMUX_XWAYLAND_WESTON:-weston}"
-NOTIFY_BIN="\${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
-RUNTIME_DIR="\${TERMUX_XWAYLAND_RUNTIME_DIR:-\${XDG_RUNTIME_DIR:-\${TMPDIR:-\${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-\${UID:-$(id -u)}}}"
-WAYLAND_SOCKET="\${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
+SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
+TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
+WESTON_BIN="${TERMUX_XWAYLAND_WESTON:-weston}"
+NOTIFY_BIN="${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
+RUNTIME_DIR="${TERMUX_XWAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-${UID:-$(id -u)}}}"
+WAYLAND_SOCKET="${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
 PID_FILE="$RUNTIME_DIR/weston.pid"
 LOG_FILE="$RUNTIME_DIR/weston.log"
 
@@ -22,7 +22,7 @@ notify_user() {
 detect_host() {
   [ -x "$SYSTEM_PM" ] || return 1
   local app_id output
-  for app_id in "\${APP_IDS[@]}"; do
+  for app_id in "${APP_IDS[@]}"; do
     output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
     case "$output" in package:*) DETECTED_APP_ID="$app_id"; return 0 ;; esac
   done
@@ -97,7 +97,7 @@ show_status() {
     host_found=1
     printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
   else
-    printf 'Android host: NOT DETECTED\nChecked package IDs: %s\n' "\${APP_IDS[*]}"
+    printf 'Android host: NOT DETECTED\nChecked package IDs: %s\n' "${APP_IDS[*]}"
   fi
   if server_is_running && [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
     printf 'Wayland server: running (PID %s, socket %s)\n' "$(cat "$PID_FILE")" "$RUNTIME_DIR/$WAYLAND_SOCKET"
@@ -111,7 +111,7 @@ show_status() {
 start_session() {
   detect_host || {
     notify_user "Termux-XWayland" "Android host not found. Install the Termux-XWayland APK first."
-    fail "Android host not detected; checked \${APP_IDS[*]}"
+    fail "Android host not detected; checked ${APP_IDS[*]}"
   }
   start_server
   [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
@@ -119,7 +119,7 @@ start_session() {
   notify_user "Termux-XWayland" "Android host found (\$DETECTED_APP_ID); Weston is running. Waiting for authenticated host connection; frame transport is not integrated yet."
   printf 'Android host launch requested. Connection is pending until authenticated frame transport is implemented.\n'
 }
-case "\${1:-status}" in
+case "${1:-status}" in
   status|check) show_status ;;
   start) start_session ;;
   server-start) start_server ;;
