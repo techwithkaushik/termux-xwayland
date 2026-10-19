@@ -172,6 +172,13 @@ class MainActivity : Activity() {
                     throw IllegalStateException("Bridge handshake did not include a valid Termux UID")
                 }
                 val termuxUid = ByteBuffer.wrap(response.payload).int.toLong() and 0xffffffffL
+                val peerCredentials = candidate.peerCredentials
+                val kernelPeerUid = peerCredentials.uid.toLong()
+                if (kernelPeerUid < 0 || kernelPeerUid != termuxUid) {
+                    throw IllegalStateException(
+                        "Socket peer UID mismatch: kernel=$kernelPeerUid, bridge=$termuxUid"
+                    )
+                }
                 val androidUid = Process.myUid().toLong()
                 val frameMessage = BridgeProtocol.read(candidate.getInputStream())
                 if (frameMessage.kind != BridgeMessageKind.FRAME) {
@@ -204,8 +211,8 @@ class MainActivity : Activity() {
                     previewImage.visibility = View.VISIBLE
                     statusDescription.text = String.format(
                         java.util.Locale.US,
-                        "Termux process UID: %d • Android app UID: %d\nPING/PONG round trip: %.2f ms\nAuthenticated socket and two-way communication verified. The image is synthetic, not desktop output.",
-                        termuxUid, androidUid, roundTripMs
+                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\nPING/PONG round trip: %.2f ms\nKernel peer credentials, token authentication and two-way communication verified. The image is synthetic, not desktop output.",
+                        kernelPeerUid, androidUid, roundTripMs
                     )
                 }
             } catch (error: Exception) {
