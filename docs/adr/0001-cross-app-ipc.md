@@ -34,6 +34,8 @@ Before selecting a production implementation, prove all of the following with a 
 
 The current synthetic frame is only a protocol/UI test and cannot display a Linux desktop. Real Wayland frame transport and input forwarding must wait until the cross-app IPC transport passes the device test. CI compilation and unit tests cannot establish Android SELinux/Binder policy behavior; device verification is mandatory.
 
-## Immediate next step
+## Probe status and immediate next step
 
-Build a minimal IPC capability probe for the selected Termux-side integration before implementing a compositor. Do not replace the user's Termux installation or silently add a network fallback. If a companion/plugin is required, document the install and authorization flow and keep it separate from the main Termux app.
+A minimal **display-host-to-companion** Binder capability probe now exists as a separate `:ipc-companion` APK. Its service is exported only behind a signature-level permission, checks the caller signature again during transactions, bounds the request to 64 KiB, and supports a 16 KiB echo test. The display-host UI reports the caller UID, service UID, Android API level and exact-echo result. Install both debug APKs signed with the same certificate; install the companion first.
+
+This is a feasibility probe for Android Binder and is **not** the Termux-side integration described in option 1. It does not prove that an ordinary existing Termux process can access the endpoint, and it does not yet pass file descriptors or provide a long-lived frame/input channel. Next, test this probe on the Android 10 device, then investigate the supported Termux plugin/companion authorization model and validate caller identity, full-duplex bounded data flow, lifecycle and performance. Do not replace the user's Termux installation or silently add a network fallback.
