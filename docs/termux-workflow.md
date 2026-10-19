@@ -6,23 +6,20 @@ The native binary currently provides a **single-client authenticated abstract Un
 
 The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-cross-app-ipc.md). Do not continue treating the abstract socket as the default cross-UID path.
 
-## Termux RUN_COMMAND integration probe
+## Termux integration direction (no RUN_COMMAND dependency)
 
-The Android host includes a control-plane diagnostic that requests a harmless `id` command from the installed Termux app using the documented `com.termux.RUN_COMMAND` service. This is intentionally a small first integration step, not a Binder service hosted by Termux and not a live frame/input transport.
+The generic Termux `RUN_COMMAND` API is not the display transport and requires the user's explicit external-command configuration. This project will not require `allow-external-apps=true` merely to launch its display host, and the Android host no longer exposes a RUN_COMMAND diagnostic button or permission.
 
-1. Install the host APK signed with the expected development certificate.
-2. In Termux, edit `~/.termux/termux.properties` and set:
-   ```properties
-   allow-external-apps = true
-   ```
-   Then restart Termux so the property is reloaded.
-3. In Android Settings, open the Termux XWayland app's permissions and grant **Run commands in Termux environment** if Android exposes that permission.
-4. Open the host app and tap **Test Termux command bridge**.
-5. Confirm that a Termux session opens and prints `Termux RUN_COMMAND OK` and the `id` output. The host UI only reports that the request was sent; a request-sent message is not proof of command execution.
+Termux:X11 is a useful architectural reference because it ships **both** an Android display app and a Termux-side package; its optional shared-UID build is a separate distribution choice and requires matching Termux signing keys. See the [upstream Termux:X11 README](https://github.com/termux/termux-x11#setup-instructions). Do not assume its private Binder interfaces are stable public APIs or available to this app.
 
-If Android denies the request, check that the installed Termux distribution supports `com.termux.RUN_COMMAND`, that the permission is granted, and that `allow-external-apps` is enabled. Do not weaken Termux authorization or add a TCP fallback.
+The implementation path for this project is:
 
-This control API is for starting/stopping sessions and diagnostics. It does not provide a low-latency, full-duplex frame/input channel and does not by itself bind the companion APK into Termux's UID. The next step after the command test passes is to implement and validate an explicitly authorized Termux-side companion/plugin IPC endpoint; only then can live display transport be considered.
+1. Keep the standalone host UI independent of Termux's generic command-launch permission.
+2. Define a small, versioned IPC contract for session creation, cancellation, status, and ownership of passed file descriptors. The eventual Termux-side package/server must create the actual compositor session; it must not use shell-output polling or temporary files for real-time frames.
+3. Choose and document one supported authorization/distribution model before implementing the endpoint: a deliberately coordinated shared-UID distribution, or a separately installable bridge with an authorization mechanism that works across the actual signing certificates. A signature permission alone will not authorize unrelated certificates.
+4. Add a bounded, bidirectional Binder/FD handoff probe and lifecycle tests, then verify it on Android 10 with the user's actual Termux distribution. Do not claim success until this device test passes.
+
+The existing `:ipc-companion` APK remains only a same-certificate Binder feasibility test. It is not the Termux-side service, does not hand off file descriptors, and does not provide live frame/input transport.
 
 ## Binder companion capability probe (experimental)
 
