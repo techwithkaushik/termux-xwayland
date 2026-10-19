@@ -1,16 +1,17 @@
 # Local bridge protocol v1
 
-**Status:** bounded framing, authenticated loopback transport, one synthetic RGBA test frame, and Android-side frame decoding/rendering are implemented. This remains a transport/rendering smoke test; the test pattern is not desktop output. Wayland compositor integration, real frame capture, input forwarding and production session brokering are not implemented.
+**Status:** bounded framing, authenticated abstract Unix-domain socket transport, one synthetic RGBA test frame, and Android-side frame decoding/rendering are implemented. This remains a transport/rendering smoke test; the test pattern is not desktop output. Wayland compositor integration, real frame capture, input forwarding and production session brokering are not implemented.
 
 ## Transport and security
 
-- The current server binds explicitly to IPv4 loopback (`127.0.0.1`), never `0.0.0.0` or a LAN interface.
-- Each test run requires a fresh 32-byte token (64 hexadecimal characters), supplied to the native process via `TERMUX_XWAYLAND_TOKEN_HEX`. The server never prints the token. The workflow prints it in the local terminal solely for manual entry in the Android app; treat it as a secret.
-- Token bytes are compared with a constant-time equality loop after the fixed-size token check. Failed handshakes are rejected and the connection is closed.
-- The current environment-variable mechanism is development plumbing, not a release-ready secret broker. A future launcher should deliver one-time session credentials through a scoped mechanism that avoids process-environment exposure.
-- Read/write timeouts are applied to the current handshake socket. Production transport needs stronger lifecycle management, rate limiting and a tested pairing flow.
-- Loopback reachability between Termux and the Android app is device/ROM dependent and must be tested. If blocked, do not fall back to a public listener; evaluate a scoped IPC mechanism.
-- Clipboard and input messages are not enabled by the current smoke-test server.
+- The Termux-side Rust process listens on a Linux/Android **abstract AF_UNIX stream socket** named `termux_xwayland_bridge_v1`. The abstract address is represented as `@termux_xwayland_bridge_v1` in diagnostics; the leading NUL is part of the kernel address, not the displayed name.
+- The Android app connects with `android.net.LocalSocket` using `LocalSocketAddress.Namespace.ABSTRACT`. This path does not use TCP/IP, localhost, a port, Wi-Fi, or the Internet permission.
+- Abstract sockets have no filesystem permission checks. A known socket name may be reachable by other local processes depending on Android SELinux policy. A fresh 32-byte token (64 hex characters) is required on every connection; never log or share the token.
+- The token is supplied to the native process via `TERMUX_XWAYLAND_TOKEN_HEX`; the server never prints it. The workflow prints the token in the Termux terminal solely for manual entry into the Android app.
+- Token bytes are compared using a constant-time equality loop after fixed-length validation. Failed handshakes are rejected.
+- The environment-variable mechanism is development plumbing, not a release-ready secret broker. A future Termux launcher should provide scoped, short-lived credentials and a session-specific socket name. Production transport also needs connection-rate limits, robust lifecycle management and a tested pairing flow.
+- Android/Termux cross-UID abstract-socket connectivity can be affected by device SELinux policy and OEM builds. It must be tested on target devices; do not silently fall back to a public TCP listener if blocked.
+- The server currently handles one client at a time. Clipboard and input messages are not enabled.
 
 ## Frame format
 
@@ -40,11 +41,11 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 | 8 | `PONG` | Bidirectional | Implemented by smoke-test server |
 | 9 | `CLOSE` | Bidirectional | Implemented for graceful test-session shutdown |
 
-## Planned payload conventions
+## Payload conventions
 
 - `HELLO`: exactly 32 bytes of session token. Never log payload bytes.
 - `WELCOME`: empty payload.
-- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, initially `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The smoke test sends one 320×180 synthetic pattern after `WELCOME`; Android validates metadata and exact payload length before rendering. The 16 MiB envelope cap means large frames must be tiled or compressed rather than bypassing the limit.
+- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, initially `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The smoke test sends one 320×180 synthetic pattern after `WELCOME`; Android validates metadata and exact payload length before rendering. The 16 MiB envelope cap means larger frames must be tiled or compressed rather than bypassing the limit.
 - `RESIZE`: width (`u16`) and height (`u16`); reject zero dimensions and values beyond implementation limits.
 - `CLIPBOARD`: UTF-8 bytes, maximum 1 MiB, only after explicit session authentication. Never automatically execute clipboard contents.
 - `PING`, `PONG`, `CLOSE`: empty payloads in version 1.
@@ -52,4 +53,6 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 ## Testing and state
 
-Rust tests cover round trips and rejection of bad magic, unsupported versions, unknown kinds, nonzero reserved bits, oversized payloads and token validation. The Android client verifies the empty `WELCOME`, then validates and displays the synthetic `FRAME`. “Test frame received” confirms authenticated transport and rendering only; it must not be interpreted as a connected desktop. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
+Rust tests cover framing and rejection of malformed headers, oversized payloads, token validation and abstract socket address construction. The Android client verifies the empty `WELCOME`, then validates and displays the synthetic `FRAME`. “Test frame received” confirms authenticated transport and rendering only; it must not be interpreted as a connected desktop.
+
+CI compiles the Android client and native server, but cannot verify that a real Android device's SELinux policy permits cross-UID abstract-socket connections. That requires on-device testing. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
