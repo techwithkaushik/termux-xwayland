@@ -19,4 +19,10 @@ object NativeBridge {
      * Returns 0 on orderly close and -1 on error/timeout.
      */
     external fun nativeReadSocket(fileDescriptor: java.io.FileDescriptor): Int
+
+    /**
+     * Attempts to connect to an existing filesystem AF_UNIX socket without
+     * sending data. Returns 0 on success or a negative errno on failure.
+     */
+    external fun nativeProbeUnixSocket(path: String): Int
 }
