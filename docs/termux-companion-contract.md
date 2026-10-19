@@ -78,6 +78,12 @@ Transport requirements:
 - No TCP, localhost port, root, SELinux policy change, or temporary-file frame streaming.
 - The app displays a real compositor frame before the project claims desktop support.
 
+## Binder file-descriptor probe implementation (2026-10-19)
+
+A new diagnostic transaction was added to the test companion. It receives two `ParcelFileDescriptor` handles through Binder: one pipe for a bounded request and one for the echoed response. The service checks the caller's signing certificate, caps payloads at 64 KiB, reads exactly the declared number of bytes, rejects trailing bytes, closes both received descriptors with auto-close streams, and zeroes its temporary payload buffer. The host uses worker threads so pipe reads/writes cannot block the UI thread, compares the exact returned bytes, and closes its pipe endpoints and Parcels in a `finally` block.
+
+This is an implementation spike only. It has **not** been built or device-tested yet. It proves neither Termux access nor sustained streaming, and should not be used as the production transport until the Android 10 test passes and lifecycle/error paths are exercised.
+
 ## Low-bandwidth validation status (2026-10-19)
 
 The user verified these diagnostics on the target Android 10 device:
