@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.LocalSocket
+import android.net.LocalServerSocket
 import android.net.LocalSocketAddress
 import android.content.Intent
 import android.graphics.Bitmap
@@ -220,6 +221,16 @@ class MainActivity : Activity() {
         framedProbeButton = actionButton("Test framed TXWB protocol") { runFramedProbe() }
         content.addView(framedProbeButton, margins(bottom = 16))
 
+        content.addView(label("Rust JNI socket reader", 20, ink, true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        content.addView(infoCard(
+            "Native-library smoke test • app-local only",
+            "Creates a temporary local Unix socket, passes its connected file descriptor to Rust, and verifies native reading/logging. This validates JNI packaging and FD ownership only; it does not connect to Termux or parse Wayland."
+        ), margins(bottom = 10))
+        content.addView(actionButton("Run Rust JNI socket test") { runNativeJniProbe() },
+            margins(bottom = 16))
+
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
@@ -238,6 +249,57 @@ class MainActivity : Activity() {
             setPadding(0, dp(18), 0, 0)
         })
         return scroll
+    }
+
+    /**
+     * App-local smoke test for the Rust JNI FD handoff. It deliberately uses
+     * a separate socket so it cannot consume frames from the active bridge.
+     */
+    private fun runNativeJniProbe() {
+        Thread({
+            var server: LocalServerSocket? = null
+            var client: LocalSocket? = null
+            var accepted: LocalSocket? = null
+            try {
+                val name = "txw_jni_${Process.myPid()}_${System.nanoTime()}"
+                server = LocalServerSocket(name)
+                client = LocalSocket()
+                client.connect(LocalSocketAddress(name, LocalSocketAddress.Namespace.ABSTRACT))
+                accepted = server.accept()
+
+                client.outputStream.use { output ->
+                    output.write(byteArrayOf(0x54, 0x58, 0x57, 0x42, 0x01, 0x02))
+                    output.flush()
+                }
+
+                val fd = accepted.fileDescriptor?.fd
+                    ?: throw IOException("Connected diagnostic socket has no file descriptor")
+                val result = NativeBridge.nativeReadSocket(fd)
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        if (result == 0) {
+                            "PASS: Rust JNI read the test socket; see logcat tag TermuxXWayland"
+                        } else {
+                            "FAIL: Rust JNI socket reader returned $result"
+                        },
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Rust JNI test failed: ${error.message ?: error.javaClass.simpleName}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } finally {
+                try { accepted?.close() } catch (_: Exception) { }
+                try { client?.close() } catch (_: Exception) { }
+                try { server?.close() } catch (_: Exception) { }
+            }
+        }, "rust-jni-socket-probe").start()
     }
 
     private fun connectOrDisconnect() {
