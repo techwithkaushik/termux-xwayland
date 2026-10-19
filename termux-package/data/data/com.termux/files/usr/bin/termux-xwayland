@@ -34,10 +34,14 @@ detect_host() {
 control_call() {
   local method="$1" arg="${2:-}"
   [ -x "$CONTROL_BIN" ] || return 127
+  # Android's /system/bin/content wrapper invokes app_process by name on
+  # some Android releases. Termux's PATH may omit /system/bin, so provide the
+  # Android system executable directories explicitly for this command only.
+  local android_path="/system/bin:/system/xbin:${PATH:-}"
   if [ -n "$arg" ]; then
-    "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" --arg "$arg" 2>&1
+    PATH="$android_path" "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" --arg "$arg" 2>&1
   else
-    "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" 2>&1
+    PATH="$android_path" "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" 2>&1
   fi
 }
 
