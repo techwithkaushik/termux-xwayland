@@ -3,11 +3,13 @@ set -u
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
 SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
+SYSTEM_APP_PROCESS="${TERMUX_XWAYLAND_APP_PROCESS:-/system/bin/app_process}"
 TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
 WESTON_BIN="${TERMUX_XWAYLAND_WESTON:-weston}"
 NOTIFY_BIN="${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
-CONTROL_BIN="${TERMUX_XWAYLAND_CONTENT:-/system/bin/content}"
 CONTROL_URI=""
+CONTROL_APK_PATH=""
+CONTROL_CLI_CLASS="org.techwithkaushik.termuxxwayland.TermuxControlCli"
 RUNTIME_DIR="${TERMUX_XWAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-${UID:-$(id -u)}}}"
 WAYLAND_SOCKET="${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
 PID_FILE="$RUNTIME_DIR/weston.pid"
@@ -25,32 +27,56 @@ detect_host() {
   [ -x "$SYSTEM_PM" ] || return 1
   local app_id output
   for app_id in "${APP_IDS[@]}"; do
-    output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
-    case "$output" in package:*) DETECTED_APP_ID="$app_id"; CONTROL_URI="content://${app_id}.control/session"; return 0 ;; esac
+    output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null | head -n 1)" || continue
+    case "$output" in
+      package:*)
+        DETECTED_APP_ID="$app_id"
+        CONTROL_APK_PATH="${output#package:}"
+        CONTROL_URI="content://${app_id}.control/session"
+        return 0
+        ;;
+    esac
   done
   return 1
 }
 
 control_call() {
   local method="$1" arg="${2:-}"
-  [ -x "$CONTROL_BIN" ] || return 127
-  # Android's /system/bin/content wrapper invokes app_process by name on
-  # some Android releases. Termux's PATH may omit /system/bin, so provide the
-  # Android system executable directories explicitly for this command only.
-  local android_path="/system/bin:/system/xbin:${PATH:-}"
+  # Keep the injectable legacy command only for hermetic package tests.
+  # Production defaults to the app_process helper below.
+  if [ -n "${TERMUX_XWAYLAND_CONTENT:-}" ]; then
+    if [ -n "$arg" ]; then
+      "$TERMUX_XWAYLAND_CONTENT" call --uri "$CONTROL_URI" --method "$method" --arg "$arg" 2>&1
+    else
+      "$TERMUX_XWAYLAND_CONTENT" call --uri "$CONTROL_URI" --method "$method" 2>&1
+    fi
+    return $?
+  fi
+  [ -x "$SYSTEM_APP_PROCESS" ] || {
+    printf 'Android app_process is unavailable: %s\n' "$SYSTEM_APP_PROCESS" >&2
+    return 127
+  }
+  [ -r "$CONTROL_APK_PATH" ] || {
+    printf 'Cannot read installed Android host APK: %s\n' "$CONTROL_APK_PATH" >&2
+    return 1
+  }
+  # Android 10's content command uses getContentProviderExternal(), which is
+  # denied to ordinary app UIDs by ACCESS_CONTENT_PROVIDERS_EXTERNALLY.
+  # The APK helper uses ContentResolver.call() under this Termux process UID;
+  # the provider independently validates that UID against the installed package.
   if [ -n "$arg" ]; then
-    PATH="$android_path" "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" --arg "$arg" 2>&1
+    CLASSPATH="$CONTROL_APK_PATH" "$SYSTEM_APP_PROCESS" /system/bin "$CONTROL_CLI_CLASS" "$CONTROL_URI" "$method" "$arg" 2>&1
   else
-    PATH="$android_path" "$CONTROL_BIN" call --uri "$CONTROL_URI" --method "$method" 2>&1
+    CLASSPATH="$CONTROL_APK_PATH" "$SYSTEM_APP_PROCESS" /system/bin "$CONTROL_CLI_CLASS" "$CONTROL_URI" "$method" 2>&1
   fi
 }
-
 start_control_session() {
   local session_id response
   session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
   [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a control session ID"
   response="$(control_call start "$session_id")" || {
     printf 'termux-xwayland: Android control handshake failed. Ensure the installed host supports this feature and that the caller is the official com.termux app.\n%s\n' "$response" >&2
+    stop_server >/dev/null 2>&1 || true
     return 1
   }
   if ! grep -Fq 'state=connected' <<<"$response"; then
