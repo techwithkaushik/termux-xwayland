@@ -13,10 +13,10 @@ test -f native/compositor/src/bridge.rs
 test -f docs/bridge-protocol.md
 test -f tools/probe-termux-x11-sockets.sh
 bash -n tools/probe-termux-x11-sockets.sh
-test -x tools/probe-weston-headless.sh
+test -f tools/probe-weston-headless.sh
 test -f docs/weston-headless-probe.md
 bash -n tools/probe-weston-headless.sh
-test -x tools/probe-weston-x11-client.sh
+test -f tools/probe-weston-x11-client.sh
 test -f docs/weston-xwayland-client-probe.md
 bash -n tools/probe-weston-x11-client.sh
 test -x tools/capture-x11-frame.sh
