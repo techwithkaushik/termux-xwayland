@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.Process
-import java.security.SecureRandom
 
 /**
  * Minimal control-plane IPC for the existing Termux app.
