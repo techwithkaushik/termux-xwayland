@@ -12,12 +12,14 @@ The generic Termux `RUN_COMMAND` API is not the display transport and requires t
 
 Termux:X11 is a useful architectural reference because it ships **both** an Android display app and a Termux-side package; its optional shared-UID build is a separate distribution choice and requires matching Termux signing keys. See the [upstream Termux:X11 README](https://github.com/termux/termux-x11#setup-instructions). Do not assume its private Binder interfaces are stable public APIs or available to this app.
 
-The implementation path for this project is:
+The agreed component model is **Termux app → Termux-side companion package/CLI → Termux-XWayland Android host**. The user starts the companion from the Termux shell; it manages the Linux session and coordinates with the Android host. The host owns the display surface and Android input.
+
+Implementation contract and acceptance tests: [Termux companion integration contract](termux-companion-contract.md).
 
 1. Keep the standalone host UI independent of Termux's generic command-launch permission.
-2. Define a small, versioned IPC contract for session creation, cancellation, status, and ownership of passed file descriptors. The eventual Termux-side package/server must create the actual compositor session; it must not use shell-output polling or temporary files for real-time frames.
-3. Choose and document one supported authorization/distribution model before implementing the endpoint: a deliberately coordinated shared-UID distribution, or a separately installable bridge with an authorization mechanism that works across the actual signing certificates. A signature permission alone will not authorize unrelated certificates.
-4. Add a bounded, bidirectional Binder/FD handoff probe and lifecycle tests, then verify it on Android 10 with the user's actual Termux distribution. Do not claim success until this device test passes.
+2. Implement the companion package skeleton with start/stop/status commands and explicit session lifecycle.
+3. Verify a supported authorization mechanism and Binder/file-descriptor handoff with the actual Termux installation and signing keys on Android 10. Do not assume a signature permission authorizes unrelated certificates.
+4. Add bounded, bidirectional streaming and lifecycle tests. Real compositor work begins only after device acceptance; no shell polling or temporary-file frame transport.
 
 The existing `:ipc-companion` APK remains only a same-certificate Binder feasibility test. It is not the Termux-side service, does not hand off file descriptors, and does not provide live frame/input transport.
 
@@ -77,7 +79,7 @@ Enter the 64-character token in the app and tap **Connect securely**. If the app
 
 ## Transport requirements before compositor work
 
-The next milestone is a device-verified, explicitly authorized IPC mechanism that works with the user's existing Termux installation. Investigate a Termux-side companion/plugin exposing a permission-protected Binder endpoint. Termux's command-launch API may be useful for control-plane requests, but it has not been established as a low-latency bidirectional stream for frames and input.
+The next milestone is the Termux-side companion package described in [termux-companion-contract.md](termux-companion-contract.md), followed by a device-verified, explicitly authorized control/FD handoff and persistent frame/input channel. The generic command-launch API is not required and is not a streaming transport.
 
 Do not disable SELinux, require root, or add localhost TCP as a fallback. Do not begin real desktop frame streaming until the IPC probe proves bidirectional bounded messaging, session lifecycle handling, and Android 10 compatibility.
 
