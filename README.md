@@ -9,6 +9,7 @@ A standalone Android display host for graphical sessions launched from Termux. T
 - Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
 - Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype; no TCP listener or localhost port.
 - Binder probe: a separately installed companion APK exposes a signature-permission-protected Binder service; the display host verifies a bounded 16 KiB echo and distinct app UIDs. This is only a host-to-companion capability test, not a Termux connection or streaming transport.
+- Termux integration: no dependency on Termux RUN_COMMAND or `allow-external-apps=true`. The intended next milestone is a Termux-side package plus a versioned, authorized session/FD handoff contract; it is not implemented yet.
 - Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
 - Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
