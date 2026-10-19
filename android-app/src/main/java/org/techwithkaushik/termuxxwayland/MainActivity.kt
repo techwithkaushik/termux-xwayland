@@ -268,29 +268,8 @@ class MainActivity : Activity() {
     }
 
     private fun decodeTestFrame(payload: ByteArray): Bitmap {
-        if (payload.size < 8) throw IllegalStateException("Truncated frame metadata")
-        val width = ((payload[0].toInt() and 0xff) shl 8) or (payload[1].toInt() and 0xff)
-        val height = ((payload[2].toInt() and 0xff) shl 8) or (payload[3].toInt() and 0xff)
-        val format = payload[4].toInt() and 0xff
-        if (width !in 1..640 || height !in 1..360 || format != 1 ||
-            payload[5] != 0.toByte() || payload[6] != 0.toByte() || payload[7] != 0.toByte()
-        ) {
-            throw IllegalStateException("Unsupported or invalid test frame metadata")
-        }
-        val expectedBytes = 8L + width.toLong() * height.toLong() * 4L
-        if (expectedBytes != payload.size.toLong()) {
-            throw IllegalStateException("Frame pixel length does not match its dimensions")
-        }
-        val pixels = IntArray(width * height)
-        var offset = 8
-        for (index in pixels.indices) {
-            val red = payload[offset++].toInt() and 0xff
-            val green = payload[offset++].toInt() and 0xff
-            val blue = payload[offset++].toInt() and 0xff
-            val alpha = payload[offset++].toInt() and 0xff
-            pixels[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-        }
-        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        val frame = RgbaFrameCodec.decode(payload)
+        return Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
     }
 
     private fun showError(message: String) {
