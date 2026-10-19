@@ -3,5 +3,5 @@ set -u
 printf '\nTermux-XWayland companion package installed.\n'
 printf 'Check the Android host with: termux-xwayland status\n'
 printf 'Open the display host with: termux-xwayland start\n'
-printf 'This version checks/launches the host only; it does not stream a desktop yet.\n\n'
+printf 'This version monitors Wayland server status; desktop frame/input streaming is not implemented yet.\n\n'
 exit 0
