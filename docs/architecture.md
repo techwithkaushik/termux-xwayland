@@ -2,33 +2,38 @@
 
 ## Goal
 
-Run graphical sessions from Termux and show them in the standalone Android app. Users install and start XFCE/LXQt packages in Termux or a compatible PRoot environment.
+Run graphical sessions from Termux and show them in the standalone Android app. Termux remains the Linux userspace and session controller; the Android app is the display/input endpoint, not a bundled Linux distribution.
 
 ## Components
 
-1. Android host: Kotlin Activity and a future SurfaceView renderer.
-2. Termux compositor: Rust/Smithay candidate, subject to ARM32/Bionic dependency validation.
-3. Bridge: authenticated per-session AF_UNIX stream socket for frames and input. Direct abstract AF_UNIX connections across app UIDs can be denied by Android SELinux (especially Android 9+); the standalone cross-UID mode is currently blocked on affected devices. Do not treat this transport as supported until verified on-device. No TCP/localhost dependency.
-4. Native Wayland path: first end-to-end milestone.
-5. XWayland path: compatibility for X11 applications, required for a conventional XFCE session.
-6. Session integration: Termux remains the control environment; the app is the display/input endpoint, not a bundled Linux distribution.
+1. **Android host:** Kotlin Activity plus a `SurfaceView` or equivalent surface renderer. Validate frame dimensions, format and payload bounds before updating the surface.
+2. **Wayland compositor:** native Rust compositor (Smithay is a candidate, not yet integrated). Own Wayland surfaces, damage tracking, composition and output lifecycle.
+3. **Frame export:** export the compositor's rendered output buffer at the compositor boundary. Prefer a supported shared-buffer path when available; otherwise use bounded RGBA frames over the authenticated bridge as the first correct implementation. Do not capture the screen by running an external desktop recorder.
+4. **Bridge:** authenticated, explicitly authorized Termux-mediated IPC. Direct abstract AF_UNIX connections across app UIDs can be denied by Android SELinux; test on Android 10. No TCP/localhost fallback.
+5. **Input:** Android touch/key events mapped into compositor input events with coordinate scaling, focus and key-state cleanup.
+6. **XWayland:** compatibility layer for X11 applications, including the eventual XFCE path. Native Wayland test client comes first.
 
-## Constraints
+## Rendering decision
 
-- Android 10 is the minimum compatibility test target.
-- Test armeabi-v7a and arm64-v8a independently, including native dependencies.
-- Android 9+ per-app SELinux isolation can deny abstract AF_UNIX connect() across app UIDs even though abstract sockets have no filesystem permissions. `Permission denied` is not fixable with chmod.
-- A shared-UID variant requires both APKs to declare the same shared UID and be signed with the same certificate; this is not compatible with arbitrary preinstalled Termux distributions/signing keys. Otherwise use an explicitly authorized Termux-mediated IPC design.
-- Do not claim a live session until an authenticated bridge handshake completes.
-- GPU acceleration, DMA-BUF, zero-copy transport, zero latency and Unicode IME are not phase-one guarantees.
-- Do not silently install Linux packages from the Android app.
+The compositor is the source of truth for desktop pixels. Frames should be obtained from its output/render target, not by launching FFmpeg to repeatedly capture `$DISPLAY`. FFmpeg is optional diagnostic tooling only; it is not a runtime dependency and is not part of the live rendering pipeline.
 
-## Implementation order
+The initial frame transport may copy pixels to a bounded protocol message. Optimize only after correctness is proven: damage rectangles, frame pacing, buffer reuse and shared memory can follow. Do not claim zero-copy or GPU acceleration without device measurements.
 
-1. Buildable Android host and CI.
-2. Authenticated bridge protocol and compositor smoke test.
-3. Render a native Wayland test client in Android.
-4. Input, resize, clipboard and lifecycle.
-5. XWayland with a known X11 test application.
-6. XFCE session, then optional LXQt session.
-7. ARM32/ARM64 device validation and performance work.
+## Milestones
+
+1. Android host and bounded protocol smoke test. **Implemented; still only a synthetic frame.**
+2. Native compositor dependency and Android 10/ARM32 build feasibility. **Not yet verified.**
+3. One native Wayland surface rendered by the compositor and exported through the bridge.
+4. Android displays changing compositor frames with lifecycle-safe start/stop.
+5. Touch/keyboard input and resize handling.
+6. XWayland integration and a known X11 test client.
+7. XFCE session, ARM32/ARM64 validation, memory/performance checks and release packaging.
+
+## Constraints and security
+
+- Android 10 is the minimum compatibility target.
+- Test `armeabi-v7a` and `arm64-v8a` independently, including native dependencies.
+- Android 9+ per-app SELinux isolation can deny abstract AF_UNIX `connect()` across app UIDs even though abstract sockets have no filesystem permissions. `Permission denied` is not fixable with chmod.
+- A shared-UID variant requires both APKs to declare the same shared UID and be signed with the same certificate; this is incompatible with arbitrary Termux distributions/signing keys. Otherwise use explicitly authorized Termux-mediated IPC.
+- Do not claim a live session until a real compositor surface is displayed and authenticated input/frame transport is verified.
+- GPU acceleration, DMA-BUF, zero-copy transport, zero latency and Unicode IME are not assumed; measure and validate them separately.
