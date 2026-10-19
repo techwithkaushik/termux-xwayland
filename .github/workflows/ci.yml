@@ -145,8 +145,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check repository structure
         run: bash tools/check-scaffold.sh
-      - name: Python diagnostic syntax check
-        run: python3 -m py_compile tools/tcp-loopback-probe.py tools/tcp-framed-protocol-probe.py
+      - name: Python diagnostic syntax and protocol validation tests
+        run: |
+          python3 -m py_compile tools/tcp-loopback-probe.py tools/tcp-framed-protocol-probe.py tools/test-tcp-framed-protocol-probe.py
+          python3 tools/test-tcp-framed-protocol-probe.py
       - name: Test Termux DEB companion package
         run: bash tools/test-termux-package.sh
       - uses: dtolnay/rust-toolchain@stable
