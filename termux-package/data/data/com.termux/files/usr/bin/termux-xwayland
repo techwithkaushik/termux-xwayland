@@ -1,0 +1,87 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -u
+
+# Debug APKs append .debug via applicationIdSuffix; release APKs do not.
+APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
+DETECTED_APP_ID=""
+# Optional executable overrides make the CLI testable outside Android. Normal
+# installations continue to use Android's package manager and Termux's opener.
+SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
+TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
+
+fail() {
+  printf 'termux-xwayland: %s\n' "$*" >&2
+  exit 1
+}
+
+detect_host() {
+  [ -x "$SYSTEM_PM" ] || return 1
+  local app_id output
+  for app_id in "${APP_IDS[@]}"; do
+    output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
+    case "$output" in
+      package:*)
+        DETECTED_APP_ID="$app_id"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+show_status() {
+  if detect_host; then
+    printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
+  else
+    printf 'Android host: NOT DETECTED\n'
+    printf 'Checked package IDs:\n'
+    printf '  - %s\n' "${APP_IDS[@]}"
+    printf 'Install the Termux-XWayland Android APK, then retry.\n'
+    return 1
+  fi
+  printf 'Termux companion: installed (deb package)\n'
+  printf 'Live compositor/stream: not implemented yet\n'
+}
+
+start_host() {
+  detect_host || {
+    printf 'Android host: NOT DETECTED\n' >&2
+    printf 'Checked package IDs: %s\n' "${APP_IDS[*]}" >&2
+    printf 'Install the Termux-XWayland Android APK first.\n' >&2
+    exit 2
+  }
+  # Launch through Android's VIEW intent so MIUI does not need the app UID
+  # to call protected am/monkey shell entry points. The host registers this URI.
+  [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
+  if "$TERMUX_OPEN" "termuxxwayland://start"; then
+    printf 'Termux-XWayland host launch requested (%s). Confirm the host UI opens; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
+  else
+    fail "Could not open the Termux-XWayland launcher URI. Rebuild/reinstall the Android host APK with the latest manifest."
+  fi
+}
+
+case "${1:-status}" in
+  status|check) show_status ;;
+  start) start_host ;;
+  stop)
+    printf 'Session stop is not available yet: the persistent session controller is not implemented.\n' >&2
+    exit 3
+    ;;
+  --version|-V)
+    printf 'termux-xwayland companion 0.1.0 (session streaming not implemented)\n'
+    ;;
+  --help|-h|help)
+    cat <<'EOF'
+Usage: termux-xwayland [status|check|start|stop|--version|--help]
+
+status/check  Detect release or debug Android host package.
+start         Open the Android host (does not start a compositor yet).
+stop          Reserved; session lifecycle is not implemented yet.
+EOF
+    ;;
+  *)
+    printf 'Unknown command: %s\n' "$1" >&2
+    printf 'Run termux-xwayland --help\n' >&2
+    exit 64
+    ;;
+esac

@@ -1,0 +1,26 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Temporary loopback-only TCP connectivity diagnostic; not a production transport. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="org.techwithkaushik.termuxxwayland.permission.BIND_IPC_PROBE" />
+    <application
+        android:allowBackup="false"
+        android:label="Termux XWayland"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="termuxxwayland" android:host="start" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

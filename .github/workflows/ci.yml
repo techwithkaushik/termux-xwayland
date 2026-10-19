@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci.yml"
+      - "android-app/**"
+      - "ipc-companion/**"
+      - "native/**"
+      - "tools/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+  pull_request:
+    paths:
+      - ".github/workflows/ci.yml"
+      - "android-app/**"
+      - "ipc-companion/**"
+      - "native/**"
+      - "tools/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android build and protocol tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Prepare shared development signing keystore
+        id: keystore
+        env:
+          SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 || secrets.SIGNING_KEYSTORE_BASE64 || secrets.SIGNING_KEYSTORE || secrets.KEYSTORE_BASE64 }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SIGNING_KEY_STORE_BASE64 SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD SIGNING_STORE_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required GitHub Actions secret $name is missing."
+              exit 1
+            fi
+          done
+          mkdir -p build/signing
+          keystore_path="$GITHUB_WORKSPACE/build/signing/dev-keystore.jks"
+          printf '%s' "$SIGNING_KEY_STORE_BASE64" | base64 --decode > "$keystore_path"
+          test -s "$keystore_path"
+          if ! keytool -list -keystore "$keystore_path" -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Keystore validation failed. Check the base64 keystore secret, store password, and key alias."
+            exit 1
+          fi
+          umask 077
+          cat > build/signing/key.properties <<EOF
+          storeFile=$keystore_path
+          keyAlias=$SIGNING_KEY_ALIAS
+          keyPassword=$SIGNING_KEY_PASSWORD
+          storePassword=$SIGNING_STORE_PASSWORD
+          EOF
+          chmod 600 "$keystore_path" build/signing/key.properties
+          echo "filePath=$keystore_path" >> "$GITHUB_OUTPUT"
+          echo "Shared development keystore prepared and validated."
+      - name: Test and assemble both APKs with the shared signing key
+        env:
+          SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Remove any stale outputs and disable cached signed APK outputs.
+          gradle --no-daemon --no-build-cache clean
+          gradle --no-daemon --no-build-cache \
+            :android-app:testDebugUnitTest \
+            :ipc-companion:testDebugUnitTest \
+            :android-app:assembleDebug \
+            :ipc-companion:assembleDebug
+      - name: Verify both APKs use the same signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          host_apk="$(find android-app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          companion_apk="$(find ipc-companion/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$host_apk"
+          test -n "$companion_apk"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
+          apksigner="$(find "$sdk_root/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          host_verify="$("$apksigner" verify --verbose --print-certs "$host_apk" 2>&1)" || {
+            printf '%s\n' "$host_verify"
+            echo "::error::Host APK signature verification failed."
+            exit 1
+          }
+          companion_verify="$("$apksigner" verify --verbose --print-certs "$companion_apk" 2>&1)" || {
+            printf '%s\n' "$companion_verify"
+            echo "::error::Companion APK signature verification failed."
+            exit 1
+          }
+          echo "Host APK: $host_apk"
+          printf 'Host apksigner report:\n%s\n' "$host_verify"
+          echo "Companion APK: $companion_apk"
+          printf 'Companion apksigner report:\n%s\n' "$companion_verify"
+          host_cert="$(printf '%s\n' "$host_verify" | sed -nE 's/.*certificate SHA-256 digest: *([[:xdigit:]]+).*/\1/p' | head -n 1)"
+          companion_cert="$(printf '%s\n' "$companion_verify" | sed -nE 's/.*certificate SHA-256 digest: *([[:xdigit:]]+).*/\1/p' | head -n 1)"
+          echo "Host signer SHA-256: ${host_cert:-<missing>}"
+          echo "Companion signer SHA-256: ${companion_cert:-<missing>}"
+          if [[ -z "$host_cert" || -z "$companion_cert" || "$host_cert" != "$companion_cert" ]]; then
+            echo "::error::Host and companion APK signing certificates do not match. Inspect the apksigner reports above."
+            exit 1
+          fi
+          echo "PASS: host and companion APKs have the same signer certificate."
+      - name: Upload display host APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xwayland-debug-apk
+          path: android-app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Upload Binder companion APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xwayland-ipc-companion-debug-apk
+          path: ipc-companion/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  native-scaffold:
+    name: Native protocol and scaffold checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check repository structure
+        run: bash tools/check-scaffold.sh
+      - name: Python diagnostic syntax and protocol validation tests
+        run: |
+          python3 -m py_compile tools/tcp-loopback-probe.py tools/tcp-framed-protocol-probe.py tools/test-tcp-framed-protocol-probe.py
+          python3 tools/test-tcp-framed-protocol-probe.py
+      - name: Test Termux DEB companion package
+        run: bash tools/test-termux-package.sh
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Rust format check
+        working-directory: native/compositor
+        run: cargo fmt --check
+      - name: Rust unit tests
+        working-directory: native/compositor
+        run: cargo test
+      - name: Rust check
+        working-directory: native/compositor
+        run: cargo check

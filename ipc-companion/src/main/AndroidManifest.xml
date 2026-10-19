@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="org.techwithkaushik.termuxxwayland.permission.BIND_IPC_PROBE"
+        android:protectionLevel="signature" />
+
+    <application
+        android:allowBackup="false"
+        android:label="Termux XWayland IPC Probe"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <service
+            android:name=".IpcProbeService"
+            android:exported="true"
+            android:permission="org.techwithkaushik.termuxxwayland.permission.BIND_IPC_PROBE" />
+    </application>
+</manifest>
