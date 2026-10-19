@@ -36,6 +36,8 @@ import java.net.Socket
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -539,7 +541,8 @@ class MainActivity : Activity() {
             )
             // The caller is already bound to this service for the normal Binder probe;
             // use the retained binder only via a separate explicit binding below.
-            val binder = bindProbeForFd()
+            val binding = bindProbeForFd()
+            val binder = binding.first
             try {
                 if (!binder.transact(BINDER_FD_PROBE_TRANSACTION, request, response, 0)) {
                     throw IOException("Companion does not implement FD handoff transaction")
@@ -554,8 +557,10 @@ class MainActivity : Activity() {
                 }
                 if (echoedSize != payload.size) throw IOException("FD echo size mismatch: $echoedSize")
             } finally {
-                unbindProbeForFd(binder)
+                unbindProbeForFd(binding.second)
             }
+            try { inputPipe[0].close() } catch (_: Exception) { }
+            try { outputPipe[1].close() } catch (_: Exception) { }
             writer.join(5000)
             reader.join(5000)
             if (writer.isAlive || reader.isAlive) throw IOException("FD pipe worker timed out")
@@ -576,15 +581,45 @@ class MainActivity : Activity() {
         }
     }
 
-    @Volatile private var fdProbeBinder: IBinder? = null
-    @Volatile private var fdProbeConnection: ServiceConnection? = null
+    private fun bindProbeForFd(): Pair<IBinder, ServiceConnection> {
+        val latch = CountDownLatch(1)
+        var connectedBinder: IBinder? = null
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                connectedBinder = service
+                latch.countDown()
+            }
 
-    private fun bindProbeForFd(): IBinder {
-        throw IOException("FD probe binding is not initialized")
+            override fun onServiceDisconnected(name: ComponentName) {
+                latch.countDown()
+            }
+        }
+        val intent = Intent().setComponent(
+            ComponentName(
+                "org.techwithkaushik.termuxxwayland.companion",
+                "org.techwithkaushik.termuxxwayland.companion.IpcProbeService"
+            )
+        )
+        val bound = try {
+            bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        } catch (error: Exception) {
+            false
+        }
+        if (!bound) throw IOException("Could not bind the signature-protected Binder companion")
+        if (!latch.await(5, TimeUnit.SECONDS)) {
+            try { unbindService(connection) } catch (_: Exception) { }
+            throw IOException("Timed out waiting for Binder companion")
+        }
+        val binder = connectedBinder
+        if (binder == null) {
+            try { unbindService(connection) } catch (_: Exception) { }
+            throw IOException("Binder companion disconnected before FD test")
+        }
+        return Pair(binder, connection)
     }
 
-    private fun unbindProbeForFd(binder: IBinder) {
-        // Replaced by the FD probe's explicit service binding in the next implementation step.
+    private fun unbindProbeForFd(connection: ServiceConnection) {
+        try { unbindService(connection) } catch (_: Exception) { }
     }
 
     private fun runTcpProbe() {
