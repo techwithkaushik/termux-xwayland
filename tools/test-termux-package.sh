@@ -42,7 +42,7 @@ check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host packag
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
-check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port&token=$token"' "$script" "Android host receives authenticated server monitor details"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
 check_grep 'Wayland server started; Android host launch request sent.' "$script" "start reports host launch handoff"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
@@ -146,16 +146,14 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
-   "$launch_uri" == *"&server=running&port="* &&
-   "$launch_uri" == *"&token="* ]] || {
-  echo "FAIL: start must send session ID, monitor port, and authenticated token (got: $launch_uri)" >&2; exit 1;
+   "$launch_uri" == *"&server=running&port="* ]] || {
+  echo "FAIL: start must send session ID and monitor port (got: $launch_uri)" >&2; exit 1;
 }
 session_id="${launch_uri#*session_id=}"
 session_id="${session_id%%&*}"
 port="${launch_uri#*&port=}"
 port="${port%%&*}"
-token="${launch_uri#*&token=}"
-[[ "$session_id" =~ ^[a-f0-9]{32}$ && "$port" =~ ^[0-9]{5}$ && "$token" =~ ^[a-f0-9]{64}$ ]] || {
+[[ "$session_id" =~ ^[a-f0-9]{32}$ && "$port" =~ ^[0-9]{5}$ ]] || {
   echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
@@ -165,11 +163,12 @@ grep -Fq 'Wayland server: running' <<<"$running_status" || {
 grep -Fq 'Android host detection: waiting for host app' <<<"$running_status" || {
   echo "FAIL: status should report monitor awaiting first host poll" >&2; exit 1;
 }
-valid_response="$(printf 'STATUS %s\n' "$token" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
+valid_response="$(printf 'STATUS %s\n' "$session_id" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
 [[ "$valid_response" == "RUNNING $session_id" ]] || {
   echo "FAIL: authenticated status request should report running Weston" >&2; exit 1;
 }
-invalid_response="$(printf 'STATUS %s\n' "$(printf '0%.0s' {1..64})" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
+invalid_session="$(printf '0%.0s' {1..32})"
+invalid_response="$(printf 'STATUS %s\n' "$invalid_session" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
 [[ "$invalid_response" == "DENIED" ]] || {
   echo "FAIL: monitor must reject an incorrect token" >&2; exit 1;
 }
@@ -182,7 +181,7 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$active_status" || {
 }
 
 "${cli_env[@]}" bash "$script" stop >/dev/null
-stopped_response="$(printf 'STATUS %s\n' "$token" | "${cli_env[@]}" bash "$script" status-handler "$session_id" "$token")"
+stopped_response="$(printf 'STATUS %s\n' "$session_id" | "${cli_env[@]}" bash "$script" status-handler "$session_id")"
 [[ "$stopped_response" == "STOPPED $session_id" ]] || {
   echo "FAIL: host monitor should detect when Weston stops" >&2; exit 1;
 }
