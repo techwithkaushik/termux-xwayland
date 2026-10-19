@@ -56,7 +56,7 @@ jobs:
             echo "::error::Android sdkmanager was not found under $sdk_root/cmdline-tools."
             exit 1
           fi
-          yes | "$sdkmanager_path" --licenses >/dev/null
+          "$sdkmanager_path" --licenses < <(yes) >/dev/null
           "$sdkmanager_path" --install "ndk;27.2.12479018"
       - uses: dtolnay/rust-toolchain@stable
         with:
