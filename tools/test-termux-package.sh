@@ -12,8 +12,8 @@ bash -n "$script"
 grep -q '^Package: termux-xwayland-bridge$' "$pkg/DEBIAN/control"
 grep -q '^Architecture: all$' "$pkg/DEBIAN/control"
 grep -q 'APP_ID="org.techwithkaushik.termuxxwayland"' "$script"
-grep -q 'pm" path' "$script"
-grep -q 'am" start -W -n' "$script"
+grep -Fq '"$SYSTEM_PM" path' "$script"
+grep -Fq '"$SYSTEM_AM" start -W -n' "$script"
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "Companion must not depend on RUN_COMMAND or allow-external-apps." >&2
   exit 1
