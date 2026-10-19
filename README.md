@@ -31,7 +31,7 @@ See [docs/termux-workflow.md](docs/termux-workflow.md) for building and starting
 ## Architecture and next milestones
 
 1. Buildable Android host and CI. **Complete.**
-2. Bounded bridge framing and authenticated loopback handshake. **Implemented; on-device loopback compatibility still needs testing.**
+2. Bounded bridge framing and authenticated abstract AF_UNIX handshake. **Implemented; cross-UID Android device testing is still required.**
 3. Implement a real Wayland compositor and bounded frame transport; render frames in Android `SurfaceView`.
 4. Add input, resize, clipboard and lifecycle handling with explicit limits.
 5. Integrate XWayland and verify a known X11 test client.
@@ -40,7 +40,7 @@ See [docs/termux-workflow.md](docs/termux-workflow.md) for building and starting
 
 ## Security notes
 
-- The listener binds only to loopback; never expose it on `0.0.0.0` or a LAN interface.
+- The prototype uses an abstract AF_UNIX socket and has no TCP listener. Do not add a public TCP/LAN fallback if Android SELinux blocks cross-UID access.
 - Generate a new high-entropy token per session. Never place secrets in exported intents, command-line arguments, or logs.
 - The current prototype reads the token from a per-process environment variable; this is suitable only as temporary development plumbing and needs a safer session broker before release.
 - Do not assume GPU acceleration, DMA-BUF, cross-UID loopback connectivity, or ARM32 dependency availability; test each explicitly.
