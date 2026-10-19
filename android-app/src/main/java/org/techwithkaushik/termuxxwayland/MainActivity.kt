@@ -272,7 +272,7 @@ class MainActivity : Activity() {
                     output.flush()
                 }
 
-                val fd = accepted.fileDescriptor?.fd
+                val fd = accepted.fileDescriptor
                     ?: throw IOException("Connected diagnostic socket has no file descriptor")
                 val result = NativeBridge.nativeReadSocket(fd)
                 runOnUiThread {
