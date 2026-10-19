@@ -9,7 +9,7 @@ Run graphical sessions from Termux and show them in the standalone Android app. 
 1. **Android host:** Kotlin Activity plus a `SurfaceView` or equivalent surface renderer. Validate frame dimensions, format and payload bounds before updating the surface.
 2. **Wayland compositor:** native Rust compositor (Smithay is a candidate, not yet integrated). Own Wayland surfaces, damage tracking, composition and output lifecycle.
 3. **Frame export:** export the compositor's rendered output buffer at the compositor boundary. Prefer a supported shared-buffer path when available; otherwise use bounded RGBA frames over the authenticated bridge as the first correct implementation. Do not capture the screen by running an external desktop recorder.
-4. **Bridge:** authenticated, explicitly authorized Termux-mediated IPC. Direct abstract AF_UNIX connections across app UIDs can be denied by Android SELinux; test on Android 10. No TCP/localhost fallback.
+4. **Three-part integration:** the existing Termux app provides the Linux userspace; a Termux-side companion package/CLI starts and manages sessions; the Termux-XWayland Android host owns display and input. The companion contract is in [termux-companion-contract.md](termux-companion-contract.md). Control-plane launch and persistent frame/input transport are separate responsibilities. Direct abstract AF_UNIX connections across app UIDs can be denied by Android SELinux; test on Android 10. No TCP/localhost fallback.
 5. **Input:** Android touch/key events mapped into compositor input events with coordinate scaling, focus and key-state cleanup.
 6. **XWayland:** compatibility layer for X11 applications, including the eventual XFCE path. Native Wayland test client comes first.
 
@@ -34,6 +34,6 @@ The initial frame transport may copy pixels to a bounded protocol message. Optim
 - Android 10 is the minimum compatibility target.
 - Test `armeabi-v7a` and `arm64-v8a` independently, including native dependencies.
 - Android 9+ per-app SELinux isolation can deny abstract AF_UNIX `connect()` across app UIDs even though abstract sockets have no filesystem permissions. `Permission denied` is not fixable with chmod.
-- A shared-UID variant requires both APKs to declare the same shared UID and be signed with the same certificate; this is incompatible with arbitrary Termux distributions/signing keys. Otherwise use explicitly authorized Termux-mediated IPC.
+- Do not assume shared UID, signature permissions, or private Termux:X11 interfaces are available across arbitrary APK signing keys. Verify the actual authorization and FD-handoff design on the target Android 10 device before implementing the production endpoint.
 - Do not claim a live session until a real compositor surface is displayed and authenticated input/frame transport is verified.
 - GPU acceleration, DMA-BUF, zero-copy transport, zero latency and Unicode IME are not assumed; measure and validate them separately.
