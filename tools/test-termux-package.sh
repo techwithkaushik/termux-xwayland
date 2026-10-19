@@ -40,9 +40,9 @@ check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host packag
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
-check_grep '"$TERMUX_OPEN" "termuxxwayland://start"' "$script" "Android host deep-link launch"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running"' "$script" "Android host receives server-ready launch event"
 check_grep 'CONTROL_URI="content://${app_id}.control/session"' "$script" "Android control IPC endpoint follows detected package ID"
-check_grep 'start_control_session || fail "Android control handshake failed"' "$script" "start requires authenticated control handshake"
+check_grep 'Wayland server started; Android host launch request sent.' "$script" "start reports host launch handoff"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
@@ -154,7 +154,7 @@ status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Android control handshake: no active session' <<<"$status_output" || {
+grep -Fq 'Android host connection: intent handoff only' <<<"$status_output" || {
   echo "FAIL: status should report no control session before start" >&2; exit 1;
 }
 grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
@@ -162,7 +162,34 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
 }
 
 "${cli_env[@]}" bash "$script" start >/dev/null
-grep -Fxq 'termuxxwayland://start' "$open_log" || {
+grep -Eq '^termuxxwayland://start\?session_id=[a-f0-9]{32}&server=running
+  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+}
+running_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland server: running' <<<"$running_status" || {
+  echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
+}
+grep -Fq 'Android host connection: intent handoff only' <<<"$running_status" || {
+  echo "FAIL: status should report the accepted control handshake" >&2; exit 1;
+}
+grep -Fq 'Wayland frame stream: not connected' <<<"$running_status" || {
+  echo "FAIL: status must not claim a connected stream without a transport" >&2; exit 1;
+}
+ 
+if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
+  echo "FAIL: start should fail when no host package is detected" >&2; exit 1
+fi
+if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
+  echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
+fi
+"${cli_env[@]}" bash "$script" stop >/dev/null
+stopped_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
+  echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
+}
+ 
+echo "PASS: Termux companion package, control handshake, Weston lifecycle and status checks passed."
+ "$open_log" || {
   echo "FAIL: start must open the registered host deep link" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
