@@ -258,11 +258,11 @@ mod tests {
                 .iter()
                 .map(|value| *value as u8)
                 .collect::<Vec<_>>(),
-            SOCKET_NAME.as_bytes()
+            test_name.as_bytes()
         );
         assert_eq!(
             length as usize,
-            mem::offset_of!(libc::sockaddr_un, sun_path) + 1 + SOCKET_NAME.len()
+            mem::offset_of!(libc::sockaddr_un, sun_path) + 1 + test_name.len()
         );
     }
 }
