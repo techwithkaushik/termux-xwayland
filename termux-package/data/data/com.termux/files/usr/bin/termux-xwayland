@@ -116,7 +116,7 @@ start_session() {
   start_server
   [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
   "$TERMUX_OPEN" "termuxxwayland://start" || fail "could not open Android host deep link"
-  notify_user "Termux-XWayland" "Android host found (\$DETECTED_APP_ID); Weston is running. Waiting for authenticated host connection; frame transport is not integrated yet."
+  notify_user "Termux-XWayland" "Android host found ($DETECTED_APP_ID); Weston is running. Waiting for authenticated host connection; frame transport is not integrated yet."
   printf 'Android host launch requested. Connection is pending until authenticated frame transport is implemented.\n'
 }
 case "${1:-status}" in
