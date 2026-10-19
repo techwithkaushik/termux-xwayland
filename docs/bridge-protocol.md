@@ -32,7 +32,7 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 | Value | Name | Direction | Current status |
 |---:|---|---|---|
 | 1 | `HELLO` | Android → Termux | Implemented: exactly 32 token bytes |
-| 2 | `WELCOME` | Termux → Android | Implemented: empty payload after valid token |
+| 2 | `WELCOME` | Termux → Android | Implemented: 4-byte effective Termux process UID (big-endian) after valid token |
 | 3 | `FRAME` | Termux → Android | Smoke-test producer and Android renderer implemented; sends one synthetic 320×180 RGBA pattern, not desktop pixels |
 | 4 | `INPUT` | Android → Termux | Planned; event schema still required |
 | 5 | `RESIZE` | Android → Termux | Planned |
@@ -44,7 +44,7 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 ## Payload conventions
 
 - `HELLO`: exactly 32 bytes of session token. Never log payload bytes.
-- `WELCOME`: empty payload.
+- `WELCOME`: exactly 4 bytes containing the Termux process effective UID as an unsigned big-endian `u32`. The Android app compares this with `Process.myUid()` to show whether the connection crosses app UIDs.
 - `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, initially `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The smoke test sends one 320×180 synthetic pattern after `WELCOME`; Android validates metadata and exact payload length before rendering. The 16 MiB envelope cap means larger frames must be tiled or compressed rather than bypassing the limit.
 - `RESIZE`: width (`u16`) and height (`u16`); reject zero dimensions and values beyond implementation limits.
 - `CLIPBOARD`: UTF-8 bytes, maximum 1 MiB, only after explicit session authentication. Never automatically execute clipboard contents.
@@ -53,6 +53,6 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 ## Testing and state
 
-Rust tests cover framing and rejection of malformed headers, oversized payloads, token validation and abstract socket address construction. The Android client verifies the empty `WELCOME`, then validates and displays the synthetic `FRAME`. “Test frame received” confirms authenticated transport and rendering only; it must not be interpreted as a connected desktop.
+Rust tests cover framing and rejection of malformed headers, oversized payloads, token validation and abstract socket address construction. The Android client validates the `WELCOME` UID, receives and renders the synthetic `FRAME`, then sends `PING` and requires an empty `PONG`. “Cross-UID IPC passed” means the authenticated socket connected despite different UIDs and a request/response round trip worked; it does not mean a desktop is connected. The displayed round-trip time is a local smoke-test measurement, not a performance guarantee.
 
 CI compiles the Android client and native server, but cannot verify that a real Android device's SELinux policy permits cross-UID abstract-socket connections. That requires on-device testing. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
