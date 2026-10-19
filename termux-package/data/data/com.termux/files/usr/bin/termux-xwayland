@@ -5,7 +5,7 @@ set -u
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
 SYSTEM_PM="/system/bin/pm"
-SYSTEM_MONKEY="/system/bin/monkey"
+TERMUX_OPEN="${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open"
 
 fail() {
   printf 'termux-xwayland: %s\n' "$*" >&2
@@ -48,14 +48,13 @@ start_host() {
     printf 'Install the Termux-XWayland Android APK first.\n' >&2
     exit 2
   }
-  # MIUI 12's am shell path calls protected getCurrentUserId() for
-  # ordinary app UIDs. Use Monkey's launcher-category intent instead; it
-  # avoids the explicit USER_CURRENT/-2 path that fails on this device.
-  [ -x "$SYSTEM_MONKEY" ] || fail "Android monkey launcher is unavailable"
-  if "$SYSTEM_MONKEY" -p "$DETECTED_APP_ID" -c android.intent.category.LAUNCHER 1; then
+  # Launch through Android's VIEW intent so MIUI does not need the app UID
+  # to call protected am/monkey shell entry points. The host registers this URI.
+  [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
+  if "$TERMUX_OPEN" "termuxxwayland://start"; then
     printf 'Termux-XWayland host launch requested (%s). Confirm the host UI opens; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
   else
-    fail "Could not launch Android host $DETECTED_APP_ID via launcher intent. Open the host manually and check MIUI restrictions."
+    fail "Could not open the Termux-XWayland launcher URI. Rebuild/reinstall the Android host APK with the latest manifest."
   fi
 }
 
