@@ -71,7 +71,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(4))
         }
         statusDescription = label(
-            "No bridge session is active. The desktop compositor and frame renderer are not implemented yet.",
+            "No bridge session is active. The app can render a synthetic test pattern; desktop compositor integration is not implemented yet.",
             13, muted, false
         )
         status.addView(statusTitle)
@@ -116,7 +116,7 @@ class MainActivity : Activity() {
         }, margins(bottom = 8))
         content.addView(infoCard(
             "Connected does not mean desktop rendered",
-            "A successful connection confirms only that the session token was accepted. Frame transport, SurfaceView rendering, Wayland compositor, input forwarding and XWayland are still pending."
+            "A successful connection confirms the session token was accepted and one synthetic test frame was rendered. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
         content.addView(label("Planned capabilities", 18, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
