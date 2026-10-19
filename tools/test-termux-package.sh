@@ -190,5 +190,8 @@ stopped_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped Wayland server" >&2; exit 1;
 }
+grep -Fq 'Android control handshake: no active session' <<<"$stopped_status" || {
+  echo "FAIL: stop should clear the control session" >&2; exit 1;
+}
 
-echo "PASS: Termux companion package, Weston lifecycle, CLI and notification-safe status checks passed."
+echo "PASS: Termux companion package, control handshake, Weston lifecycle and status checks passed."
