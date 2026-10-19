@@ -113,11 +113,9 @@ class MainActivity : Activity() {
         val sessionId = uri.getQueryParameter("session_id").orEmpty()
         val serverState = uri.getQueryParameter("server").orEmpty()
         val port = uri.getQueryParameter("port")?.toIntOrNull() ?: -1
-        val token = uri.getQueryParameter("token").orEmpty()
         if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
             serverState != "running" ||
-            port !in 30000..49999 ||
-            !token.matches(Regex("^[a-f0-9]{64}$"))) {
+            port !in 30000..49999) {
             getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
                 .clear()
                 .putString("state", "invalid_request").apply()
@@ -128,7 +126,6 @@ class MainActivity : Activity() {
             .putString("session_id", sessionId)
             .putString("server_state", serverState)
             .putInt("monitor_port", port)
-            .putString("monitor_token", token)
             .putLong("received_at", System.currentTimeMillis())
             .apply()
         pollTermuxServerStatus()
@@ -137,10 +134,8 @@ class MainActivity : Activity() {
     private fun pollTermuxServerStatus() {
         val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
         val sessionId = prefs.getString("session_id", "").orEmpty()
-        val token = prefs.getString("monitor_token", "").orEmpty()
         val port = prefs.getInt("monitor_port", -1)
         if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
-            !token.matches(Regex("^[a-f0-9]{64}$")) ||
             port !in 30000..49999 ||
             !statusPollInFlight.compareAndSet(false, true)) return
 
@@ -151,7 +146,7 @@ class MainActivity : Activity() {
                     socket.soTimeout = 1500
                     socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
                     val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.US_ASCII)
-                    writer.write("STATUS $token\n")
+                    writer.write("STATUS $sessionId\n")
                     writer.flush()
                     response = BufferedReader(
                         InputStreamReader(socket.getInputStream(), Charsets.US_ASCII)
@@ -203,7 +198,7 @@ class MainActivity : Activity() {
             }
             "monitor_auth_failed" -> {
                 statusTitle.text = "Termux status authentication failed"
-                statusDescription.text = "The monitor rejected the session token. Start a fresh session from Termux."
+                statusDescription.text = "The monitor rejected this session ID. Start a fresh session from Termux."
             }
             "invalid_request" -> {
                 statusTitle.text = "Invalid Termux connection request"
