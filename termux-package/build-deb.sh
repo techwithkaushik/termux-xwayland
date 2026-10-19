@@ -11,15 +11,23 @@ command -v dpkg-deb >/dev/null 2>&1 || {
   exit 127
 }
 
+test -f "$pkg/DEBIAN/control"
+test -f "$pkg/DEBIAN/postinst"
+test -f "$pkg/data/data/com.termux/files/usr/bin/termux-xwayland"
+
 mkdir -p "$out"
+# Use a unique staging directory and explicitly create/copy each control file.
+# Some Android/Termux cp implementations handle multi-source directory copies
+# differently, so do not rely on: cp -R DEBIAN data "$stage/".
 stage="$(mktemp -d "${TMPDIR:-/tmp}/termux-xwayland-deb.XXXXXX")"
 cleanup() { rm -rf "$stage"; }
 trap cleanup EXIT
 
-# Build from a staging copy so Android/Termux umask or checkout modes cannot
-# leave DEBIAN at mode 0700 (dpkg-deb rejects that control-directory mode).
-mkdir -p "$stage"
-cp -R "$pkg/DEBIAN" "$pkg/data" "$stage/"
+mkdir -p "$stage/DEBIAN" "$stage/data"
+cp "$pkg/DEBIAN/control" "$stage/DEBIAN/control"
+cp "$pkg/DEBIAN/postinst" "$stage/DEBIAN/postinst"
+cp -R "$pkg/data/." "$stage/data/"
+
 find "$stage" -type d -exec chmod 0755 {} +
 chmod 0644 "$stage/DEBIAN/control"
 chmod 0755 "$stage/DEBIAN/postinst"
