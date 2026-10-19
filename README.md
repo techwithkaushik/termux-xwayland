@@ -7,10 +7,10 @@ A standalone Android display host for graphical sessions launched from Termux. T
 ## Current implementation
 
 - Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
-- Native endpoint: Rust single-client TCP listener bound to `127.0.0.1` only.
+- Native endpoint: Rust single-client abstract AF_UNIX stream socket; no TCP listener or localhost port.
 - Session handshake: fresh 256-bit token supplied through `TERMUX_XWAYLAND_TOKEN_HEX`; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
-- Keep scope honest: this is a handshake test endpoint, not a compositor and not a remote desktop server.
+- Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
 - Architecture targets remain `armeabi-v7a` and `arm64-v8a`; Android 10 compatibility must be verified on-device.
 
 ## Build and test
