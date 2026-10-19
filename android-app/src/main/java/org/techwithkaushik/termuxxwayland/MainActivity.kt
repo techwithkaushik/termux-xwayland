@@ -442,7 +442,7 @@ class MainActivity : Activity() {
                     socket.soTimeout = 3000
                     val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
                     val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-                    writer.write("TERMUX_XWAYLAND_TCP_PROBE\\n")
+                    writer.write("TERMUX_XWAYLAND_TCP_PROBE\n")
                     writer.flush()
                     val reply = reader.readLine()
                     if (reply != "PASS TERMUX_XWAYLAND_TCP_PROBE") {
