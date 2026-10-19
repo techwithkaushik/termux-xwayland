@@ -18,4 +18,14 @@ if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; t
   echo "Companion must not depend on RUN_COMMAND or allow-external-apps." >&2
   exit 1
 fi
-echo "Termux companion package structure and shell syntax checks passed."
+# Exercise a real package build when dpkg-deb is available (CI and Termux).
+if command -v dpkg-deb >/dev/null 2>&1; then
+  tmp_out="$(mktemp -d)"
+  trap 'rm -rf "$tmp_out"' EXIT
+  bash "$root/termux-package/build-deb.sh" "$tmp_out"
+  archive="$tmp_out/termux-xwayland-bridge_0.1.0_all.deb"
+  test -s "$archive"
+  test "$(dpkg-deb -f "$archive" Package)" = "termux-xwayland-bridge"
+  test "$(dpkg-deb -f "$archive" Architecture)" = "all"
+fi
+echo "Termux companion package structure, shell syntax, and DEB build checks passed."
