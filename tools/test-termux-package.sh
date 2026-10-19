@@ -125,4 +125,20 @@ stop_status=0
   echo "FAIL: stop should clearly return exit code 3 while session control is unimplemented" >&2; exit 1;
 }
 
+# Verify the public CLI help/version contract without touching Android APIs.
+version_output="$(bash "$script" --version)"
+grep -Fq 'termux-xwayland companion 0.1.0' <<<"$version_output" || {
+  echo "FAIL: --version should report the companion version" >&2; exit 1;
+}
+grep -Fq 'session streaming not implemented' <<<"$version_output" || {
+  echo "FAIL: --version must not imply streaming is implemented" >&2; exit 1;
+}
+help_output="$(bash "$script" --help)"
+grep -Fq 'Usage: termux-xwayland [status|check|start|stop|--version|--help]' <<<"$help_output" || {
+  echo "FAIL: --help should list the supported CLI commands" >&2; exit 1;
+}
+grep -Fq 'Reserved; session lifecycle is not implemented yet.' <<<"$help_output" || {
+  echo "FAIL: --help must describe stop as not implemented" >&2; exit 1;
+}
+
 echo "PASS: Termux companion package structure, shell syntax, and DEB build checks passed."
