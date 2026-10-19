@@ -18,5 +18,5 @@ object NativeBridge {
      * This blocks. Always call it from a worker thread, never the UI thread.
      * Returns 0 on orderly close and -1 on error/timeout.
      */
-    external fun nativeReadSocket(fd: Int): Int
+    external fun nativeReadSocket(fileDescriptor: java.io.FileDescriptor): Int
 }
