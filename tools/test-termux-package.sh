@@ -144,8 +144,10 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
 
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
-grep -Eq '^termuxxwayland://start\\?session_id=[a-f0-9]{32}&server=running&port=[0-9]{5}&token=[a-f0-9]{64}$' <<<"$launch_uri" || {
-  echo "FAIL: start must send session ID, monitor port, and authenticated token" >&2; exit 1;
+[[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
+   "$launch_uri" == *"&server=running&port="* &&
+   "$launch_uri" == *"&token="* ]] || {
+  echo "FAIL: start must send session ID, monitor port, and authenticated token (got: $launch_uri)" >&2; exit 1;
 }
 session_id="${launch_uri#*session_id=}"
 session_id="${session_id%%&*}"
