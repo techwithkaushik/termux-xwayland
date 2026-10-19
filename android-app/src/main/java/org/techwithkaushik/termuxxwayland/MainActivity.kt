@@ -210,7 +210,7 @@ class MainActivity : Activity() {
                 }
                 val roundTripMs = (System.nanoTime() - pingStartedAt) / 1_000_000.0
                 // Keep the authenticated connection open for later FRAME messages.
-                candidate.soTimeout = 0
+                candidate.setSoTimeout(0)
                 val sessionSocket = candidate
                 activeSocket = sessionSocket
                 candidate = null
