@@ -45,8 +45,8 @@ check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host pa
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
-check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
-check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
+check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process direct socket client"
+check_grep 'Direct socket transport: connected (authenticated abstract AF_UNIX session)' "$script" "start waits for direct socket session"
 check_grep 'xserver listening on display' "$script" "discover the actual XWayland display instead of assuming :0"
 check_grep 'x11_number="${x11_number#:}"' "$script" "derive the X11 socket number from the selected display"
 check_grep 'nohup xterm -geometry 80x24+0+0' "$script" "launch a visible X11 terminal after session startup"
@@ -216,7 +216,7 @@ if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
 fi
 "${cli_env[@]}" bash "$script" stop >/dev/null
 stopped_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Binder transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped Binder session" >&2; exit 1; }
+grep -Fq 'Direct socket transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped direct socket session" >&2; exit 1; }
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped server" >&2; exit 1;
 }
