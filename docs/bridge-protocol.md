@@ -4,14 +4,11 @@
 
 ## Transport and security
 
-- The Termux-side Rust process listens on a Linux/Android **abstract AF_UNIX stream socket** named `termux_xwayland_<16-hex-session-fingerprint>`. The first 8 bytes of the session token are hex-encoded to create a per-session socket name (the full token is never embedded in the name). The abstract address is represented as `@termux_xwayland_<16-hex-session-fingerprint>` in diagnostics; the leading NUL is part of the kernel address, not the displayed name.
-- The Android app connects with `android.net.LocalSocket` using `LocalSocketAddress.Namespace.ABSTRACT`. This path does not use TCP/IP, localhost, a port, Wi-Fi, or the Internet permission.
-- Abstract sockets have no filesystem permission checks. A known socket name may be reachable by other local processes depending on Android SELinux policy. The session-derived name reduces collisions and casual discovery but is not a substitute for token authentication. A fresh 32-byte token (64 hex characters) is required on every connection; never log or share the token.
-- The token is supplied to the native process via `TERMUX_XWAYLAND_TOKEN_HEX`; the server never prints it. The workflow prints the token in the Termux terminal solely for manual entry into the Android app.
-- Token bytes are compared using a constant-time equality loop after fixed-length validation. Failed handshakes are rejected.
-- The environment-variable mechanism is development plumbing, not a release-ready secret broker. A future Termux launcher should provide scoped, short-lived credentials and a session-specific socket name. Production transport also needs connection-rate limits, robust lifecycle management and a tested pairing flow.
-- Android/Termux cross-UID abstract-socket connectivity can be affected by device SELinux policy and OEM builds. It must be tested on target devices; do not silently fall back to a public TCP listener if blocked.
-- The server currently handles one client at a time. Clipboard and input messages are not enabled.
+- The Android display-host app listens on IPv4 loopback TCP `127.0.0.1:38473` only. It must never bind to `0.0.0.0`, a LAN interface, or a public address.
+- The Termux `app_process` client connects to `127.0.0.1:38473`. This replaces abstract AF_UNIX for this device because on-device testing showed `Permission denied` for the cross-UID abstract-socket connection.
+- The transport does not use Wi-Fi or the Internet, but TCP loopback is still reachable by local apps. A fresh random 32-character lowercase hex session ID is required in the TXWB `HELLO` payload before the host sends `WELCOME`. Never log session payloads. This handshake is a local pairing gate, not a substitute for a future stronger secret broker.
+- The Android host binds only to loopback and validates the session ID before accepting frames. Do not add unauthenticated listeners or fall back to a public TCP address.
+- The server handles one client at a time. Clipboard and input messages are not enabled.
 
 ## Frame format
 
@@ -45,7 +42,7 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 - `HELLO`: exactly 32 bytes of session token. Never log payload bytes.
 - `WELCOME`: exactly 4 bytes containing the Termux process effective UID as an unsigned big-endian `u32`. The Android app compares this with `Process.myUid()` to show whether the connection crosses app UIDs.
-- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The legacy abstract-socket probe sends one synthetic 320×180 pattern. The Binder path can send actual X11/XWayland captures as 640×360 RGBA at 2 FPS when ffmpeg is available; the Android service validates metadata and exact payload length before rendering. Native Wayland capture is not implemented. The 16 MiB envelope cap means larger frames must be tiled or compressed rather than bypassing the limit.
+- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The legacy local-socket diagnostic sends one synthetic 320×180 pattern. The Termux loopback client can send actual X11/XWayland captures as 640×360 RGBA at 2 FPS when ffmpeg is available; the Android service validates metadata and exact payload length before rendering. Native Wayland capture is not implemented. The 16 MiB envelope cap means larger frames must be tiled or compressed rather than bypassing the limit.
 - `RESIZE`: width (`u16`) and height (`u16`); reject zero dimensions and values beyond implementation limits.
 - `CLIPBOARD`: UTF-8 bytes, maximum 1 MiB, only after explicit session authentication. Never automatically execute clipboard contents.
 - `PING`, `PONG`, `CLOSE`: empty payloads in version 1.
@@ -53,6 +50,6 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 ## Testing and state
 
-Rust tests cover framing and rejection of malformed headers, oversized payloads, token validation and abstract socket address construction. The Android client validates the `WELCOME` UID against the kernel-reported peer UID from `LocalSocket.getPeerCredentials()`, receives and renders the synthetic `FRAME`, then sends `PING` and requires an empty `PONG`. “Cross-UID IPC passed” means the authenticated socket connected despite different UIDs and a request/response round trip worked; it does not mean a desktop is connected. The displayed round-trip time is a local smoke-test measurement, not a performance guarantee. If Android cannot retrieve valid peer credentials or the server-reported UID disagrees, the test fails rather than claiming success.
+Rust tests cover framing and rejection of malformed headers, oversized payloads, token validation and abstract socket address construction. The Termux client validates the `WELCOME` UID against its own effective UID, receives the framed protocol response, sends `PING` and requires an empty `PONG`. TCP does not expose the kernel peer UID in the same way as local sockets, so the bridge does not claim kernel peer-UID verification. “Cross-UID IPC passed” means the authenticated socket connected despite different UIDs and a request/response round trip worked; it does not mean a desktop is connected. The displayed round-trip time is a local smoke-test measurement, not a performance guarantee. If Android cannot retrieve valid peer credentials or the server-reported UID disagrees, the test fails rather than claiming success.
 
-CI compiles the Android client and native server, but cannot verify that a real Android device's SELinux policy permits cross-UID abstract-socket connections. That requires on-device testing. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
+CI compiles the Android client and native server, but cannot verify that a real Android device's SELinux policy permits loopback TCP connections. That requires on-device testing. A production client must clear state on close, timeout, app lifecycle transitions and reconnect failures.
