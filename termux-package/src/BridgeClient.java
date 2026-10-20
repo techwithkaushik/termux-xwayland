@@ -64,10 +64,11 @@ public final class BridgeClient {
             Process capture = startFrameCapture();
             activeCapture = capture;
             if (capture != null) startFrameForwarder(capture, output);
+            final LocalSocket sessionSocket = socket;
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 Process running = activeCapture;
                 if (running != null) running.destroy();
-                try { socket.close(); } catch (Exception ignored) {}
+                try { sessionSocket.close(); } catch (Exception ignored) {}
             }, "termux-xwayland-socket-cleanup"));
 
             while (true) {
