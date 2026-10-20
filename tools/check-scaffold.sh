@@ -7,6 +7,7 @@ test -f android-app/src/main/AndroidManifest.xml
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeProtocol.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
 test -f native/compositor/Cargo.toml
 test -f native/compositor/src/main.rs
 test -f native/compositor/src/protocol.rs
@@ -46,6 +47,10 @@ grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
 grep -q 'updateBinderState("connected")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'BridgeMessageKind.FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
+grep -q 'ACTION_OPEN_SESSION' termux-package/src/BridgeClient.java
+! grep -q 'context.bindService' termux-package/src/BridgeClient.java
+grep -q 'interfaceDescriptor' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
+grep -q 'android:exported="false"' android-app/src/main/AndroidManifest.xml
 grep -q 'XWayland frame capture: sending recent frames' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'termux-xwayland x11' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."

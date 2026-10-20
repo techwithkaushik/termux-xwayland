@@ -1,28 +1,24 @@
 # Binder and frame transport
 
-The existing Android host APK exposes `BridgeSessionService`; the Termux DEB includes the Java `app_process` client. No second companion APK is built or installed.
+The existing Android host APK and the existing Termux DEB/CLI are the only installed components. The DEB launches the Java client in the existing Termux UID through `app_process`; no separately installable companion APK is built.
 
-## Security and session
+## Bootstrap: follow Termux:X11
 
-- The service checks the actual Binder caller UID against Android's package-manager mapping for `com.termux`.
-- Binder transfers a connected socket FD; no cross-UID AF_UNIX connect is required.
-- No TCP listener carries frames or input. The loopback status monitor is separate control-plane polling only.
-- TXWB v1 framing enforces known message kinds, reserved-bit validation and a 16 MiB payload ceiling.
-- The client reports connected only after a valid PING/PONG and logs a timestamped heartbeat every five seconds. The CLI considers the session healthy only while that heartbeat is fresh.
+The Termux-side client does **not** call `Context.bindService()`. A synthetic `ActivityThread` created inside `app_process` is not registered as an Android app process, so ActivityManager rejects service binding with `Unable to find app for caller IApplicationThread`.
+
+Instead, the client follows the Termux:X11 `CmdEntryPoint` pattern:
+1. Build a platform context in the `app_process` process.
+2. Send a package-targeted broadcast to the existing host APK with a Binder endpoint in a nested Bundle.
+3. The host receiver checks the Binder descriptor and forwards the Binder to the in-app session service.
+4. The host service calls the client Binder endpoint, which checks the calling UID against the installed host APK UID and transfers one end of a connected socket pair through Binder.
+5. TXWB v1 runs over that FD.
+
+Android 10's public `BroadcastReceiver` API does not expose the sender UID, so the receiver does not claim to authenticate the broadcast sender. It validates the Binder descriptor as a sanity check, and the host service refuses to replace an active session. The Termux-side Binder endpoint authenticates the host UID before transferring an FD. A malicious app can at most attempt to trigger a new session/denial of service; it cannot impersonate the Termux-side endpoint's Binder implementation. Keep payload bounds and do not treat the broadcast alone as authentication.
+
+The host session service is not exported. No TCP listener, root, SELinux change, or Termux `RUN_COMMAND` permission is used.
 
 ## XWayland frame path
 
-When `Xwayland` and `ffmpeg` are installed, the CLI starts Weston with a 640×360 headless output and XWayland enabled. The client starts an optional ffmpeg X11 capture at 2 FPS and sends bounded RGBA `FRAME` messages through the Binder-transferred FD. The Android service validates each frame with `RgbaFrameCodec` and hands decoded pixels to the existing activity for display.
+When XWayland and ffmpeg are installed, the client starts an optional ffmpeg X11 capture at 2 FPS and sends bounded RGBA `FRAME` messages through the Binder-transferred FD. The Android service validates each frame with `RgbaFrameCodec` and hands decoded pixels to the existing activity for display.
 
-If ffmpeg, XWayland, or a usable X11 display is unavailable, the Binder heartbeat remains available and frame capture reports waiting/unavailable rather than claiming desktop output. Launch an X11 app with `termux-xwayland x11 xterm` (or another installed app).
-
-This frame path is X11/XWayland-only and still needs target-device visual verification. Native Wayland capture and input forwarding are not implemented.
-
-## Remaining work
-
-- Verify XWayland output dimensions and frame content on Android 10 / MIUI.
-- Add bounded backpressure, capture-process restart and explicit stream shutdown handling.
-- Implement native Wayland capture through a safe compositor API; do not enable the risky Weston debug capture protocol in production.
-- Implement Android touch/keyboard forwarding and resize/clipboard routing after frame delivery is proven.
-
-CI validates builds and package wiring, but cannot prove the target phone's XWayland display or actual visible frame content.
+This path is X11/XWayland-only. Native Wayland capture and input forwarding are not implemented. Target-device verification on Android 10 / MIUI remains required; CI cannot prove visible frames on the phone.
