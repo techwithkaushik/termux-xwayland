@@ -161,21 +161,30 @@ start_server() {
   local pid=$!
   printf '%s\n' "$pid" > "$PID_FILE"
   local attempt
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  for attempt in $(seq 1 30); do
     if [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
-      printf 'Wayland server: started (PID %s)\nWAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\n' "$pid" "$WAYLAND_SOCKET" "$RUNTIME_DIR"
-      return 0
+      if ! command -v Xwayland >/dev/null 2>&1 || grep -Eq 'xserver listening on display :[0-9]+' "$LOG_FILE" 2>/dev/null; then
+        printf 'Wayland server: started (PID %s)\nWAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\n' "$pid" "$WAYLAND_SOCKET" "$RUNTIME_DIR"
+        if command -v Xwayland >/dev/null 2>&1; then
+          sed -n 's/.*xserver listening on display :\([0-9][0-9]*\).*/XWayland DISPLAY=:\1/p' "$LOG_FILE" | tail -n 1
+        fi
+        return 0
+      fi
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
       rm -f "$PID_FILE"
       tail -n 30 "$LOG_FILE" 2>/dev/null || true
-      fail "Weston exited before creating its Wayland socket; inspect $LOG_FILE"
+      fail "Weston exited before XWayland became ready; inspect $LOG_FILE"
     fi
     sleep 0.5
   done
+  tail -n 30 "$LOG_FILE" 2>/dev/null || true
   kill "$pid" 2>/dev/null || true
   rm -f "$PID_FILE"
-  fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 5 seconds; inspect $LOG_FILE"
+  if command -v Xwayland >/dev/null 2>&1; then
+    fail "Weston did not make XWayland ready within 15 seconds; inspect $LOG_FILE"
+  fi
+  fail "Weston did not create $RUNTIME_DIR/$WAYLAND_SOCKET within 15 seconds; inspect $LOG_FILE"
 }
 stop_server() {
   if ! server_is_running; then
