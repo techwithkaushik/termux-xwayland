@@ -11,10 +11,16 @@
             android:authorities="${applicationId}.control"
             android:exported="true"
             android:grantUriPermissions="false" />
+        <receiver
+            android:name=".BridgeSessionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.techwithkaushik.termuxxwayland.action.OPEN_TERMUX_SESSION" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".BridgeSessionService"
-            android:exported="true"
-            />
+            android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTop"
