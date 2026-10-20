@@ -1,7 +1,7 @@
 package org.techwithkaushik.termuxxwayland.client;
 
-import android.net.LocalSocket;
-import android.net.LocalSocketAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -28,7 +28,7 @@ public final class BridgeClient {
 
     public static void main(String[] args) {
         if (args.length > 0 && "--help".equals(args[0])) {
-            System.out.println("BridgeClient: connects to the authenticated Termux-XWayland abstract Unix socket.");
+            System.out.println("BridgeClient: connects to the authenticated 127.0.0.1 loopback bridge.");
             return;
         }
         String sessionId = System.getenv("TERMUX_XWAYLAND_SESSION_ID");
@@ -38,9 +38,9 @@ public final class BridgeClient {
             return;
         }
 
-        LocalSocket socket = null;
+        Socket socket = null;
         try {
-            socket = connectWithRetry("termux_xwayland_" + sessionId);
+            socket = connectWithRetry();
             socket.setSoTimeout(10000);
             DataInputStream input = new DataInputStream(socket.getInputStream());
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
@@ -57,13 +57,13 @@ public final class BridgeClient {
                 throw new SecurityException("Kernel peer UID mismatch: WELCOME=" + termuxUid
                     + " but Termux process UID=" + android.os.Process.myUid());
             }
-            System.out.println("SESSION_CONNECTED host_uid=" + termuxUid + " transport=abstract-unix-socket");
+            System.out.println("SESSION_CONNECTED host_uid=" + termuxUid + " transport=loopback-tcp");
             System.out.flush();
 
             Process capture = startFrameCapture();
             activeCapture = capture;
             if (capture != null) startFrameForwarder(capture, output);
-            final LocalSocket sessionSocket = socket;
+            final Socket sessionSocket = socket;
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 Process running = activeCapture;
                 if (running != null) running.destroy();
@@ -93,13 +93,13 @@ public final class BridgeClient {
         }
     }
 
-    private static LocalSocket connectWithRetry(String name) throws Exception {
+    private static Socket connectWithRetry() throws Exception {
         IOException last = null;
         for (int attempt = 0; attempt < 40; attempt++) {
-            LocalSocket socket = new LocalSocket();
+            Socket socket = new Socket();
             try {
-                socket.connect(new LocalSocketAddress(name, LocalSocketAddress.Namespace.ABSTRACT));
-                System.out.println("SOCKET_CONNECTED name=@" + name);
+                socket.connect(new InetSocketAddress("127.0.0.1", 38473), 1000);
+                System.out.println("SOCKET_CONNECTED endpoint=127.0.0.1:38473");
                 System.out.flush();
                 return socket;
             } catch (IOException error) {
@@ -108,7 +108,7 @@ public final class BridgeClient {
                 Thread.sleep(250L);
             }
         }
-        throw new IOException("Android direct socket did not become ready within 10 seconds; last connect error: "
+        throw new IOException("Android loopback bridge did not become ready within 10 seconds; last connect error: "
             + (last == null ? "no connection attempt completed" : last.getClass().getSimpleName() + ": " + last.getMessage()), last);
     }
 
