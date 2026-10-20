@@ -1,66 +1,41 @@
 # Termux XWayland
 
-A standalone Android display host for graphical sessions launched from Termux. The intended goal is to let users start graphical sessions in Termux and view them in this app, including XFCE through XWayland and native Wayland applications.
+Termux XWayland is an Android display host paired with a Termux-installed CLI/DEB. It uses the existing Termux installation; there is no second companion APK in the supported install flow.
 
-> **Status: protocol/UI smoke test only; no real desktop rendering yet.** The Rust binary sends one synthetic RGBA test frame over an abstract AF_UNIX socket. The Android app validates and renders the frame and implements a PING/PONG round trip, but the target Android 10 device has rejected the cross-UID socket connection with EACCES before token authentication. Do not describe this cross-UID transport as working. Wayland compositor integration, input forwarding, XWayland and XFCE/LXQt display are still pending. Do not run xfce4-session expecting it to appear here.
+> **Current milestone: Binder session heartbeat, not desktop streaming.** The Android host exposes `BridgeSessionService`, checks that the actual Binder caller UID maps to the installed `com.termux` package, and transfers a connected socket FD over Binder. The Termux DEB includes a Java client compiled to DEX in CI; it runs under the existing Termux UID through Android `app_process` and maintains bounded TXWB v1 PING/PONG. CI passes for the host APK, client DEX and DEB wiring. The new client/service handoff still requires device verification on Android 10 / MIUI.
 
 ## Current implementation
 
-- Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
-- Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype for synthetic-frame diagnostics. Separately, the Termux CLI uses a loopback-only read-only status monitor; it is not a desktop transport.
-- Binder probe: a separately installed companion APK exposes a signature-permission-protected Binder service; the display host verifies a bounded 16 KiB echo and distinct app UIDs. The 16 KiB probe has been confirmed passing on the target phone. This is only a host-to-companion capability test, not a Termux connection or streaming transport.
-- Termux integration: run `termux-xwayland start`; once Weston creates its Wayland socket, the CLI opens the Android host with a session ID and a loopback status port. The host displays “Termux-Companion connection received” and polls whether Weston is still running. The read-only status endpoint binds to `127.0.0.1` and carries no frame/input data. No dependency on Termux RUN_COMMAND or `allow-external-apps=true`.
-- Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
-- Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
-- Keep scope honest: this is a synthetic-frame transport/rendering test, not a compositor and not a working desktop server.
-- Architecture targets remain armeabi-v7a and arm64-v8a; Android 10 compatibility must be verified on-device.
-
-## Optional X11 capture diagnostic
-
-tools/capture-x11-frame.sh is an optional, one-shot debugging helper only. FFmpeg is **not** part of the runtime rendering architecture. Live frames must come from the compositor's own output buffer; the current Android app still receives a synthetic frame. See docs/x11-capture-probe.md and docs/architecture.md.
+- **Android host:** Kotlin UI plus the in-app Binder session service.
+- **Termux package:** `termux-xwayland` starts/stops Weston, opens the host, launches the Binder client and reports session state.
+- **Binder client:** source is `termux-package/src/BridgeClient.java`; CI compiles it to DEX and stages it into the Termux DEB.
+- **No separate companion APK:** the retired `:ipc-companion` module is removed from Gradle settings, CI and the repository.
+- **No TCP frame/input fallback:** the historical loopback-only status monitor is low-rate status/control data only. It does not carry desktop frames or input. No root, SELinux weakening, `allow-external-apps=true` or Termux RUN_COMMAND is required.
+- **Protocol:** TXWB v1, 12-byte header, reserved-bit validation and 16 MiB maximum payload.
+- **Not yet implemented:** real compositor frame production, Android rendering of a real Wayland surface, touch/keyboard forwarding, clipboard routing, reconnect/backpressure policy and performance verification.
 
 ## Build and test
 
-Android shell build (Gradle 8.9 and JDK 17):
+With JDK 17, Gradle 8.9 and the Android SDK:
 
-    gradle :android-app:assembleDebug :ipc-companion:assembleDebug
+```bash
+gradle :android-app:testDebugUnitTest :android-app:assembleDebug
+bash tools/build-termux-binder-client.sh dist/termux-binder-client
+install -D -m 0644 dist/termux-binder-client/bridge-client.dex \
+  termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
+bash tools/test-termux-package.sh
+bash termux-package/build-deb.sh dist
+```
 
-Native protocol/server checks from native/compositor:
+CI stages the DEX automatically and publishes three artifacts: the display-host APK, the Binder-client DEX and the Termux DEB. Install the DEB inside Termux, then run `termux-xwayland status` and `termux-xwayland start`. The CLI waits for the Binder session to connect; `termux-xwayland stop` closes the session and stops Weston.
 
-    cargo fmt --check
-    cargo test
-    cargo check
-    cargo build --release
+## Security and verification boundary
 
-See docs/termux-workflow.md for the diagnostic server workflow, docs/termux-companion-contract.md for the three-part integration contract, and docs/termux-deb-install.md for building/installing the initial Termux DEB package. Use feat/phase1-android-host until the PR is merged.
+- Cross-UID abstract AF_UNIX connect returned `EACCES` on the target Android 10 device and is not the production transport.
+- Binder authorization checks the actual caller UID through Android's package manager.
+- The connected FD is transferred through Binder. The client does not connect to a cross-UID abstract/filesystem socket.
+- Temporary TCP echo/protocol probes were historical diagnostics only; they are not a frame/input transport.
+- CI compilation does not prove Binder authorization or FD lifecycle behavior on the phone.
+- Do not claim a working desktop until the new Binder session is verified on-device and a real Wayland surface is rendered.
 
-## Architecture and next milestones
-
-1. Buildable Android host and CI. **Complete.**
-2. Bounded bridge framing and protocol tests. **Implemented; cross-UID Android device connection fails with EACCES and is not a supported transport yet.**
-3. Binder capability probe implemented for host ↔ companion; install both APKs signed with the same certificate and verify on Android 10. This does not yet prove Termux-side access or frame streaming.
-4. Build a real Wayland compositor and render one real Wayland client surface in Android.
-5. Integrate upstream XWayland and verify a known X11 test client.
-6. Add input, resize, clipboard and lifecycle handling.
-7. Add XFCE, then optional LXQt session support.
-8. Validate ARM32/ARM64, Android 10+, performance and release packaging.
-
-See docs/xwayland-integration-plan.md for the detailed process topology, rootful-first plan and exit checks.
-
-## Security notes
-
-- The abstract AF_UNIX socket is diagnostic only; do not assume it works across Android UIDs.
-- The host handoff contains only a random session ID and the monitor port; it does not export a secret token. The status endpoint reports only whether this session's Wayland socket is running.
-- A token cannot override Android IPC authorization; the connection must be permitted before authentication can happen.
-- The Binder probe service is guarded by a signature-level permission. Install the companion APK first, then the display-host APK, and sign both with the same certificate. Do not treat this test as evidence that the existing Termux app can bind to this service.
-- Do not use TCP/localhost as a desktop-frame or input transport to bypass Android SELinux. The loopback status endpoint is read-only and carries no desktop data.
-- Do not disable SELinux or require root.
-- Do not assume GPU acceleration, DMA-BUF, zero-copy transport, or ARM32 dependency availability; test each explicitly.
-
-## Reference projects
-
-- [Termux:X11](https://github.com/termux/termux-x11) — Android display-host and Termux bootstrap/package integration patterns; it is an X server, not this project's Wayland compositor/XWayland stack.
-- [termux-wayland](https://github.com/J-x-Z/termux-wayland) — experimental Termux-hosted Wayland compositor and Android bridge.
-- [Wayland XWayland documentation](https://wayland.freedesktop.org/docs/book/Xwayland.html) — upstream XWayland/compositor integration model.
-
-This repository is a separate implementation. Before copying code from a reference, preserve applicable license notices and review license compatibility. The repository is GPL-3.0-only.
+See [docs/termux-workflow.md](docs/termux-workflow.md), [docs/binder-session-endpoint.md](docs/binder-session-endpoint.md), and [docs/termux-companion-contract.md](docs/termux-companion-contract.md).

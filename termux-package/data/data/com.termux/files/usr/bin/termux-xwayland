@@ -228,7 +228,7 @@ start_binder_session() {
   fi
   stop_binder_session
   : > "$SESSION_LOG_FILE"
-  CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient >"$SESSION_LOG_FILE" 2>&1 &
+  nohup env CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   local pid=$! attempt
   printf '%s\\n' "$pid" > "$SESSION_PID_FILE"
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
@@ -321,7 +321,7 @@ case "${1:-status}" in
   server-start) start_server ;;
   stop) stop_session ;;
   server-stop) stop_server ;;
-  --version|-V) printf 'termux-xwayland companion 0.3.0 (authenticated control IPC; frame transport pending)\n' ;;
+  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder FD session heartbeat; desktop frames pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
 Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor-stop|--version|--help]
