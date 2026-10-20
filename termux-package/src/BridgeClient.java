@@ -1,0 +1,239 @@
+package org.techwithkaushik.termuxxwayland.client;
+
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.os.Binder;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.Parcel;
+import android.os.ParcelFileDescriptor;
+import android.os.Handler;
+import android.util.Log;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * Runs inside the existing Termux UID via app_process. No companion APK,
+ * RUN_COMMAND permission, root, TCP listener, or SELinux change is required.
+ */
+public final class BridgeClient {
+    private static final String TAG = "TermuxXWaylandClient";
+    private static final String TERMUX_PACKAGE = "com.termux";
+    private static final String[] HOST_PACKAGES = {
+        "org.techwithkaushik.termuxxwayland",
+        "org.techwithkaushik.termuxxwayland.debug"
+    };
+    private static final String SERVICE_CLASS =
+        "org.techwithkaushik.termuxxwayland.BridgeSessionService";
+    private static final String DESCRIPTOR =
+        "org.techwithkaushik.termuxxwayland.IBridgeSession";
+    private static final int OPEN_SESSION = IBinder.FIRST_CALL_TRANSACTION;
+    private static final int VERSION = 1;
+    private static final int MAX_PAYLOAD = 16 * 1024 * 1024;
+    private static final byte[] MAGIC = new byte[] { 0x54, 0x58, 0x57, 0x42 };
+    private static final int WELCOME = 2;
+    private static final int PING = 7;
+    private static final int PONG = 8;
+    private static final int CLOSE = 9;
+
+    private BridgeClient() {}
+
+    public static void main(String[] args) {
+        if (args.length > 0 && "--help".equals(args[0])) {
+            System.out.println("BridgeClient: opens a Termux-authorized Binder session and maintains TXWB PING/PONG.");
+            return;
+        }
+        final Context context;
+        try {
+            context = createTermuxContext();
+        } catch (Exception error) {
+            System.err.println("BINDER_CLIENT_ERROR: cannot create Termux context: " + error);
+            System.exit(2);
+            return;
+        }
+
+        try {
+            if (Looper.myLooper() == null) Looper.prepareMainLooper();
+        } catch (RuntimeException error) {
+            System.err.println("BINDER_CLIENT_ERROR: cannot prepare Android looper: " + error);
+            System.exit(2);
+            return;
+        }
+        final Handler mainHandler = new Handler(Looper.getMainLooper());
+        final AtomicBoolean finished = new AtomicBoolean(false);
+        final String hostPackage = findHostPackage(context);
+        if (hostPackage == null) {
+            System.err.println("BINDER_CLIENT_ERROR: Termux-XWayland host APK is not installed.");
+            System.exit(3);
+            return;
+        }
+
+        final ServiceConnection connection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder binder) {
+                Thread worker = new Thread(() -> {
+                    try {
+                        runSession(binder);
+                    } catch (Exception error) {
+                        System.err.println("BINDER_SESSION_ERROR: " + error.getMessage());
+                    } finally {
+                        if (finished.compareAndSet(false, true)) {
+                            mainHandler.post(() -> {
+                                try { context.unbindService(this); } catch (Exception ignored) {}
+                                Looper.getMainLooper().quit();
+                            });
+                        }
+                    }
+                }, "termux-xwayland-binder");
+                worker.setDaemon(false);
+                worker.start();
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                System.err.println("BINDER_SESSION_DISCONNECTED");
+                if (finished.compareAndSet(false, true)) Looper.getMainLooper().quit();
+            }
+        };
+
+        Intent intent = new Intent().setComponent(new ComponentName(hostPackage, SERVICE_CLASS));
+        boolean bound;
+        try {
+            bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
+        } catch (Exception error) {
+            bound = false;
+            System.err.println("BINDER_CLIENT_ERROR: bindService failed: " + error);
+        }
+        if (!bound) {
+            System.err.println("BINDER_CLIENT_ERROR: Android rejected the Binder service bind.");
+            System.exit(4);
+            return;
+        }
+        System.out.println("BINDER_CONNECTING host=" + hostPackage);
+        System.out.flush();
+        Looper.loop();
+    }
+
+    private static Context createTermuxContext() throws Exception {
+        Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
+        Method systemMain = activityThreadClass.getDeclaredMethod("systemMain");
+        systemMain.setAccessible(true);
+        Object activityThread = systemMain.invoke(null);
+        Method getSystemContext = activityThreadClass.getDeclaredMethod("getSystemContext");
+        getSystemContext.setAccessible(true);
+        Context systemContext = (Context) getSystemContext.invoke(activityThread);
+        Context termuxContext = systemContext.createPackageContext(TERMUX_PACKAGE, 0);
+        if (!TERMUX_PACKAGE.equals(termuxContext.getPackageName())) {
+            throw new SecurityException("Android did not create a com.termux package context");
+        }
+        return termuxContext;
+    }
+
+    private static String findHostPackage(Context context) {
+        PackageManager packageManager = context.getPackageManager();
+        for (String packageName : HOST_PACKAGES) {
+            try {
+                packageManager.getPackageInfo(packageName, 0);
+                return packageName;
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // Try the other supported application ID.
+            }
+        }
+        return null;
+    }
+
+    private static void runSession(IBinder binder) throws Exception {
+        Parcel request = Parcel.obtain();
+        Parcel response = Parcel.obtain();
+        ParcelFileDescriptor descriptor = null;
+        try {
+            request.writeInterfaceToken(DESCRIPTOR);
+            request.writeInt(VERSION);
+            if (!binder.transact(OPEN_SESSION, request, response, 0)) {
+                throw new IOException("Host Binder service rejected OPEN_SESSION");
+            }
+            response.readException();
+            descriptor = response.readParcelable(BridgeClient.class.getClassLoader());
+        } finally {
+            request.recycle();
+            response.recycle();
+        }
+        if (descriptor == null) throw new IOException("Host returned no session FD");
+
+        try (ParcelFileDescriptor ownedDescriptor = descriptor) {
+            DataInputStream input = new DataInputStream(new FileInputStream(ownedDescriptor.getFileDescriptor()));
+            DataOutputStream output = new DataOutputStream(new FileOutputStream(ownedDescriptor.getFileDescriptor()));
+            Frame welcome = readFrame(input);
+            if (welcome.kind != WELCOME || welcome.payload.length != 4) {
+                throw new IOException("Invalid TXWB WELCOME frame");
+            }
+            long hostUid = ((long) (welcome.payload[0] & 0xff) << 24)
+                | ((long) (welcome.payload[1] & 0xff) << 16)
+                | ((long) (welcome.payload[2] & 0xff) << 8)
+                | (long) (welcome.payload[3] & 0xff);
+            System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
+            System.out.flush();
+
+            while (true) {
+                writeFrame(output, PING, new byte[0]);
+                Frame response = readFrame(input);
+                if (response.kind != PONG || response.payload.length != 0) {
+                    if (response.kind == CLOSE) break;
+                    throw new IOException("Unexpected response to TXWB PING");
+                }
+                System.out.println("SESSION_HEALTHY transport=binder-fd");
+                System.out.flush();
+                Thread.sleep(5000L);
+            }
+        }
+    }
+
+    private static Frame readFrame(DataInputStream input) throws IOException {
+        byte[] header = new byte[12];
+        input.readFully(header);
+        for (int i = 0; i < MAGIC.length; i++) {
+            if (header[i] != MAGIC[i]) throw new IOException("Invalid TXWB magic");
+        }
+        if ((header[4] & 0xff) != VERSION) throw new IOException("Unsupported TXWB version");
+        if (header[6] != 0 || header[7] != 0) throw new IOException("Nonzero TXWB reserved bits");
+        int kind = header[5] & 0xff;
+        if (kind < 1 || kind > 9) throw new IOException("Unknown TXWB message kind");
+        long length = ((long) (header[8] & 0xff) << 24)
+            | ((long) (header[9] & 0xff) << 16)
+            | ((long) (header[10] & 0xff) << 8)
+            | (long) (header[11] & 0xff);
+        if (length > MAX_PAYLOAD) throw new IOException("TXWB payload exceeds limit");
+        byte[] payload = new byte[(int) length];
+        input.readFully(payload);
+        return new Frame(kind, payload);
+    }
+
+    private static void writeFrame(DataOutputStream output, int kind, byte[] payload) throws IOException {
+        if (payload.length > MAX_PAYLOAD) throw new IOException("TXWB payload exceeds limit");
+        output.write(MAGIC);
+        output.writeByte(VERSION);
+        output.writeByte(kind);
+        output.writeShort(0);
+        output.writeInt(payload.length);
+        output.write(payload);
+        output.flush();
+    }
+
+    private static final class Frame {
+        final int kind;
+        final byte[] payload;
+        Frame(int kind, byte[] payload) {
+            this.kind = kind;
+            this.payload = payload;
+        }
+    }
+}
