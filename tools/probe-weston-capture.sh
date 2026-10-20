@@ -37,6 +37,22 @@ if command -v "$WAYLAND_INFO_BIN" >/dev/null 2>&1; then
   exit 4
 fi
 
+# Build a tiny libwayland-client probe when wayland-info is not installed.
+# This checks global advertisement only; it cannot grant privileged capture access.
+if command -v cc >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 \
+    && pkg-config --exists wayland-client \
+    && [[ -r "$(dirname "$0")/wayland-globals-probe.c" ]]; then
+  probe_dir="$(mktemp -d "${TMPDIR:-/data/data/com.termux/files/usr/tmp}/txw-capture-probe.XXXXXX")" || exit 2
+  trap 'rm -rf "$probe_dir"' EXIT
+  if cc "$(dirname "$0")/wayland-globals-probe.c" -o "$probe_dir/wayland-globals-probe" \
+      $(pkg-config --cflags --libs wayland-client); then
+    WAYLAND_DISPLAY="$WAYLAND_DISPLAY_NAME" XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+      "$probe_dir/wayland-globals-probe"
+    exit $?
+  fi
+  printf 'Capture protocol probe: could not compile libwayland-client probe.\n' >&2
+fi
+
 printf 'Capture protocol probe: wayland-info is unavailable in this Termux repository.\n'
 printf 'Weston version: '
 weston --version 2>&1 || true
