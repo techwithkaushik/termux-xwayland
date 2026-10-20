@@ -61,6 +61,7 @@ class MainActivity : Activity() {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             val local = service as? BridgeSessionService.BridgeBinder ?: return
             localBridgeBinder = local
+            previewImage.inputEventListener = { payload -> local.sendInput(payload) }
             local.frameListener = { frame ->
                 runOnUiThread {
                     if (isFinishing || isDestroyed || !::previewImage.isInitialized) return@runOnUiThread
@@ -79,6 +80,7 @@ class MainActivity : Activity() {
 
         override fun onServiceDisconnected(name: ComponentName) {
             localBridgeBinder?.frameListener = null
+            if (::previewImage.isInitialized) previewImage.inputEventListener = null
             localBridgeBinder = null
         }
     }
@@ -133,6 +135,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         statusPollHandler.removeCallbacks(statusPollRunnable)
         localBridgeBinder?.frameListener = null
+        if (::previewImage.isInitialized) previewImage.inputEventListener = null
         localBridgeBinder = null
         if (binderServiceBound) {
             runCatching { unbindService(binderServiceConnection) }
