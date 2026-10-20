@@ -30,3 +30,26 @@ Consequently, the supported next implementation gate is:
 Do not enable blanket screenshot authorization for arbitrary Wayland clients.
 Do not claim success from a visible protocol global alone: an authorized,
 successful capture and a real frame received by Android are the acceptance test.
+
+
+## Build the native capture client on Termux
+
+The installed Weston package on the target device may provide
+`share/libweston-16/protocols/weston-output-capture.xml`. If the XML and
+`wayland-client` development metadata are present, build the client locally
+for the device's actual ABI:
+
+```sh
+bash tools/build-native-capture.sh "$PREFIX/bin/termux-xwayland-capture"
+```
+
+This generates the client protocol bindings from the installed XML and links
+against the installed Wayland client library. The output is a Termux-side
+helper, not a companion APK. The bridge will discover it through `PATH`.
+
+Run the existing status and capture probe afterward. A successful build only
+proves that the client compiled. A runtime `CAPTURE_STOPPED` or
+`Weston capture failed` message is useful evidence that compositor policy or
+the selected renderer/backend still needs work. The helper emits tightly
+packed RGBA frames to stdout only after a successful capture completion; its
+diagnostics go to stderr.
