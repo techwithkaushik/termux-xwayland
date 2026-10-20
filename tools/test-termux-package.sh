@@ -47,6 +47,9 @@ check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
 check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
 check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
+check_grep 'xserver listening on display' "$script" "discover the actual XWayland display instead of assuming :0"
+check_grep 'x11_number="${x11_number#:}"' "$script" "derive the X11 socket number from the selected display"
+check_grep 'nohup xterm -geometry 80x24+0+0' "$script" "launch a visible X11 terminal after session startup"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
