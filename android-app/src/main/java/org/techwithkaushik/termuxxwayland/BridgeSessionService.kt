@@ -29,8 +29,11 @@ class BridgeSessionService : Service() {
 
     private data class Session(val hostEnd: ParcelFileDescriptor) : Closeable {
         private val closed = AtomicBoolean(false)
+
         override fun close() {
-            if (closed.compareAndSet(false, true)) {\n            runCatching { Os.shutdown(hostEnd.fileDescriptor, OsConstants.SHUT_RDWR) }\n            runCatching { hostEnd.close() }\n        }
+            if (!closed.compareAndSet(false, true)) return
+            runCatching { Os.shutdown(hostEnd.fileDescriptor, OsConstants.SHUT_RDWR) }
+            runCatching { hostEnd.close() }
         }
     }
 
@@ -69,7 +72,10 @@ class BridgeSessionService : Service() {
                 // Binder Parcel owns a transferred FD reference after marshalling.
                 runCatching { pair[1].close() }
             }
-            Thread({ serve(next) }, "txw-binder-session").apply { isDaemon = true; start() }
+            Thread({ serve(next) }, "txw-binder-session").apply {
+                isDaemon = true
+                start()
+            }
             Log.i(TAG, "Authorized Termux Binder session opened")
             return true
         }
@@ -98,36 +104,36 @@ class BridgeSessionService : Service() {
         val input = FileInputStream(session.hostEnd.fileDescriptor)
         val output = FileOutputStream(session.hostEnd.fileDescriptor)
         try {
+            val hostUid = Process.myUid()
             BridgeProtocol.write(
                 output,
                 BridgeMessageKind.WELCOME,
                 byteArrayOf(
-                    (Process.myUid() ushr 24).toByte(),
-                    (Process.myUid() ushr 16).toByte(),
-                    (Process.myUid() ushr 8).toByte(),
-                    Process.myUid().toByte()
+                    (hostUid ushr 24).toByte(),
+                    (hostUid ushr 16).toByte(),
+                    (hostUid ushr 8).toByte(),
+                    hostUid.toByte()
                 )
             )
             while (!session.closed.get()) {
-                when (val message = BridgeProtocol.read(input)) {
-                    is BridgeMessage -> when (message.kind) {
-                        BridgeMessageKind.PING -> {
-                            if (message.payload.isNotEmpty()) throw IOException("PING payload must be empty")
-                            BridgeProtocol.write(output, BridgeMessageKind.PONG)
-                        }
-                        BridgeMessageKind.CLOSE -> {
-                            if (message.payload.isNotEmpty()) throw IOException("CLOSE payload must be empty")
-                            BridgeProtocol.write(output, BridgeMessageKind.CLOSE)
-                            break
-                        }
-                        BridgeMessageKind.INPUT,
-                        BridgeMessageKind.RESIZE,
-                        BridgeMessageKind.CLIPBOARD -> {
-                            // Framing is accepted; routing to Android input/clipboard is not wired yet.
-                            Log.d(TAG, "Received framed control message kind=${message.kind}")
-                        }
-                        else -> throw IOException("Unexpected message kind ${message.kind}")
+                val message = BridgeProtocol.read(input)
+                when (message.kind) {
+                    BridgeMessageKind.PING -> {
+                        if (message.payload.isNotEmpty()) throw IOException("PING payload must be empty")
+                        BridgeProtocol.write(output, BridgeMessageKind.PONG)
                     }
+                    BridgeMessageKind.CLOSE -> {
+                        if (message.payload.isNotEmpty()) throw IOException("CLOSE payload must be empty")
+                        BridgeProtocol.write(output, BridgeMessageKind.CLOSE)
+                        break
+                    }
+                    BridgeMessageKind.INPUT,
+                    BridgeMessageKind.RESIZE,
+                    BridgeMessageKind.CLIPBOARD -> {
+                        // Framing is accepted; routing to Android input/clipboard is not wired yet.
+                        Log.d(TAG, "Received framed control message kind=${message.kind}")
+                    }
+                    else -> throw IOException("Unexpected message kind ${message.kind}")
                 }
             }
         } catch (error: IOException) {
