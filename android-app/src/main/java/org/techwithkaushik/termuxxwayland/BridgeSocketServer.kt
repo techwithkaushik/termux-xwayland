@@ -1,18 +1,18 @@
 package org.techwithkaushik.termuxxwayland
 
 import android.graphics.Bitmap
-import android.net.LocalServerSocket
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
-import android.os.Process
 import java.io.Closeable
 import java.io.IOException
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Direct AF_UNIX abstract-socket endpoint. This deliberately does not use
- * bindService/Binder or require an installable companion application.
+ * Authenticated loopback TCP endpoint for the Termux client.
+ * Bound only to 127.0.0.1; never exposed on LAN interfaces and does not
+ * require a separately installed companion app. Session token authenticates HELLO.
  */
 internal class BridgeSocketServer(
     private val sessionId: String,
@@ -21,57 +21,57 @@ internal class BridgeSocketServer(
     private val onState: (String) -> Unit
 ) : Closeable {
     private val closed = AtomicBoolean(false)
-    @Volatile private var server: LocalServerSocket? = null
-    @Volatile private var client: LocalSocket? = null
-    private val socketName = "termux_xwayland_$sessionId"
+    @Volatile private var server: ServerSocket? = null
+    @Volatile private var client: Socket? = null
+
+    companion object {
+        const val PORT = 38473
+    }
 
     fun start() {
         Thread({
             try {
-                val listener = LocalServerSocket(socketName)
+                val listener = ServerSocket(PORT, 1, InetAddress.getByName("127.0.0.1"))
                 server = listener
-                onState("Direct socket ready; waiting for Termux client.")
+                onState("Authenticated loopback bridge ready at 127.0.0.1:$PORT.")
                 while (!closed.get()) {
                     val accepted = listener.accept()
                     client = accepted
                     try {
                         serve(accepted)
                     } catch (error: Exception) {
-                        if (!closed.get()) onState("Direct socket session ended: ${error.message ?: error.javaClass.simpleName}")
+                        if (!closed.get()) onState("Loopback bridge session ended: ${error.message ?: error.javaClass.simpleName}")
                     } finally {
                         runCatching { accepted.close() }
                         if (client === accepted) client = null
                     }
                 }
             } catch (error: Exception) {
-                if (!closed.get()) onState("Direct socket unavailable: ${error.message ?: error.javaClass.simpleName}")
+                if (!closed.get()) onState("Loopback bridge unavailable: ${error.message ?: error.javaClass.simpleName}")
             } finally {
                 runCatching { server?.close() }
                 server = null
             }
-        }, "termux-xwayland-socket-server").apply {
+        }, "termux-xwayland-loopback-server").apply {
             isDaemon = true
             start()
         }
     }
 
-    private fun serve(socket: LocalSocket) {
+    private fun serve(socket: Socket) {
         socket.soTimeout = 15000
-        val input = socket.inputStream
-        val output = socket.outputStream
+        val input = socket.getInputStream()
+        val output = socket.getOutputStream()
         val hello = BridgeProtocol.read(input)
         val expected = sessionId.toByteArray(Charsets.US_ASCII)
         if (hello.kind != BridgeMessageKind.HELLO || !hello.payload.contentEquals(expected)) {
-            throw SecurityException("Direct socket session authentication failed")
+            throw SecurityException("Loopback session authentication failed")
         }
-        val peerUid = socket.peerCredentials.uid
-        if (peerUid != expectedTermuxUid) {
-            throw SecurityException("Rejected socket peer UID $peerUid; expected Termux UID $expectedTermuxUid")
-        }
-        // WELCOME carries the kernel-verified Termux peer UID.
-        BridgeProtocol.write(output, BridgeMessageKind.WELCOME, ByteBuffer.allocate(4).putInt(peerUid).array())
+        // This is an authenticated loopback TCP session; Android does not expose
+        // kernel peer credentials for TCP, so never describe it as UID-verified.
+        BridgeProtocol.write(output, BridgeMessageKind.WELCOME, ByteBuffer.allocate(4).putInt(expectedTermuxUid).array())
         socket.soTimeout = 0
-        onState("Direct AF_UNIX socket connected (Termux UID $peerUid).")
+        onState("Authenticated loopback TCP connected (127.0.0.1:$PORT).")
         while (!closed.get() && !socket.isClosed) {
             val message = BridgeProtocol.read(input)
             when (message.kind) {
