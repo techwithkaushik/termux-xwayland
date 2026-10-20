@@ -88,7 +88,7 @@ static void capture_format(void *data, struct weston_capture_source_v1 *source, 
     struct capture_state *s = data;
     (void)source;
     s->source_events_seen++;
-    fprintf(stderr, "CAPTURE_EVENT: drm_format=0x%08x\\n", drm_format);
+    fprintf(stderr, "CAPTURE_EVENT: drm_format=0x%08x\n", drm_format);
 
     /*
      * Weston reports DRM fourcc values; wl_shm buffers use wl_shm_format
