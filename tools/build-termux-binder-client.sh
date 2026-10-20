@@ -6,7 +6,7 @@ out="${1:-$root/dist/termux-binder-client}"
 sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
 source_file="$root/termux-package/src/BridgeClient.java"
 
-[[ -f "$source_file" ]] || { echo "Missing direct socket client source: $source_file" >&2; exit 1; }
+[[ -f "$source_file" ]] || { echo "Missing Binder FD client source: $source_file" >&2; exit 1; }
 [[ -d "$sdk_root/platforms" && -d "$sdk_root/build-tools" ]] || {
   echo "Android SDK platforms/build-tools are required to compile the Termux app_process client." >&2
   exit 1
