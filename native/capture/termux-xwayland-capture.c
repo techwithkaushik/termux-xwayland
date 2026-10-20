@@ -24,6 +24,7 @@ struct capture_state {
     int got_size;
     int got_format;
     int formats_done;
+    int source_events_seen;
     int completed;
     int failed;
     char failure[256];
@@ -51,7 +52,8 @@ static const struct wl_registry_listener registry_listener = {
 static void capture_format(void *data, struct weston_capture_source_v1 *source, uint32_t format) {
     struct capture_state *s = data;
     (void)source;
-    fprintf(stderr, "CAPTURE_EVENT: format=0x%08x\\n", format);
+    s->source_events_seen++;
+    fprintf(stderr, "CAPTURE_EVENT: format=0x%08x\n", format);
     if (format == WL_SHM_FORMAT_XRGB8888 || format == WL_SHM_FORMAT_ARGB8888) {
         if (!s->got_format || format == WL_SHM_FORMAT_ARGB8888) {
             s->format = format;
@@ -62,7 +64,8 @@ static void capture_format(void *data, struct weston_capture_source_v1 *source, 
 static void capture_size(void *data, struct weston_capture_source_v1 *source, int32_t width, int32_t height) {
     struct capture_state *s = data;
     (void)source;
-    fprintf(stderr, "CAPTURE_EVENT: size=%dx%d\\n", width, height);
+    s->source_events_seen++;
+    fprintf(stderr, "CAPTURE_EVENT: size=%dx%d\n", width, height);
     if (width > 0 && height > 0 && width <= 8192 && height <= 8192) {
         s->width = width;
         s->height = height;
@@ -74,7 +77,7 @@ static void capture_size(void *data, struct weston_capture_source_v1 *source, in
 }
 static void capture_complete(void *data, struct weston_capture_source_v1 *source) {
     (void)source;
-    fprintf(stderr, "CAPTURE_EVENT: complete\\n");
+    fprintf(stderr, "CAPTURE_EVENT: complete\n");
     ((struct capture_state *)data)->completed = 1;
 }
 static void capture_retry(void *data, struct weston_capture_source_v1 *source) {
@@ -91,7 +94,8 @@ static void capture_failed(void *data, struct weston_capture_source_v1 *source, 
 }
 static void capture_formats_done(void *data, struct weston_capture_source_v1 *source) {
     (void)source;
-    fprintf(stderr, "CAPTURE_EVENT: formats_done\\n");
+    s->source_events_seen++;
+    fprintf(stderr, "CAPTURE_EVENT: formats_done\n");
     ((struct capture_state *)data)->formats_done = 1;
 }
 static const struct weston_capture_source_v1_listener source_listener = {
@@ -140,7 +144,7 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         return 3;
     }
     /* Source 1 is Weston framebuffer capture. Weston still enforces its policy. */
-    fprintf(stderr, "CAPTURE_SOURCE_CREATE: output=%s source=framebuffer\\n", s->output ? "present" : "missing");
+    fprintf(stderr, "CAPTURE_SOURCE_CREATE: output=%s source=framebuffer\n", s->output ? "present" : "missing");
     s->source = weston_capture_v1_create(s->factory, s->output, WESTON_CAPTURE_V1_SOURCE_FRAMEBUFFER);
     if (!s->source) {
         fprintf(stderr, "CAPTURE_ERROR: could not create Weston capture source\n");
