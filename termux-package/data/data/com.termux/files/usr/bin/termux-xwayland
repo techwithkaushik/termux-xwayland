@@ -262,6 +262,8 @@ stop_binder_session() {
   rm -f "$SESSION_PID_FILE"
 }
 start_binder_session() {
+  local session_id="${1:-}"
+  [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "direct socket session ID is missing or invalid"
   prepare_runtime_dir
   if [ ! -s "$CLIENT_DEX" ]; then
     printf 'termux-xwayland: Binder client DEX missing: %s. Install the latest DEB package.\n' "$CLIENT_DEX" >&2
@@ -272,7 +274,7 @@ start_binder_session() {
     return 1
   fi
   if binder_session_is_running; then
-    printf 'Binder transport: already connected\n'
+    printf 'Direct socket transport: already connected\n'
     return 0
   fi
   stop_binder_session
@@ -294,7 +296,7 @@ start_binder_session() {
   done
   tail -n 30 "$SESSION_LOG_FILE" 2>/dev/null || true
   stop_binder_session
-  printf 'termux-xwayland: Binder session did not connect within 12 seconds.\n' >&2
+  printf 'termux-xwayland: direct socket session did not connect within 12 seconds.\n' >&2
   return 1
 }
 
@@ -354,7 +356,7 @@ start_session() {
     stop_binder_session
     stop_monitor
     stop_server >/dev/null 2>&1 || true
-    fail "Android host opened, but the Termux Binder session could not connect; inspect $SESSION_LOG_FILE"
+    fail "Android host opened, but the Termux direct socket session could not connect; inspect $SESSION_LOG_FILE"
   fi
   notify_user "Termux-XWayland" "Binder session connected. Starting an X11 terminal for visible output."
   # Weston starts headless; without an X11 client the Android host has no
@@ -378,7 +380,7 @@ start_session() {
     printf 'X11 client: xterm is not installed; run: pkg install xterm\\n' >&2
   fi
   printf 'Wayland server started; Android host launch request sent.\\n'
-  printf 'Binder transport: connected (PING/PONG verified).\\n'
+  printf 'Direct socket transport: connected (PING/PONG verified).\\n'
   printf 'XWayland frame forwarding requires ffmpeg and a running X11 client.\\n'
 }
 stop_session() {
@@ -410,7 +412,7 @@ Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor
 status/check  Show Android host, control IPC and Wayland server status.
 start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
-stop          Stop the Binder session, monitor and Weston process.
+stop          Stop the direct socket session, monitor and Weston process.
 server-stop   Stop only the Weston process.
 x11 COMMAND   Launch an X11 app with DISPLAY set to the managed XWayland server.
 monitor-stop  Stop the loopback status monitor.
