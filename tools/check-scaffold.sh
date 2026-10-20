@@ -25,7 +25,7 @@ test -x tools/capture-x11-frame.sh
 test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
 grep -q 'native Wayland capture' README.md
-grep -q 'optional XWayland frame path' README.md
+grep -q 'direct abstract AF_UNIX socket' README.md
 grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Direct socket transport active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
