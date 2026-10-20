@@ -108,7 +108,8 @@ public final class BridgeClient {
                 Thread.sleep(250L);
             }
         }
-        throw new IOException("Android direct socket did not become ready within 10 seconds", last);
+        throw new IOException("Android direct socket did not become ready within 10 seconds; last connect error: "
+            + (last == null ? "no connection attempt completed" : last.getClass().getSimpleName() + ": " + last.getMessage()), last);
     }
 
     private static Process startFrameCapture() {
