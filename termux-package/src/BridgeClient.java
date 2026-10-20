@@ -78,7 +78,7 @@ public final class BridgeClient {
                     throw new IOException("Unexpected direct-socket heartbeat response");
                 }
                 System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
-                    + " transport=abstract-unix-socket");
+                    + " transport=loopback-tcp");
                 System.out.flush();
                 Thread.sleep(5000L);
             }
@@ -170,7 +170,7 @@ public final class BridgeClient {
                     if (lastLog == 0L || now - lastLog >= 5000L) {
                         lastLog = now;
                         System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L)
-                            + " transport=abstract-unix-socket");
+                            + " transport=loopback-tcp");
                         System.out.flush();
                     }
                 }
