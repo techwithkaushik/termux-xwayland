@@ -3,7 +3,9 @@ package org.techwithkaushik.termuxxwayland
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.ServiceConnection
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.content.Intent
@@ -13,8 +15,10 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.os.Process
+import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -51,8 +55,34 @@ class MainActivity : Activity() {
     private lateinit var statusDescription: TextView
     private lateinit var binderStatusDescription: TextView
     private lateinit var previewImage: ImageView
-    private var directSocketServer: BridgeSocketServer? = null
-    private var directSocketSessionId = ""
+    private var binderServiceBound = false
+    private var binderFrameCount = 0L
+    private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
+    private val binderServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            val local = service as? BridgeSessionService.BridgeBinder ?: return
+            localBridgeBinder = local
+            local.frameListener = { frame ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || !::previewImage.isInitialized) return@runOnUiThread
+                    previewImage.setImageBitmap(
+                        Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
+                    )
+                    previewImage.visibility = View.VISIBLE
+                    binderFrameCount++
+                    if (::binderStatusDescription.isInitialized) {
+                        binderStatusDescription.text =
+                            "Binder transport active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
+                    }
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            localBridgeBinder?.frameListener = null
+            localBridgeBinder = null
+        }
+    }
     private lateinit var connectButton: Button
     @Volatile private var activeSocket: LocalSocket? = null
     @Volatile private var connecting = false
@@ -92,56 +122,24 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        ensureDirectSocketBridge()
+        if (!binderServiceBound) {
+            binderServiceBound = runCatching {
+                bindService(Intent(this, BridgeSessionService::class.java), binderServiceConnection, Context.BIND_AUTO_CREATE)
+            }.getOrDefault(false)
+        }
         statusPollHandler.removeCallbacks(statusPollRunnable)
         statusPollHandler.post(statusPollRunnable)
     }
 
     override fun onStop() {
         statusPollHandler.removeCallbacks(statusPollRunnable)
-        super.onStop()
-    }
-
-    private fun ensureDirectSocketBridge() {
-        val sessionId = getSharedPreferences("termux_control_session", MODE_PRIVATE)
-            .getString("session_id", "").orEmpty()
-        if (!sessionId.matches(Regex("^[a-f0-9]{32}$"))) return
-        if (directSocketServer != null && directSocketSessionId == sessionId) return
-        directSocketServer?.close()
-        directSocketServer = null
-        try {
-            @Suppress("DEPRECATION")
-            val termuxUid = packageManager.getApplicationInfo("com.termux", 0).uid
-            val bridge = BridgeSocketServer(
-                sessionId = sessionId,
-                expectedTermuxUid = termuxUid,
-                onFrame = { bitmap -> runOnUiThread {
-                    if (isFinishing || isDestroyed || !::previewImage.isInitialized) {
-                        bitmap.recycle()
-                    } else {
-                        previewImage.setImageBitmap(bitmap)
-                        previewImage.visibility = View.VISIBLE
-                        statusTitle.text = "Desktop frame received"
-                        statusDescription.text = "Receiving XWayland frames over authenticated loopback TCP."
-                        if (::binderStatusDescription.isInitialized) {
-                            binderStatusDescription.text = "Loopback TCP transport active; desktop frames received."
-                        }
-                    }
-                } },
-                onState = { state -> runOnUiThread {
-                    if (!isFinishing && !isDestroyed && ::binderStatusDescription.isInitialized) {
-                        binderStatusDescription.text = state
-                    }
-                } }
-            )
-            directSocketSessionId = sessionId
-            directSocketServer = bridge
-            bridge.start()
-        } catch (error: Exception) {
-            if (::binderStatusDescription.isInitialized) {
-                binderStatusDescription.text = "Loopback bridge unavailable: ${error.message ?: error.javaClass.simpleName}"
-            }
+        localBridgeBinder?.frameListener = null
+        localBridgeBinder = null
+        if (binderServiceBound) {
+            runCatching { unbindService(binderServiceConnection) }
+            binderServiceBound = false
         }
+        super.onStop()
     }
 
     private fun handleTermuxIntent(intent: Intent?) {
@@ -166,7 +164,6 @@ class MainActivity : Activity() {
             .putLong("received_at", System.currentTimeMillis())
             .apply()
         pollTermuxServerStatus()
-        ensureDirectSocketBridge()
     }
 
     private fun pollTermuxServerStatus() {
@@ -220,11 +217,11 @@ class MainActivity : Activity() {
         when (prefs.getString("state", "disconnected")) {
             "request_received" -> {
                 statusTitle.text = "Termux launch request received"
-                statusDescription.text = "The launch request arrived. Checking Weston status separately from the loopback bridge stream."
+                statusDescription.text = "The launch request arrived. Checking Weston status separately from the Binder session."
             }
             "server_running" -> {
                 statusTitle.text = "Termux server confirmed"
-                statusDescription.text = "The status endpoint confirms Weston and its Wayland socket are running. The desktop stream is reported separately by the loopback bridge."
+                statusDescription.text = "The status endpoint confirms Weston and its Wayland socket are running. This is not proof of an active Binder session or desktop stream."
             }
             "server_stopped" -> {
                 statusTitle.text = "Termux server stopped"
@@ -245,6 +242,19 @@ class MainActivity : Activity() {
             else -> {
                 statusTitle.text = "Waiting for Termux"
                 statusDescription.text = "Run termux-xwayland start in Termux. The host will open when the Wayland socket is ready."
+            }
+        }
+        if (::binderStatusDescription.isInitialized) {
+            val binderState = getSharedPreferences("termux_binder_session", MODE_PRIVATE)
+                .getString("state", "disconnected")
+            binderStatusDescription.text = when (binderState) {
+                "connecting" -> "Binder transport: connecting; waiting for an authorized Termux PING/PONG."
+                "connected" -> if (binderFrameCount > 0L) {
+                    "Binder transport: active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
+                } else {
+                    "Binder transport: active; Termux UID authorization and PING/PONG are confirmed. Waiting for XWayland frames."
+                }
+                else -> "Binder transport: disconnected; no active authenticated Binder heartbeat."
             }
         }
     }
@@ -277,7 +287,7 @@ class MainActivity : Activity() {
         status.addView(statusTitle)
         status.addView(statusDescription)
         binderStatusDescription = label(
-            "Direct socket transport: waiting for an authenticated Termux connection.",
+            "Binder transport: disconnected; no active authenticated Binder heartbeat.",
             13, muted, false
         ).apply { setPadding(0, dp(8), 0, 0) }
         status.addView(binderStatusDescription)
@@ -298,7 +308,7 @@ class MainActivity : Activity() {
         })
         content.addView(infoCard(
             "Historical abstract-socket test",
-            "This diagnostic is separate from the automatic session socket. Cross-UID AF_UNIX permissions depend on the Android build and must be verified on-device."
+            "This legacy test is not used by the production Binder session. Cross-UID AF_UNIX connect returned EACCES on the target Android 10 device."
         ), margins(bottom = 10))
         tokenInput = field("Session token (64 hex characters)", "", secret = true)
         content.addView(tokenInput, margins(bottom = 8))
@@ -310,7 +320,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(12), 0, dp(8))
         })
         content.addView(label(
-            "Install the Termux-XWayland DEB and the existing Android host APK. Start the session from Termux; direct AF_UNIX connection and desktop frames are reported above.",
+            "Install the Termux-XWayland DEB and the existing Android host APK. Start the session from Termux; the Binder heartbeat is shown above separately from Weston status.",
             14, muted, false
         ))
         content.addView(codeCard(commands), margins(top = 12, bottom = 8))
@@ -321,7 +331,7 @@ class MainActivity : Activity() {
         }, margins(bottom = 8))
         content.addView(infoCard(
             "What this test proves",
-            "This legacy button exercises the historical abstract-socket smoke test only. The production session uses session-authenticated TCP bound only to 127.0.0.1; it does not expose a LAN listener. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
+            "This legacy button exercises the historical abstract-socket smoke test only. Production Binder status above changes to active only after the Termux UID is authorized and a valid PING/PONG round trip succeeds. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
@@ -626,8 +636,6 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        directSocketServer?.close()
-        directSocketServer = null
         try { activeSocket?.close() } catch (_: Exception) { }
         activeSocket = null
         super.onDestroy()
