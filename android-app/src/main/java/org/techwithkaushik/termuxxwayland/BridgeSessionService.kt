@@ -58,6 +58,7 @@ class BridgeSessionService : Service() {
                 activeSession?.close()
                 activeSession = next
             }
+            updateBinderState("connecting")
 
             try {
                 reply?.writeNoException()
@@ -88,6 +89,7 @@ class BridgeSessionService : Service() {
             activeSession?.close()
             activeSession = null
         }
+        updateBinderState("disconnected")
         super.onDestroy()
     }
 
@@ -121,6 +123,7 @@ class BridgeSessionService : Service() {
                     BridgeMessageKind.PING -> {
                         if (message.payload.isNotEmpty()) throw IOException("PING payload must be empty")
                         BridgeProtocol.write(output, BridgeMessageKind.PONG)
+                        updateBinderState("connected")
                     }
                     BridgeMessageKind.CLOSE -> {
                         if (message.payload.isNotEmpty()) throw IOException("CLOSE payload must be empty")
@@ -141,9 +144,19 @@ class BridgeSessionService : Service() {
         } finally {
             session.close()
             synchronized(lock) {
-                if (activeSession === session) activeSession = null
+                if (activeSession === session) {
+                    activeSession = null
+                    updateBinderState("disconnected")
+                }
             }
         }
+    }
+
+    private fun updateBinderState(state: String) {
+        getSharedPreferences("termux_binder_session", MODE_PRIVATE).edit()
+            .putString("state", state)
+            .putLong("updated_at", System.currentTimeMillis())
+            .apply()
     }
 
     companion object {

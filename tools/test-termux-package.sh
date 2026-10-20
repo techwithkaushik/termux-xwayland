@@ -138,6 +138,7 @@ cat > "$mock_app_process" <<'MOCK_APP_PROCESS'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'SESSION_CONNECTED host_uid=1000 transport=binder-fd\n'
+printf 'SESSION_HEALTHY epoch_seconds=%s transport=binder-fd\n' "$(date +%s)"
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 MOCK_APP_PROCESS
@@ -173,6 +174,7 @@ port="${port%%&*}"
   echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Binder transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh Binder heartbeat" >&2; exit 1; }
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
 }

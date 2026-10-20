@@ -197,7 +197,13 @@ session_process_is_running() {
   [[ "$cmdline" == *BridgeClient* ]]
 }
 binder_session_is_running() {
-  session_process_is_running && grep -Fq 'SESSION_CONNECTED' "$SESSION_LOG_FILE" 2>/dev/null
+  session_process_is_running || return 1
+  grep -Fq 'SESSION_CONNECTED' "$SESSION_LOG_FILE" 2>/dev/null || return 1
+  local last_healthy now
+  last_healthy="$(sed -n 's/.*SESSION_HEALTHY epoch_seconds=\([0-9][0-9]*\).*/\1/p' "$SESSION_LOG_FILE" | tail -n 1)"
+  [[ "$last_healthy" =~ ^[0-9]+$ ]] || return 1
+  now="$(date +%s)"
+  (( now >= last_healthy && now - last_healthy <= 15 ))
 }
 stop_binder_session() {
   if session_process_is_running; then
@@ -264,7 +270,7 @@ show_status() {
   fi
   show_control_status
   if binder_session_is_running; then
-    printf 'Binder transport: connected (persistent session alive)\n'
+    printf 'Binder transport: connected (fresh PING/PONG heartbeat)\n'
   else
     printf 'Binder transport: not connected\n'
   fi
@@ -304,7 +310,7 @@ start_session() {
   fi
   notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
   printf 'Wayland server started; Android host launch request sent.\n'
-  printf 'Binder transport: connected (persistent Binder FD session).\n'
+  printf 'Binder transport: connected (PING/PONG verified).\n'
   printf 'Wayland frame stream: not connected (real compositor frames are not integrated yet).\n'
 }
 stop_session() {

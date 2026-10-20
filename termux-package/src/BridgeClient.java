@@ -180,9 +180,9 @@ public final class BridgeClient {
                 | ((long) (welcome.payload[1] & 0xff) << 16)
                 | ((long) (welcome.payload[2] & 0xff) << 8)
                 | (long) (welcome.payload[3] & 0xff);
-            System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
+            System.out.println("SESSION_WELCOME host_uid=" + hostUid + " transport=binder-fd");
             System.out.flush();
-
+            boolean connected = false;
             while (true) {
                 writeFrame(output, PING, new byte[0]);
                 Frame pong = readFrame(input);
@@ -190,7 +190,12 @@ public final class BridgeClient {
                     if (pong.kind == CLOSE) break;
                     throw new IOException("Unexpected response to TXWB PING");
                 }
-                System.out.println("SESSION_HEALTHY transport=binder-fd");
+                if (!connected) {
+                    connected = true;
+                    System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
+                }
+                System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
+                    + " transport=binder-fd");
                 System.out.flush();
                 Thread.sleep(5000L);
             }

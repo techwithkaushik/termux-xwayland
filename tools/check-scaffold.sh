@@ -39,6 +39,8 @@ grep -q 'Only the installed Termux package may open a bridge session' android-ap
 grep -q 'ParcelFileDescriptor.createSocketPair' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 ! grep -q 'ipc-companion' settings.gradle.kts
 ! grep -q 'ipc-companion' .github/workflows/ci.yml
+grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
+grep -q 'updateBinderState("connected")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
 
 test -f termux-package/DEBIAN/control
