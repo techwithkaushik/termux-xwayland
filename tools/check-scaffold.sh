@@ -19,6 +19,9 @@ test -f tools/probe-android-ipc-prereqs.sh
 bash -n tools/probe-android-ipc-prereqs.sh
 test -f tools/probe-weston-headless.sh
 test -f tools/probe-weston-capture.sh
+test -f tools/wayland-globals-probe.c
+grep -q 'weston_capture_v1' tools/wayland-globals-probe.c
+grep -q 'wayland-globals-probe.c' tools/probe-weston-capture.sh
 test -f tools/probe-weston-capture-build.sh
 bash -n tools/probe-weston-capture-build.sh
 test -f docs/weston-capture-build-gate.md
