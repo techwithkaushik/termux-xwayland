@@ -106,6 +106,7 @@ public final class BridgeClient {
                     try {
                         runSession(binder);
                     } catch (Exception error) {
+                        Log.e(TAG, "Binder session failed", error);
                         System.err.println("BINDER_SESSION_ERROR: " + error.getMessage());
                     } finally {
                         if (finished.compareAndSet(false, true)) {
@@ -122,6 +123,7 @@ public final class BridgeClient {
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
+                Log.w(TAG, "Binder service disconnected");
                 System.err.println("BINDER_SESSION_DISCONNECTED");
                 if (finished.compareAndSet(false, true)) Looper.getMainLooper().quit();
             }
@@ -136,10 +138,12 @@ public final class BridgeClient {
             System.err.println("BINDER_CLIENT_ERROR: bindService failed: " + error);
         }
         if (!bound) {
+            Log.e(TAG, "Android rejected the Binder service bind");
             System.err.println("BINDER_CLIENT_ERROR: Android rejected the Binder service bind.");
             System.exit(4);
             return;
         }
+        Log.i(TAG, "Binding to host package " + hostPackage);
         System.out.println("BINDER_CONNECTING host=" + hostPackage);
         System.out.flush();
         Looper.loop();
@@ -252,6 +256,7 @@ public final class BridgeClient {
                 | ((long) (welcome.payload[1] & 0xff) << 16)
                 | ((long) (welcome.payload[2] & 0xff) << 8)
                 | (long) (welcome.payload[3] & 0xff);
+            Log.i(TAG, "Binder FD session welcomed; host_uid=" + hostUid);
             System.out.println("SESSION_WELCOME host_uid=" + hostUid + " transport=binder-fd");
             System.out.flush();
             boolean connected = false;
@@ -266,11 +271,13 @@ public final class BridgeClient {
                     }
                     if (!connected) {
                         connected = true;
+                        Log.i(TAG, "Binder FD session connected; host_uid=" + hostUid);
                         System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
                         frameCapture = startFrameCapture();
                         activeFrameCapture = frameCapture;
                         if (frameCapture != null) startFrameForwarder(frameCapture, output);
                     }
+                    Log.d(TAG, "Binder FD session heartbeat OK");
                     System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
                         + " transport=binder-fd");
                     System.out.flush();
