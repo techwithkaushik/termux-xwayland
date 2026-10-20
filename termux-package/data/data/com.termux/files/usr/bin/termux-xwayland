@@ -204,8 +204,10 @@ session_process_is_running() {
   pid="$(cat "$SESSION_PID_FILE" 2>/dev/null)" || return 1
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-  [[ "$cmdline" == *BridgeClient* ]]
+  # app_process cmdline differs across Android releases and may omit the Java main class.
+  # The PID file is created by start_binder_session; process liveness plus a fresh
+  # heartbeat is the reliable signal, not a fragile /proc/cmdline substring.
+  return 0
 }
 binder_session_is_running() {
   session_process_is_running || return 1
