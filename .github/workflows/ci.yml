@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - "android-app/**"
+      - "termux-package/**"
+      - "docs/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
@@ -16,6 +18,8 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - "android-app/**"
+      - "termux-package/**"
+      - "docs/**"
       - "native/**"
       - "tools/**"
       - "build.gradle.kts"
@@ -78,7 +82,7 @@ jobs:
           chmod 600 "$keystore_path" build/signing/key.properties
           echo "filePath=$keystore_path" >> "$GITHUB_OUTPUT"
           echo "Shared development keystore prepared and validated."
-      - name: Test and assemble the display host APK with the shared signing key
+      - name: Test and assemble the display-host APK
         env:
           SIGNING_KEY_STORE: ${{ steps.keystore.outputs.filePath }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
@@ -86,24 +90,36 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: |
           set -euo pipefail
-          # Remove any stale outputs and disable cached signed APK outputs.
           gradle --no-daemon --no-build-cache clean
-          gradle --no-daemon --no-build-cache \
-            :android-app:testDebugUnitTest \
-            :android-app:assembleDebug \
+          gradle --no-daemon --no-build-cache :android-app:testDebugUnitTest :android-app:assembleDebug
+      - name: Build Termux app_process Binder client DEX
+        run: bash tools/build-termux-binder-client.sh dist/termux-binder-client
+      - name: Upload Termux Binder client DEX
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xwayland-binder-client-dex
+          path: dist/termux-binder-client/bridge-client.dex
+          if-no-files-found: error
       - name: Upload display host APK
         uses: actions/upload-artifact@v4
         with:
           name: termux-xwayland-debug-apk
           path: android-app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
-
   native-scaffold:
+    needs: android
     name: Native protocol and scaffold checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: termux-xwayland-binder-client-dex
+          path: dist/termux-binder-client
+      - name: Stage Binder client into the Termux DEB tree
+        run: |
+          set -euo pipefail
+          install -D -m 0644 dist/termux-binder-client/bridge-client.dex termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
       - name: Check repository structure
         run: bash tools/check-scaffold.sh
       - name: Python diagnostic syntax and protocol validation tests

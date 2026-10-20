@@ -1,7 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Temporary loopback-only TCP connectivity diagnostic; not a production transport. -->
+    <!-- Kept only for explicitly user-triggered, one-shot diagnostics. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="org.techwithkaushik.termuxxwayland.permission.BIND_IPC_PROBE" />
     <application
         android:allowBackup="false"
         android:label="Termux XWayland"
@@ -12,6 +11,10 @@
             android:authorities="${applicationId}.control"
             android:exported="true"
             android:grantUriPermissions="false" />
+        <service
+            android:name=".BridgeSessionService"
+            android:exported="true"
+            />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTop"

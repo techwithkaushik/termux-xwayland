@@ -2,89 +2,37 @@
 
 ## Current milestone
 
-The native binary currently provides a **single-client authenticated abstract Unix-domain socket smoke test** and sends one synthetic RGBA frame. On the target Android 10 device, the Android app reports `EACCES` when connecting to this socket across app UIDs. The handshake and synthetic frame therefore have **not** been verified on that device. This prototype does not provide a working cross-app transport or compositor.
+The Termux DEB contains a Java Binder client compiled to DEX in CI. It binds under the existing Termux UID, receives a connected FD, validates TXWB v1 frames and maintains a PING/PONG heartbeat. When XWayland and ffmpeg are installed, the client can also capture a 640×360 X11/XWayland image at 2 FPS and send RGBA `FRAME` messages over Binder. The Android service validates and displays received frames. This path requires target-device visual verification; native Wayland capture and input forwarding remain incomplete.
 
-The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-cross-app-ipc.md). Do not continue treating the abstract socket as the default cross-UID path.
+The old abstract AF_UNIX cross-UID connection failed with `EACCES` on the target Android 10 device. It remains diagnostic only. The retired `:ipc-companion` APK is not part of the supported install flow.
 
-## Termux integration direction (no RUN_COMMAND dependency)
+## Build artifacts
 
-The generic Termux `RUN_COMMAND` API is not the display transport and requires the user's explicit external-command configuration. This project will not require `allow-external-apps=true` merely to launch its display host, and the Android host no longer exposes a RUN_COMMAND diagnostic button or permission.
+CI publishes:
+- `termux-xwayland-debug-apk`: Android display-host APK.
+- `termux-xwayland-binder-client-dex`: DEX for the Termux-side `app_process` client.
+- `termux-xwayland-bridge-deb`: Termux CLI and Binder client DEX.
 
-Termux:X11 is a useful architectural reference because it ships **both** an Android display app and a Termux-side package; its optional shared-UID build is a separate distribution choice and requires matching Termux signing keys. See the [upstream Termux:X11 README](https://github.com/termux/termux-x11#setup-instructions). Do not assume its private Binder interfaces are stable public APIs or available to this app.
+## Install and run
 
-The agreed component model is **Termux app → Termux-side companion package/CLI → Termux-XWayland Android host**. The user starts the companion from the Termux shell; it manages the Linux session and coordinates with the Android host. The host owns the display surface and Android input.
+Install the DEB inside Termux using `dpkg -i`. For optional XWayland capture, install the required Termux packages:
 
-Implementation contract and acceptance tests: [Termux companion integration contract](termux-companion-contract.md).
+```bash
+pkg install weston socat xorg-server ffmpeg xterm
+termux-xwayland start
+termux-xwayland x11 xterm
+termux-xwayland status
+```
 
-1. Keep the standalone host UI independent of Termux's generic command-launch permission.
-2. Implement the companion package skeleton with start/stop/status commands and explicit session lifecycle.
-3. Verify a supported authorization mechanism and Binder/file-descriptor handoff with the actual Termux installation and signing keys on Android 10. Do not assume a signature permission authorizes unrelated certificates.
-4. Add bounded, bidirectional streaming and lifecycle tests. Real compositor work begins only after device acceptance; no shell polling or temporary-file frame transport.
+`termux-xwayland start` starts Weston, opens the host, starts the Binder client and waits for an authorized PING/PONG. If XWayland and ffmpeg are available, it also starts a frame-capture process. `termux-xwayland x11 COMMAND` launches an X11 client using `DISPLAY=:0`. `termux-xwayland status` reports the Binder heartbeat and recent frame capture separately. `termux-xwayland stop` closes the Binder session and stops the monitor and Weston.
 
-The initial Termux DEB package lives under `termux-package/`. Build it with `bash termux-package/build-deb.sh`, install the generated `.deb` inside Termux using `dpkg -i`, then run `termux-xwayland status` and `termux-xwayland start`. See [termux-deb-install.md](termux-deb-install.md). It currently detects/launches the Android host only; no real session streaming is implemented.
+## Security and limitations
 
-The existing `:ipc-companion` APK remains only a same-certificate Binder feasibility test. It is not the Termux-side service, does not hand off file descriptors, and does not provide live frame/input transport.
+- The Binder service authorizes the actual caller UID through Android's package manager and accepts only the installed `com.termux` package.
+- The socket FD is transferred through Binder; no cross-UID AF_UNIX connect or TCP frame/input listener is used.
+- The loopback status monitor is low-rate control-plane polling only.
+- XWayland capture requires `xorg-server` and `ffmpeg`; without them the heartbeat remains usable and the frame stream reports waiting/unavailable.
+- The frame path is X11/XWayland-only, 640×360 at 2 FPS. Native Wayland surfaces, touch/keyboard, resize, clipboard, backpressure and reconnect are still future work.
+- CI cannot establish MIUI Binder policy, frame content or visual correctness on the target Android 10 phone.
 
-## Binder companion capability probe (experimental)
-
-Build both debug APKs with the same Gradle/JDK environment so Android signs them with the same debug certificate:
-
-    gradle --no-daemon :ipc-companion:assembleDebug :android-app:assembleDebug
-
-Install `ipc-companion/build/outputs/apk/debug/ipc-companion-debug.apk` first, then `android-app/build/outputs/apk/debug/android-app-debug.apk`. The companion declares a signature-level permission and the display host requests it. Open the display-host app and tap **Run Binder capability probe**. A pass requires a 16 KiB exact echo, a caller UID matching the host process, and a different service UID. If Android rejects the bind, check install order and signing certificate; do not weaken the permission to `normal` or `dangerous`.
-
-This probe verifies only display-host ↔ companion Binder IPC. It does **not** verify access from the existing Termux app, a long-lived bidirectional stream, file-descriptor passing, or frame performance. Those remain separate device acceptance tests. No network permission, TCP listener, root, or SELinux change is introduced.
-
-## Probe Termux:X11 and XWayland sockets
-
-The read-only diagnostic `tools/probe-termux-x11-sockets.sh` checks the runtime paths and Unix socket nodes visible to the Termux shell. Termux:X11 is itself a fully fledged X server; its X11 display socket is commonly `$TMPDIR/.X11-unix/X0` for `DISPLAY=:0`. That is not a Wayland socket. The probe separately checks common Wayland compositor socket names such as `wayland-0` and `wayland-1`, but their absence does not by itself identify every possible transport. Actual paths can vary with `TMPDIR`, `XDG_RUNTIME_DIR`, display number, and how the server was launched.
-
-From a Termux shell, start Termux:X11 first:
-
-    termux-x11 :0
-
-Leave it running, open another Termux session, go to the repository root, and run:
-
-    bash tools/probe-termux-x11-sockets.sh
-
-For a meaningful XWayland check, an actual Wayland compositor/backend and an XWayland server must be running; the current project does not implement those yet. The script does not start or stop servers, change permissions, or modify files. It reports socket paths and metadata only; a socket's presence does not prove that another Android app is authorized to connect to it. If no expected socket is found, check the printed runtime directories and process list.
-
-## Build the native diagnostic server
-
-Install the native tools in Termux:
-
-    pkg update
-    pkg install git rust clang pkg-config
-
-Clone this repository and build the Rust diagnostic binary:
-
-    git clone https://github.com/techwithkaushik/termux-xwayland.git
-    cd termux-xwayland
-    git checkout feat/phase1-android-host
-    cd native/compositor
-    cargo test
-    cargo build --release
-
-Use `feat/phase1-android-host` until its PR is merged.
-
-## Run the diagnostic socket test (optional)
-
-This test can still be useful for protocol development, but it is expected to fail at the Android connection step on devices that deny cross-UID abstract sockets. It is not a workaround for the Android security policy.
-
-Generate a fresh 256-bit token and start the server:
-
-    export TERMUX_XWAYLAND_TOKEN_HEX="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-    printf 'Session token: %s\n' "$TERMUX_XWAYLAND_TOKEN_HEX"
-    ./target/release/termux-xwayland-compositor
-
-Enter the 64-character token in the app and tap **Connect securely**. If the app reports `EACCES`, stop the test; changing the token or running `chmod` will not resolve a policy denial. Stop the server with Ctrl+C and clear the token with `unset TERMUX_XWAYLAND_TOKEN_HEX`. Do not share screenshots or logs containing the token.
-
-## Transport requirements before compositor work
-
-The next milestone is the Termux-side companion package described in [termux-companion-contract.md](termux-companion-contract.md), followed by a device-verified, explicitly authorized control/FD handoff and persistent frame/input channel. The generic command-launch API is not required and is not a streaming transport.
-
-Do not disable SELinux, require root, or add localhost TCP as a fallback. Do not begin real desktop frame streaming until the IPC probe proves bidirectional bounded messaging, session lifecycle handling, and Android 10 compatibility.
-
-## What is still missing
-
-No real Wayland compositor, desktop frame capture, input forwarding, XWayland, XFCE or LXQt session is available yet. The current synthetic frame is not Linux desktop output. Android CI and Rust tests validate compilation/protocol logic only; actual Android IPC policy must be tested on the target device.
+Do not report a working desktop until a real XWayland frame is visible on the device and the stream survives stop/reconnect.
