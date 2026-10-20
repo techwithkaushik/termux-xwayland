@@ -139,7 +139,16 @@ server_is_running() {
 start_server() {
   prepare_runtime_dir
   if server_is_running; then
-    printf 'Wayland server: already running (PID %s)\n' "$(cat "$PID_FILE")"
+    if [ ! -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
+      fail "Weston PID $(cat "$PID_FILE") exists but Wayland socket is missing; inspect $LOG_FILE or run termux-xwayland stop"
+    fi
+    if command -v Xwayland >/dev/null 2>&1; then
+      local active_display
+      active_display="$(resolve_xwayland_display)" || fail "Weston is running but XWayland is not ready; inspect $LOG_FILE"
+      printf 'Wayland server: already running (PID %s)\nXWayland display: %s\n' "$(cat "$PID_FILE")" "$active_display"
+    else
+      printf 'Wayland server: already running (PID %s)\n' "$(cat "$PID_FILE")"
+    fi
     return 0
   fi
   rm -f "$PID_FILE"
