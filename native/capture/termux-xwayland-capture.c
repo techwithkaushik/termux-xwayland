@@ -382,7 +382,7 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         s->failed = 0;
         s->failure[0] = '\0';
         weston_capture_source_v1_capture(s->source, buffer);
-        if (wl_display_flush(s->display) < 0 || wait_events(s, capture_done) < 0) {
+        if (wl_display_flush(s->display) < 0 || wait_events(s, capture_done, 5000) < 0) {
             fprintf(stderr, "CAPTURE_STOPPED: %s\n", s->failure[0] ? s->failure : "capture request failed");
             free(rgba); wl_buffer_destroy(buffer); munmap(pixels, bytes); return 13;
         }
