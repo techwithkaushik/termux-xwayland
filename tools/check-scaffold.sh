@@ -27,7 +27,7 @@ bash -n tools/capture-x11-frame.sh
 grep -q 'native Wayland capture' README.md
 grep -q 'authenticated loopback TCP' README.md
 grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Direct socket transport active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'Loopback TCP transport active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 test "$(grep -c 'override fun onDestroy()' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt)" -eq 1
 grep -q 'directSocketServer?.close()' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
