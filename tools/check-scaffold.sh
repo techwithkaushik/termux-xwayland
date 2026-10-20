@@ -25,7 +25,7 @@ test -x tools/capture-x11-frame.sh
 test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
 grep -q 'native Wayland capture' README.md
-grep -q 'direct abstract AF_UNIX socket' README.md
+grep -q 'authenticated loopback TCP' README.md
 grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Direct socket transport active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 test "$(grep -c 'override fun onDestroy()' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt)" -eq 1
@@ -44,9 +44,9 @@ grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
 grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
 grep -q 'android.os.Process.myUid()' termux-package/src/BridgeClient.java
 ! grep -Fq ' + " but Termux process UID=" + Process.myUid());' termux-package/src/BridgeClient.java
-grep -q 'LocalServerSocket(socketName)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
-grep -q 'socket.peerCredentials.uid' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
-grep -q 'LocalSocketAddress.Namespace.ABSTRACT' termux-package/src/BridgeClient.java
+grep -q 'ServerSocket(PORT, 1, InetAddress.getByName("127.0.0.1"))' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
+grep -q 'Loopback session authentication failed' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
+grep -q 'new InetSocketAddress("127.0.0.1", 38473)' termux-package/src/BridgeClient.java
 ! grep -q 'bindService(' termux-package/src/BridgeClient.java
 ! grep -q 'createTermuxContext' termux-package/src/BridgeClient.java
 grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
