@@ -2,7 +2,7 @@
 
 Termux XWayland pairs the existing Android display-host APK with a Termux-installed CLI/DEB. The supported flow does **not** require a second companion APK.
 
-> **Current milestone:** the device confirmed that cross-UID abstract AF_UNIX connections fail with `Permission denied` on this Android/MIUI build. The runtime transport is therefore being moved to **authenticated TCP bound exclusively to 127.0.0.1:38473**. It is loopback-only (not LAN/public), uses the per-session random ID in the TXWB HELLO handshake, and does not require a separate companion APK. Device verification is still required after installing the new APK and DEB.
+> **Current milestone:** the device confirmed that cross-UID abstract AF_UNIX connections fail with `Permission denied` on this Android/MIUI build. The runtime transport is therefore being moved to **authenticated TCP bound exclusively to Binder-transferred file descriptor**. It is loopback-only (not LAN/public), uses the per-session random ID in the TXWB HELLO handshake, and does not require a separate companion APK. Device verification is still required after installing the new APK and DEB.
 
 ## Current implementation
 
