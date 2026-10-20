@@ -335,7 +335,7 @@ public final class BridgeClient {
                 "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
                 "-f", "rawvideo", "pipe:1"
             ).redirectError(ProcessBuilder.Redirect.PIPE).start();
-            System.out.println("FRAME_CAPTURE_STARTED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " display=" + display + " size=640x360 fps=2 pid=" + process.pid());
+            System.out.println("FRAME_CAPTURE_STARTED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " display=" + display + " size=640x360 fps=2 pid=" + "unavailable");
             System.out.flush();
             Thread stderrReader = new Thread(() -> {
                 try (java.io.BufferedReader reader = new java.io.BufferedReader(
