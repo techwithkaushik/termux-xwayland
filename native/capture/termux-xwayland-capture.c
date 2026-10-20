@@ -160,22 +160,47 @@ static int roundtrip_with_timeout(struct wl_display *display, int timeout_ms) {
     }
     int remaining = timeout_ms;
     while (!state.done && remaining > 0) {
+        /* Never call wl_display_dispatch() after poll: it may block while
+         * waiting for a second event. Use Wayland's prepare/read protocol. */
+        while (wl_display_prepare_read(display) != 0) {
+            if (wl_display_dispatch_pending(display) < 0) {
+                wl_callback_destroy(callback);
+                return -1;
+            }
+            if (state.done) break;
+        }
+        if (state.done) break;
+        if (wl_display_flush(display) < 0 && errno != EAGAIN) {
+            wl_display_cancel_read(display);
+            wl_callback_destroy(callback);
+            return -1;
+        }
         struct pollfd pfd = { .fd = wl_display_get_fd(display), .events = POLLIN };
         int slice = remaining > 250 ? 250 : remaining;
         int rc = poll(&pfd, 1, slice);
         if (rc < 0) {
-            if (errno == EINTR) continue;
+            int saved = errno;
+            wl_display_cancel_read(display);
+            if (saved == EINTR) { remaining -= slice; continue; }
             wl_callback_destroy(callback);
+            errno = saved;
             return -1;
         }
         remaining -= slice;
-        if (rc > 0) {
-            if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-                wl_callback_destroy(callback);
-                errno = EPIPE;
-                return -1;
-            }
-            if (wl_display_dispatch(display) < 0) return -1;
+        if (rc == 0) {
+            wl_display_cancel_read(display);
+            continue;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            wl_display_cancel_read(display);
+            wl_callback_destroy(callback);
+            errno = EPIPE;
+            return -1;
+        }
+        if (wl_display_read_events(display) < 0 ||
+            wl_display_dispatch_pending(display) < 0) {
+            wl_callback_destroy(callback);
+            return -1;
         }
     }
     if (!state.done) {
