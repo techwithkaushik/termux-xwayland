@@ -45,6 +45,9 @@ public final class BridgeClient {
     private static final int PONG = 8;
     private static final int CLOSE = 9;
     private static final int FRAME = 3;
+    private static final int INPUT = 4;
+    private static final int RESIZE = 5;
+    private static final int CLIPBOARD = 6;
     private static final int FRAME_WIDTH = 640;
     private static final int FRAME_HEIGHT = 360;
     private static final int FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 4;
