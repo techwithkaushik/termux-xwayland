@@ -3,9 +3,9 @@ set -u
 
 WAYLAND_INFO_BIN="${TERMUX_XWAYLAND_WAYLAND_INFO:-wayland-info}"
 WAYLAND_DISPLAY_NAME="${WAYLAND_DISPLAY:-wayland-1}"
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/data/data/com.termux/files/usr/tmp}}"
-LOG_FILE="${TERMUX_XWAYLAND_WESTON_LOG:-$RUNTIME_DIR/termux-xwayland/weston.log}"
-CONSOLE_LOG_FILE="${TERMUX_XWAYLAND_WESTON_CONSOLE_LOG:-$RUNTIME_DIR/termux-xwayland/weston-console.log}"
+RUNTIME_DIR="${TERMUX_XWAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-${TMPDIR:-/data/data/com.termux/files/usr/tmp}/termux-xwayland-${UID:-$(id -u)}}}"
+LOG_FILE="${TERMUX_XWAYLAND_WESTON_LOG:-$RUNTIME_DIR/weston.log}"
+CONSOLE_LOG_FILE="${TERMUX_XWAYLAND_WESTON_CONSOLE_LOG:-$RUNTIME_DIR/weston-console.log}"
 
 if [[ "$WAYLAND_DISPLAY_NAME" == */* ]]; then
   socket_path="$WAYLAND_DISPLAY_NAME"
