@@ -45,8 +45,8 @@ check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host pa
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
-check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
-check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
+check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process socket client"
+check_grep 'Socket transport: connected (abstract Unix socket)' "$script" "start waits for socket session"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
@@ -137,8 +137,8 @@ MOCK_SOCAT
 cat > "$mock_app_process" <<'MOCK_APP_PROCESS'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'SESSION_CONNECTED host_uid=1000 transport=binder-fd\n'
-printf 'SESSION_HEALTHY epoch_seconds=%s transport=binder-fd\n' "$(date +%s)"
+printf 'SESSION_CONNECTED transport=abstract-unix\n'
+printf 'SESSION_HEALTHY epoch_seconds=%s transport=abstract-unix\n' "$(date +%s)"
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 MOCK_APP_PROCESS
@@ -150,7 +150,7 @@ status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Binder transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no Binder session initially" >&2; exit 1; }
+grep -Fq 'Socket transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no socket session initially" >&2; exit 1; }
 grep -Fq 'Android host detection: not active' <<<"$status_output" || {
   echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
@@ -160,7 +160,7 @@ grep -Fq 'Native Wayland frame stream: not integrated' <<<"$status_output" || {
 
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
-grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock Binder client did not connect" >&2; exit 1; }
+grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock socket client did not connect" >&2; exit 1; }
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
    "$launch_uri" == *"&server=running&port="* &&
    "$launch_uri" != *"&token="* ]] || {
@@ -174,7 +174,7 @@ port="${port%%&*}"
   echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Binder transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh Binder heartbeat" >&2; exit 1; }
+grep -Fq 'Socket transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh Binder heartbeat" >&2; exit 1; }
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
 }
@@ -213,7 +213,7 @@ if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
 fi
 "${cli_env[@]}" bash "$script" stop >/dev/null
 stopped_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Binder transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped Binder session" >&2; exit 1; }
+grep -Fq 'Socket transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped socket session" >&2; exit 1; }
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped server" >&2; exit 1;
 }
