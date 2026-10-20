@@ -15,6 +15,10 @@ MONITOR_PID_FILE="$RUNTIME_DIR/monitor.pid"
 MONITOR_STATE_FILE="$RUNTIME_DIR/monitor.state"
 MONITOR_LOG_FILE="$RUNTIME_DIR/monitor.log"
 HOST_POLL_FILE="$RUNTIME_DIR/host-poll"
+CLIENT_DEX="${TERMUX_XWAYLAND_CLIENT_DEX:-${PREFIX:-/data/data/com.termux/files/usr}/share/termux-xwayland/bridge-client.dex}"
+APP_PROCESS_BIN="${TERMUX_XWAYLAND_APP_PROCESS:-/system/bin/app_process}"
+SESSION_PID_FILE="$RUNTIME_DIR/binder-session.pid"
+SESSION_LOG_FILE="$RUNTIME_DIR/binder-session.log"
 
 fail() { printf 'termux-xwayland: %s\n' "$*" >&2; exit 1; }
 notify_user() {
@@ -182,6 +186,69 @@ stop_server() {
   rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
   notify_user "Termux-XWayland" "Wayland server stopped."
 }
+
+session_process_is_running() {
+  [ -f "$SESSION_PID_FILE" ] || return 1
+  local pid cmdline
+  pid="$(cat "$SESSION_PID_FILE" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  [[ "$cmdline" == *BridgeClient* ]]
+}
+binder_session_is_running() {
+  session_process_is_running && grep -Fq 'SESSION_CONNECTED' "$SESSION_LOG_FILE" 2>/dev/null
+}
+stop_binder_session() {
+  if session_process_is_running; then
+    local pid attempt
+    pid="$(cat "$SESSION_PID_FILE")"
+    kill "$pid" 2>/dev/null || true
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+  fi
+  rm -f "$SESSION_PID_FILE"
+}
+start_binder_session() {
+  prepare_runtime_dir
+  if [ ! -s "$CLIENT_DEX" ]; then
+    printf 'termux-xwayland: Binder client DEX missing: %s. Install the latest DEB package.\\n' "$CLIENT_DEX" >&2
+    return 1
+  fi
+  if [ ! -x "$APP_PROCESS_BIN" ]; then
+    printf 'termux-xwayland: Android app_process is unavailable: %s\\n' "$APP_PROCESS_BIN" >&2
+    return 1
+  fi
+  if binder_session_is_running; then
+    printf 'Binder transport: already connected\\n'
+    return 0
+  fi
+  stop_binder_session
+  : > "$SESSION_LOG_FILE"
+  CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient >"$SESSION_LOG_FILE" 2>&1 &
+  local pid=$! attempt
+  printf '%s\\n' "$pid" > "$SESSION_PID_FILE"
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
+    if grep -Fq 'SESSION_CONNECTED' "$SESSION_LOG_FILE" 2>/dev/null; then
+      printf 'Binder transport: connected (persistent Binder FD session)\\n'
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      tail -n 30 "$SESSION_LOG_FILE" 2>/dev/null || true
+      rm -f "$SESSION_PID_FILE"
+      return 1
+    fi
+    sleep 0.5
+  done
+  tail -n 30 "$SESSION_LOG_FILE" 2>/dev/null || true
+  stop_binder_session
+  printf 'termux-xwayland: Binder session did not connect within 12 seconds.\\n' >&2
+  return 1
+}
+
 show_status() {
   local host_found=0
   if detect_host; then
@@ -196,7 +263,12 @@ show_status() {
     printf 'Wayland server: not running\n'
   fi
   show_control_status
-  printf 'Wayland frame stream: not connected (frame transport is not integrated yet)\n'
+  if binder_session_is_running; then
+    printf 'Binder transport: connected (persistent session alive)\n'
+  else
+    printf 'Binder transport: not connected\n'
+  fi
+  printf 'Wayland frame stream: not connected (real compositor frames are not integrated yet)\n'
   if [ "$host_found" -eq 1 ]; then return 0; fi
   return 1
 }
@@ -205,6 +277,7 @@ start_session() {
     notify_user "Termux-XWayland" "Android host not found. Install the Termux-XWayland APK first."
     fail "Android host not detected; checked ${APP_IDS[*]}"
   }
+  stop_binder_session
   start_server
   local session_id port
   session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
@@ -223,8 +296,22 @@ start_session() {
     stop_monitor
     fail "could not open Android host deep link"
   fi
-  notify_user "Termux-XWayland" "Wayland socket is ready. Android host launch request sent; live frame transport is still pending."
-  printf 'Wayland server started; Android host launch request sent. Live Wayland frames are not connected yet.\n'
+  if ! start_binder_session; then
+    stop_binder_session
+    stop_monitor
+    stop_server >/dev/null 2>&1 || true
+    fail "Android host opened, but the Termux Binder session could not connect; inspect $SESSION_LOG_FILE"
+  fi
+  notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
+  printf 'Wayland server started; Android host launch request sent.\n'
+  printf 'Binder transport: connected (persistent Binder FD session).\n'
+  printf 'Wayland frame stream: not connected (real compositor frames are not integrated yet).\n'
+}
+stop_session() {
+  stop_binder_session
+  stop_monitor
+  stop_server
+  printf 'Binder transport: stopped\n'
 }
 case "${1:-status}" in
   status|check) show_status ;;
@@ -232,21 +319,23 @@ case "${1:-status}" in
   monitor-stop) stop_monitor ;;
   start) start_session ;;
   server-start) start_server ;;
-  stop|server-stop) stop_server ;;
+  stop) stop_session ;;
+  server-stop) stop_server ;;
   --version|-V) printf 'termux-xwayland companion 0.3.0 (authenticated control IPC; frame transport pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|server-start|stop|monitor-stop|--version|--help]
+Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor-stop|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
 start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
-stop          Stop the Weston process started by this companion.
+stop          Stop the Binder session, monitor and Weston process.
+server-stop   Stop only the Weston process.
 monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
 The control endpoint accepts calls only from the installed com.termux UID.
-This is control-plane IPC only: live frame/input transport is not integrated.
+The Binder FD session is live; real compositor frames and Android input routing are not integrated.
 EOF
     ;;
   *) printf 'Unknown command: %s\nRun termux-xwayland --help\n' "$1" >&2; exit 64 ;;

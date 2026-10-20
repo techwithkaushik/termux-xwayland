@@ -38,11 +38,15 @@ grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
 grep -q 'Only the installed Termux package may open a bridge session' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'ParcelFileDescriptor.createSocketPair' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 ! grep -q 'ipc-companion' settings.gradle.kts
+! grep -q 'ipc-companion' .github/workflows/ci.yml
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
 
 test -f termux-package/DEBIAN/control
 test -f termux-package/DEBIAN/postinst
 test -f termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+test -f termux-package/src/BridgeClient.java
+test -f tools/build-termux-binder-client.sh
+bash -n tools/build-termux-binder-client.sh
 test -f termux-package/build-deb.sh
 bash -n termux-package/build-deb.sh
 bash tools/test-termux-package.sh

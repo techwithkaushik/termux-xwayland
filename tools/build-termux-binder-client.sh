@@ -21,7 +21,9 @@ command -v javac >/dev/null 2>&1 || { echo "JDK javac is required." >&2; exit 12
 rm -rf "$out"
 mkdir -p "$out/classes" "$out/dex"
 javac -source 8 -target 8 -classpath "$android_jar" -d "$out/classes" "$source_file"
-"$d8" --min-api 29 --output "$out/dex" "$out/classes/org/techwithkaushik/termuxxwayland/client/BridgeClient.class"
+mapfile -t class_files < <(find "$out/classes" -type f -name '*.class' -print)
+(("${#class_files[@]}" > 0)) || { echo "javac produced no client classes." >&2; exit 1; }
+"$d8" --min-api 29 --output "$out/dex" "${class_files[@]}"
 cp "$out/dex/classes.dex" "$out/bridge-client.dex"
 test -s "$out/bridge-client.dex"
 echo "Built Termux app_process Binder client DEX: $out/bridge-client.dex"

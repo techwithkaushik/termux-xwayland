@@ -5,7 +5,7 @@ Maintainer: Termux-XWayland contributors
 Section: x11
 Priority: optional
 Depends: bash, coreutils, socat
-Description: Termux-side session companion for Termux-XWayland
- A small Termux package that checks whether the Termux-XWayland Android
- display host is installed and provides safe status/start/stop commands.
- A loopback-only authenticated status endpoint lets the Android host detect whether Weston is running. This package does not yet provide compositor streaming.
+Description: Termux-side Binder session client for Termux-XWayland
+ A small Termux package that manages Weston lifecycle and starts an app_process
+ Binder client under the existing Termux UID. The Binder heartbeat is not a
+ real desktop frame stream; compositor rendering and input routing remain pending.

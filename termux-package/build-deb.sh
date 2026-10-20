@@ -14,6 +14,7 @@ command -v dpkg-deb >/dev/null 2>&1 || {
 test -f "$pkg/DEBIAN/control"
 test -f "$pkg/DEBIAN/postinst"
 test -f "$pkg/data/data/com.termux/files/usr/bin/termux-xwayland"
+test -s "$pkg/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex"
 
 mkdir -p "$out"
 # Use a unique staging directory and explicitly create/copy each control file.
@@ -32,6 +33,7 @@ find "$stage" -type d -exec chmod 0755 {} +
 chmod 0644 "$stage/DEBIAN/control"
 chmod 0755 "$stage/DEBIAN/postinst"
 chmod 0755 "$stage/data/data/com.termux/files/usr/bin/termux-xwayland"
+chmod 0644 "$stage/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex"
 
 # Remove an old output first; never leave a stale archive looking successful.
 rm -f "$archive"

@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pkg="$root/termux-package"
 script="$pkg/data/data/com.termux/files/usr/bin/termux-xwayland"
+client_dex="$pkg/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex"
 
 check_file() {
   if [[ ! -f "$1" ]]; then
@@ -24,6 +25,7 @@ check_grep() {
 check_file "$pkg/DEBIAN/control"
 check_file "$pkg/DEBIAN/postinst"
 check_file "$script"
+check_file "$client_dex"
 
 if ! bash -n "$pkg/DEBIAN/postinst"; then
   echo "FAIL: postinst shell syntax check" >&2
@@ -43,7 +45,8 @@ check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host pa
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
-check_grep 'Wayland server started; Android host launch request sent.' "$script" "start reports host launch handoff"
+check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
+check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
@@ -83,6 +86,8 @@ mock_pm="$cli_tmp/pm"
 mock_open="$cli_tmp/termux-open"
 mock_weston="$cli_tmp/weston"
 mock_socat="$cli_tmp/socat"
+mock_app_process="$cli_tmp/mock-app_process"
+client_dex="$cli_tmp/bridge-client.dex"
 open_log="$cli_tmp/open.log"
 cat > "$mock_pm" <<'MOCK_PM'
 #!/usr/bin/env bash
@@ -129,13 +134,22 @@ printf 'N listening on AF=2 127.0.0.1:%s\n' "$port" >&2
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 MOCK_SOCAT
-chmod +x "$mock_pm" "$mock_open" "$mock_weston" "$mock_socat"
-cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_SOCAT="$mock_socat" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log")
+cat > "$mock_app_process" <<'MOCK_APP_PROCESS'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'SESSION_CONNECTED host_uid=1000 transport=binder-fd\n'
+trap 'exit 0' TERM INT
+while :; do sleep 1; done
+MOCK_APP_PROCESS
+printf 'mock dex placeholder\n' > "$client_dex"
+chmod +x "$mock_pm" "$mock_open" "$mock_weston" "$mock_socat" "$mock_app_process"
+cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" TERMUX_XWAYLAND_WESTON="$mock_weston" TERMUX_XWAYLAND_SOCAT="$mock_socat" TERMUX_XWAYLAND_APP_PROCESS="$mock_app_process" TERMUX_XWAYLAND_CLIENT_DEX="$client_dex" TERMUX_XWAYLAND_RUNTIME_DIR="$cli_tmp/runtime" TERMUX_XWAYLAND_NOTIFY="$cli_tmp/no-notification-command" MOCK_OPEN_LOG="$open_log")
 
 status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
+grep -Fq 'Binder transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no Binder session initially" >&2; exit 1; }
 grep -Fq 'Android host detection: not active' <<<"$status_output" || {
   echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
@@ -145,6 +159,7 @@ grep -Fq 'Wayland frame stream: not connected' <<<"$status_output" || {
 
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
+grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock Binder client did not connect" >&2; exit 1; }
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
    "$launch_uri" == *"&server=running&port="* &&
    "$launch_uri" != *"&token="* ]] || {
@@ -196,6 +211,7 @@ if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
 fi
 "${cli_env[@]}" bash "$script" stop >/dev/null
 stopped_status="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Binder transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped Binder session" >&2; exit 1; }
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped server" >&2; exit 1;
 }
