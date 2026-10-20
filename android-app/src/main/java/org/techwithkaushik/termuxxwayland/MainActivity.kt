@@ -102,12 +102,6 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
-    override fun onDestroy() {
-        directSocketServer?.close()
-        directSocketServer = null
-        super.onDestroy()
-    }
-
     private fun ensureDirectSocketBridge() {
         val sessionId = getSharedPreferences("termux_control_session", MODE_PRIVATE)
             .getString("session_id", "").orEmpty()
@@ -632,6 +626,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        directSocketServer?.close()
+        directSocketServer = null
         try { activeSocket?.close() } catch (_: Exception) { }
         activeSocket = null
         super.onDestroy()
