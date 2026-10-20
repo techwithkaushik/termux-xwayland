@@ -167,7 +167,7 @@ grep -Fq 'Binder transport: not connected' <<<"$status_output" || { echo "FAIL: 
 grep -Fq 'Android host detection: not active' <<<"$status_output" || {
   echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
-grep -Fq 'Native Wayland frame stream: not integrated' <<<"$status_output" || {
+grep -Fq 'Native Wayland frame capture: unavailable (native helper not installed)' <<<"$status_output" || {
   echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
 }
 
@@ -207,7 +207,7 @@ active_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host detection: active (host polling server status)' <<<"$active_status" || {
   echo "FAIL: status should record host polling" >&2; exit 1;
 }
-grep -Fq 'Native Wayland frame stream: not integrated' <<<"$active_status" || {
+grep -Fq 'Native Wayland frame capture: unavailable (native helper not installed)' <<<"$active_status" || {
   echo "FAIL: status must not claim desktop streaming exists" >&2; exit 1;
 }
 
