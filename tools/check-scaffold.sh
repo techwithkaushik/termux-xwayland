@@ -42,6 +42,8 @@ grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
 ! grep -q 'ipc-companion' settings.gradle.kts
 ! grep -q 'ipc-companion' .github/workflows/ci.yml
 grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
+grep -q 'android.os.Process.myUid()' termux-package/src/BridgeClient.java
+! grep -q 'Process.myUid()' termux-package/src/BridgeClient.java | grep -v 'android.os.Process.myUid()'
 grep -q 'LocalServerSocket(socketName)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
 grep -q 'socket.peerCredentials.uid' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
 grep -q 'LocalSocketAddress.Namespace.ABSTRACT' termux-package/src/BridgeClient.java
