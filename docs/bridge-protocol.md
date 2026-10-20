@@ -4,11 +4,12 @@
 
 ## Transport and security
 
-- The Termux-side Rust process listens on a Linux/Android **abstract AF_UNIX stream socket** named `termux_xwayland_<16-hex-session-fingerprint>`. The first 8 bytes of the session token are hex-encoded to create a per-session socket name (the full token is never embedded in the name). The abstract address is represented as `@termux_xwayland_<16-hex-session-fingerprint>` in diagnostics; the leading NUL is part of the kernel address, not the displayed name.
-- The Android app connects with `android.net.LocalSocket` using `LocalSocketAddress.Namespace.ABSTRACT`. This path does not use TCP/IP, localhost, a port, Wi-Fi, or the Internet permission.
+- The Android host app starts `BridgeSessionService`, which listens on the Linux/Android **abstract AF_UNIX stream socket** named `termux-xwayland-control.sock`.
+- The Termux-side Java client connects directly with `android.net.LocalSocket` and `LocalSocketAddress.Namespace.ABSTRACT`; it no longer creates an Android `Context`, calls `bindService()`, or performs a Binder handshake. This path does not use TCP/IP, localhost, a port, Wi-Fi, or the Internet permission.
+- This is an in-progress transport migration. The stable socket name does not authenticate clients; the prior token handshake must be restored before production use.
 - Abstract sockets have no filesystem permission checks. A known socket name may be reachable by other local processes depending on Android SELinux policy. The session-derived name reduces collisions and casual discovery but is not a substitute for token authentication. A fresh 32-byte token (64 hex characters) is required on every connection; never log or share the token.
-- The token is supplied to the native process via `TERMUX_XWAYLAND_TOKEN_HEX`; the server never prints it. The workflow prints the token in the Termux terminal solely for manual entry into the Android app.
-- Token bytes are compared using a constant-time equality loop after fixed-length validation. Failed handshakes are rejected.
+- The token is supplied to the native process via `TERMUX_XWAYLAND_TOKEN_HEX`; the server never prints it. The previous token-pairing flow is not currently enforced by this prototype.
+- The current raw-socket prototype temporarily does not enforce the previous token handshake. Do not treat it as production-secure; restore constant-time token verification before release.
 - The environment-variable mechanism is development plumbing, not a release-ready secret broker. A future Termux launcher should provide scoped, short-lived credentials and a session-specific socket name. Production transport also needs connection-rate limits, robust lifecycle management and a tested pairing flow.
 - Android/Termux cross-UID abstract-socket connectivity can be affected by device SELinux policy and OEM builds. It must be tested on target devices; do not silently fall back to a public TCP listener if blocked.
 - The server currently handles one client at a time. Clipboard and input messages are not enabled.
