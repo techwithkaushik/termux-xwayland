@@ -161,7 +161,31 @@ start_server() {
   local attempt
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     if [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
+      if command -v Xwayland >/dev/null 2>&1; then
+        local xdisplay=""
+        local xattempt
+        # Weston may select :1 or another display when :0 is already occupied.
+        # Use the display announced by Weston rather than assuming :0.
+        for xattempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+          xdisplay="$(sed -nE 's/.*xserver listening on display (:[0-9]+).*/\1/p' "$LOG_FILE" 2>/dev/null | tail -n 1)"
+          if [[ "$xdisplay" =~ ^:[0-9]+$ ]]; then
+            TERMUX_XWAYLAND_DISPLAY="$xdisplay"
+            export TERMUX_XWAYLAND_DISPLAY
+            break
+          fi
+          sleep 0.25
+        done
+        if [[ ! "${TERMUX_XWAYLAND_DISPLAY:-}" =~ ^:[0-9]+$ ]]; then
+          tail -n 40 "$LOG_FILE" 2>/dev/null || true
+          kill "$pid" 2>/dev/null || true
+          rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
+          fail "Weston started but did not announce an XWayland display; inspect $LOG_FILE"
+        fi
+      fi
       printf 'Wayland server: started (PID %s)\nWAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\n' "$pid" "$WAYLAND_SOCKET" "$RUNTIME_DIR"
+      if [[ "${TERMUX_XWAYLAND_DISPLAY:-}" =~ ^:[0-9]+$ ]]; then
+        printf 'XWayland display: %s\n' "$TERMUX_XWAYLAND_DISPLAY"
+      fi
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
