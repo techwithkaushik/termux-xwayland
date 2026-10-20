@@ -67,6 +67,7 @@ struct capture_state {
 static void registry_global(void *data, struct wl_registry *registry,
                             uint32_t name, const char *interface, uint32_t version) {
     struct capture_state *s = data;
+    txw_log("DEBUG", "registry_global", "name=%u interface=%s version=%u", name, interface, version);
     if (!strcmp(interface, "wl_output") && !s->output)
         s->output = wl_registry_bind(registry, name, &wl_output_interface,
                                      version < 4 ? version : 4);
@@ -112,17 +113,20 @@ static void capture_size(void *data, struct weston_capture_source_v1 *source, in
 static void capture_complete(void *data, struct weston_capture_source_v1 *source) {
     (void)source;
     fprintf(stderr, "CAPTURE_EVENT: complete\n");
+    txw_log("INFO", "capture_complete_event", NULL);
     ((struct capture_state *)data)->completed = 1;
 }
 static void capture_retry(void *data, struct weston_capture_source_v1 *source) {
     (void)source;
     struct capture_state *s = data;
+    txw_log("ERROR", "capture_retry_event", NULL);
     s->failed = 1;
     snprintf(s->failure, sizeof(s->failure), "capture buffer rejected (retry)");
 }
 static void capture_failed(void *data, struct weston_capture_source_v1 *source, const char *message) {
     (void)source;
     struct capture_state *s = data;
+    txw_log("ERROR", "capture_failed_event", "message=%s", message ? message : "no reason supplied");
     s->failed = 1;
     snprintf(s->failure, sizeof(s->failure), "Weston capture failed: %s", message ? message : "no reason supplied");
 }
@@ -138,13 +142,65 @@ static const struct weston_capture_source_v1_listener source_listener = {
     capture_failed, capture_formats_done
 };
 
-static int wait_events(struct capture_state *s, int (*done)(struct capture_state *)) {
-    while (!done(s) && !s->failed) {
-        if (wl_display_dispatch(s->display) < 0) {
-            snprintf(s->failure, sizeof(s->failure), "Wayland connection closed: %s", strerror(errno));
+static int wait_events(struct capture_state *s, int (*done)(struct capture_state *), int timeout_ms) {
+    int elapsed = 0;
+    txw_log("INFO", "event_wait_begin", "timeout_ms=%d events=%d size=%d format=%d formats_done=%d",
+            timeout_ms, s->source_events_seen, s->got_size, s->got_format, s->formats_done);
+    while (!done(s) && !s->failed && elapsed < timeout_ms) {
+        while (wl_display_prepare_read(s->display) != 0) {
+            if (wl_display_dispatch_pending(s->display) < 0) {
+                snprintf(s->failure, sizeof(s->failure), "dispatch pending failed: %s", strerror(errno));
+                s->failed = 1;
+                break;
+            }
+            if (done(s) || s->failed) break;
+        }
+        if (done(s) || s->failed) break;
+        if (wl_display_flush(s->display) < 0 && errno != EAGAIN) {
+            wl_display_cancel_read(s->display);
+            snprintf(s->failure, sizeof(s->failure), "flush failed: %s", strerror(errno));
             s->failed = 1;
+            break;
+        }
+        struct pollfd pfd = { .fd = wl_display_get_fd(s->display), .events = POLLIN };
+        int slice = timeout_ms - elapsed > 500 ? 500 : timeout_ms - elapsed;
+        int rc = poll(&pfd, 1, slice);
+        if (rc < 0) {
+            int saved = errno;
+            wl_display_cancel_read(s->display);
+            if (saved == EINTR) { elapsed += slice; continue; }
+            snprintf(s->failure, sizeof(s->failure), "poll failed: %s", strerror(saved));
+            s->failed = 1;
+            break;
+        }
+        elapsed += slice;
+        if (rc == 0) {
+            wl_display_cancel_read(s->display);
+            txw_log("DEBUG", "event_wait_tick", "elapsed_ms=%d events=%d size=%d format=%d formats_done=%d",
+                    elapsed, s->source_events_seen, s->got_size, s->got_format, s->formats_done);
+            continue;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            wl_display_cancel_read(s->display);
+            snprintf(s->failure, sizeof(s->failure), "Wayland FD poll flags=0x%x", pfd.revents);
+            s->failed = 1;
+            break;
+        }
+        if (wl_display_read_events(s->display) < 0 ||
+            wl_display_dispatch_pending(s->display) < 0) {
+            snprintf(s->failure, sizeof(s->failure), "Wayland event read/dispatch failed: %s", strerror(errno));
+            s->failed = 1;
+            break;
         }
     }
+    if (!done(s) && !s->failed) {
+        s->failed = 1;
+        snprintf(s->failure, sizeof(s->failure), "timed out waiting for Wayland events after %dms", elapsed);
+    }
+    txw_log(s->failed ? "ERROR" : "INFO", "event_wait_end",
+            "elapsed_ms=%d done=%d failed=%d events=%d size=%d format=%d formats_done=%d message=%s",
+            elapsed, done(s), s->failed, s->source_events_seen, s->got_size, s->got_format,
+            s->formats_done, s->failure);
     return s->failed ? -1 : 0;
 }
 static int source_ready(struct capture_state *s) {
@@ -281,7 +337,7 @@ static int run_capture(struct capture_state *s, int requested_width, int request
                 s->got_size, s->got_format, s->formats_done, s->source_events_seen);
         return 5;
     }
-    if (wait_events(s, source_ready) < 0) {
+    if (wait_events(s, source_ready, 5000) < 0) {
         fprintf(stderr, "CAPTURE_ERROR: %s (size=%d format=%d formats_done=%d events=%d)\n",
                 s->failure[0] ? s->failure : "capture source did not provide size/format",
                 s->got_size, s->got_format, s->formats_done, s->source_events_seen);
@@ -384,7 +440,10 @@ int main(int argc, char **argv) {
     if (!s.display) { fprintf(stderr, "CAPTURE_ERROR: cannot connect to Wayland: %s\n", strerror(errno)); return 2; }
     struct wl_registry *registry = wl_display_get_registry(s.display);
     wl_registry_add_listener(registry, &registry_listener, &s);
-    int result = wl_display_roundtrip(s.display) < 0 ? 2 : run_capture(&s, width, height);
+    txw_log("INFO", "registry_roundtrip_begin", NULL);
+    int registry_rc = wl_display_roundtrip(s.display);
+    txw_log(registry_rc < 0 ? "ERROR" : "INFO", "registry_roundtrip_end", "result=%d output=%d shm=%d capture_factory=%d errno=%d", registry_rc, s.output != NULL, s.shm != NULL, s.factory != NULL, errno);
+    int result = registry_rc < 0 ? 2 : run_capture(&s, width, height);
     if (s.source) weston_capture_source_v1_destroy(s.source);
     if (s.factory) weston_capture_v1_destroy(s.factory);
     if (s.output) wl_output_destroy(s.output);
