@@ -160,7 +160,7 @@ grep -Fq 'Native Wayland frame stream: not integrated' <<<"$status_output" || {
 
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
-grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock socket client did not connect" >&2; exit 1; }
+grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/socket-session.log" || { echo "FAIL: mock socket client did not connect" >&2; exit 1; }
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
    "$launch_uri" == *"&server=running&port="* &&
    "$launch_uri" != *"&token="* ]] || {
