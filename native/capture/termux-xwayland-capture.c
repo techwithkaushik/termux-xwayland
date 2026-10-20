@@ -152,8 +152,25 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         return 4;
     }
     weston_capture_source_v1_add_listener(s->source, &source_listener, s);
-    if (wl_display_roundtrip(s->display) < 0 || wait_events(s, source_ready) < 0) {
-        fprintf(stderr, "CAPTURE_ERROR: %s (size=%d format=%d formats_done=%d events=%d)\n", s->failure[0] ? s->failure : "capture source did not provide size/format", s->got_size, s->got_format, s->formats_done, s->source_events_seen);
+    if (wl_display_roundtrip(s->display) < 0) {
+        const struct wl_interface *interface = NULL;
+        uint32_t object_id = 0;
+        uint32_t code = wl_display_get_protocol_error(s->display, &interface, &object_id);
+        if (interface) {
+            fprintf(stderr, "CAPTURE_PROTOCOL_ERROR: interface=%s code=%u object=%u\n",
+                    interface->name, code, object_id);
+        } else {
+            fprintf(stderr, "CAPTURE_CONNECTION_ERROR: roundtrip after source create failed: %s\n",
+                    strerror(errno));
+        }
+        fprintf(stderr, "CAPTURE_ERROR: source initialization disconnected (size=%d format=%d formats_done=%d events=%d)\n",
+                s->got_size, s->got_format, s->formats_done, s->source_events_seen);
+        return 5;
+    }
+    if (wait_events(s, source_ready) < 0) {
+        fprintf(stderr, "CAPTURE_ERROR: %s (size=%d format=%d formats_done=%d events=%d)\n",
+                s->failure[0] ? s->failure : "capture source did not provide size/format",
+                s->got_size, s->got_format, s->formats_done, s->source_events_seen);
         return 5;
     }
     if (s->width != requested_width || s->height != requested_height) {
