@@ -94,6 +94,7 @@ static void capture_failed(void *data, struct weston_capture_source_v1 *source, 
 }
 static void capture_formats_done(void *data, struct weston_capture_source_v1 *source) {
     (void)source;
+    struct capture_state *s = data;
     s->source_events_seen++;
     fprintf(stderr, "CAPTURE_EVENT: formats_done\n");
     ((struct capture_state *)data)->formats_done = 1;
