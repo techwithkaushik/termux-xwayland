@@ -25,6 +25,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private var latestFrame: Bitmap? = null
     @Volatile private var surfaceReady = false
+    var inputEventListener: ((ByteArray) -> Unit)? = null
+    private var lastMoveAt = 0L
 
     init {
         setBackgroundColor(Color.rgb(20, 29, 43))
@@ -73,6 +75,25 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (width <= 0 || height <= 0) return true
+        val now = android.os.SystemClock.uptimeMillis()
+        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE && now - lastMoveAt < 32L) return true
+        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE) lastMoveAt = now
+        val normalizedX = (event.x / width.toFloat()).coerceIn(0f, 1f)
+        val normalizedY = (event.y / height.toFloat()).coerceIn(0f, 1f)
+        val action = when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> "DOWN"
+            android.view.MotionEvent.ACTION_MOVE -> "MOVE"
+            android.view.MotionEvent.ACTION_UP -> "UP"
+            android.view.MotionEvent.ACTION_CANCEL -> "CANCEL"
+            else -> return true
+        }
+        val payload = "$action ${normalizedX} ${normalizedY}".toByteArray(Charsets.US_ASCII)
+        runCatching { inputEventListener?.invoke(payload) }
+        return true
     }
 
     private fun renderLatestFrame() {
