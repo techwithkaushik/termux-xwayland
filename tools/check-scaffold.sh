@@ -18,6 +18,8 @@ bash -n tools/probe-termux-x11-sockets.sh
 test -f tools/probe-android-ipc-prereqs.sh
 bash -n tools/probe-android-ipc-prereqs.sh
 test -f tools/probe-weston-headless.sh
+test -f tools/probe-weston-capture.sh
+bash -n tools/probe-weston-capture.sh
 test -f docs/weston-headless-probe.md
 bash -n tools/probe-weston-headless.sh
 test -f tools/probe-weston-x11-client.sh
