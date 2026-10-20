@@ -28,7 +28,7 @@ class BridgeSessionService : Service() {
     private var activeSession: Session? = null
 
     private data class Session(val hostEnd: ParcelFileDescriptor) : Closeable {
-        private val closed = AtomicBoolean(false)
+        val closed = AtomicBoolean(false)
 
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
