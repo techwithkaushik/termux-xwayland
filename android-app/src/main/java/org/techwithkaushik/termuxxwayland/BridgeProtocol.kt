@@ -39,14 +39,16 @@ internal object BridgeProtocol {
 
     fun write(output: OutputStream, kind: BridgeMessageKind, payload: ByteArray = byteArrayOf()) {
         require(payload.size <= MAX_PAYLOAD_SIZE) { "Bridge payload too large" }
-        val data = DataOutputStream(output)
-        data.write(magic)
-        data.writeByte(VERSION)
-        data.writeByte(kind.wireValue)
-        data.writeShort(0)
-        data.writeInt(payload.size)
-        data.write(payload)
-        data.flush()
+        synchronized(output) {
+            val data = DataOutputStream(output)
+            data.write(magic)
+            data.writeByte(VERSION)
+            data.writeByte(kind.wireValue)
+            data.writeShort(0)
+            data.writeInt(payload.size)
+            data.write(payload)
+            data.flush()
+        }
     }
 
     fun read(input: InputStream): BridgeMessage {
