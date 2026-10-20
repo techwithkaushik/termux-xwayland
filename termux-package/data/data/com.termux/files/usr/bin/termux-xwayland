@@ -9,12 +9,15 @@ WESTON_BIN="${TERMUX_XWAYLAND_WESTON:-weston}"
 NOTIFY_BIN="${TERMUX_XWAYLAND_NOTIFY:-termux-notification}"
 RUNTIME_DIR="${TERMUX_XWAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}/termux-xwayland-${UID:-$(id -u)}}}"
 WAYLAND_SOCKET="${TERMUX_XWAYLAND_SOCKET:-wayland-1}"
+STATUS_PORT="${TERMUX_XWAYLAND_STATUS_PORT:-38470}" # Backward-compatible launch metadata only.
+CONTROL_SOCKET="${TERMUX_XWAYLAND_CONTROL_SOCKET:-${PREFIX:-/data/data/com.termux/files/usr}/tmp/termux-xwayland-control.sock}"
 PID_FILE="$RUNTIME_DIR/weston.pid"
 LOG_FILE="$RUNTIME_DIR/weston.log"
 MONITOR_PID_FILE="$RUNTIME_DIR/monitor.pid"
 MONITOR_STATE_FILE="$RUNTIME_DIR/monitor.state"
 MONITOR_LOG_FILE="$RUNTIME_DIR/monitor.log"
 HOST_POLL_FILE="$RUNTIME_DIR/host-poll"
+HOST_WAIT_SECONDS="${TERMUX_XWAYLAND_HOST_WAIT_SECONDS:-15}"
 
 fail() { printf 'termux-xwayland: %s\n' "$*" >&2; exit 1; }
 notify_user() {
@@ -58,35 +61,40 @@ stop_monitor() {
     done
     kill -KILL "$pid" 2>/dev/null || true
   fi
-  rm -f "$MONITOR_PID_FILE" "$MONITOR_STATE_FILE" "$HOST_POLL_FILE"
+  rm -f "$MONITOR_PID_FILE" "$MONITOR_STATE_FILE" "$HOST_POLL_FILE" "$CONTROL_SOCKET"
 }
 start_monitor() {
-  local session_id="$1" port attempt pid
+  local session_id="$1" port="$STATUS_PORT" pid wait_attempt
+  local socket_dir runtime_dir
+  socket_dir="$(dirname "$CONTROL_SOCKET")"
+  runtime_dir="$(dirname "$MONITOR_LOG_FILE")"
+  mkdir -p "$socket_dir" "$runtime_dir" || fail "cannot create monitor runtime directories"
+  [ -w "$socket_dir" ] || fail "control socket directory is not writable: $socket_dir"
+  [ -w "$runtime_dir" ] || fail "monitor runtime directory is not writable: $runtime_dir"
   command -v "$SOCAT_BIN" >/dev/null 2>&1 || fail "socat is required for Android host detection. Install it with: pkg install socat"
+  [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 30000 && port <= 49999 )) || fail "invalid status port: $port"
   stop_monitor
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    port=$((30000 + $(od -An -N2 -tu2 /dev/urandom 2>/dev/null | tr -d ' ') % 20000))
-    rm -f "$MONITOR_LOG_FILE"
-    "$SOCAT_BIN" -d -d "TCP-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" "EXEC:$0 status-handler $session_id" >>"$MONITOR_LOG_FILE" 2>&1 &
-    pid=$!
-    printf '%s\n' "$pid" > "$MONITOR_PID_FILE"
-    local wait_attempt
-    for wait_attempt in 1 2 3 4 5 6 7 8 9 10; do
-      if grep -Fq "127.0.0.1:$port" "$MONITOR_LOG_FILE" 2>/dev/null && grep -qi 'listening' "$MONITOR_LOG_FILE"; then
-        printf '%s %s\n' "$session_id" "$port" > "$MONITOR_STATE_FILE"
-        chmod 600 "$MONITOR_STATE_FILE"
-        printf '%s\n' "$port"
-        return 0
-      fi
-      if ! kill -0 "$pid" 2>/dev/null; then break; fi
-      sleep 0.1
-    done
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-    rm -f "$MONITOR_PID_FILE"
+  rm -f "$MONITOR_LOG_FILE"
+  rm -f "$CONTROL_SOCKET"
+  "$SOCAT_BIN" -d -d "UNIX-LISTEN:$CONTROL_SOCKET,fork,mode=666" "EXEC:$0 status-handler" >>"$MONITOR_LOG_FILE" 2>&1 &
+  pid=$!
+  printf '%s\n' "$pid" > "$MONITOR_PID_FILE"
+  for wait_attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -S "$CONTROL_SOCKET" ] && kill -0 "$pid" 2>/dev/null; then
+      printf '%s %s\n' "$session_id" "$port" > "$MONITOR_STATE_FILE"
+      chmod 600 "$MONITOR_STATE_FILE"
+      printf '%s\n' "$port"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then break; fi
+    sleep 0.1
   done
-  fail "could not start the loopback-only Android host status monitor; inspect $MONITOR_LOG_FILE"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  rm -f "$MONITOR_PID_FILE"
+  fail "could not start the filesystem-socket Android host status monitor at $CONTROL_SOCKET; inspect $MONITOR_LOG_FILE"
 }
+
 show_control_status() {
   if ! monitor_is_running || [ ! -f "$MONITOR_STATE_FILE" ]; then
     printf 'Android host detection: not active (start the session from Termux)\n'
@@ -102,23 +110,23 @@ show_control_status() {
       return 0
     fi
   fi
-  printf 'Android host detection: waiting for host app (127.0.0.1:%s)\n' "$port"
+  printf 'Android host detection: waiting for host app (filesystem socket %s)\n' "$CONTROL_SOCKET"
 }
 status_handler() {
-  local session_id="${1:-}" request
-  [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || exit 64
+  local request
   IFS= read -r -t 3 request || exit 0
-  if [ "$request" != "STATUS $session_id" ]; then
+  [ "$request" = "STATUS" ] || {
     printf 'DENIED\n'
     return 0
-  fi
+  }
   date +%s > "$HOST_POLL_FILE"
   if server_is_running && [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
-    printf 'RUNNING %s\n' "$session_id"
+    printf 'RUNNING\n'
   else
-    printf 'STOPPED %s\n' "$session_id"
+    printf 'STOPPED\n'
   fi
 }
+
 prepare_runtime_dir() {
   mkdir -p "$RUNTIME_DIR" || fail "cannot create runtime directory: $RUNTIME_DIR"
   chmod 700 "$RUNTIME_DIR" 2>/dev/null || true
@@ -200,52 +208,114 @@ show_status() {
   if [ "$host_found" -eq 1 ]; then return 0; fi
   return 1
 }
+wait_for_host_connection() {
+  local attempt now last_poll
+  printf '[WAIT] Waiting for Android Host to check live server status (up to 15 seconds)...\n'
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    if [ -f "$HOST_POLL_FILE" ]; then
+      last_poll="$(cat "$HOST_POLL_FILE" 2>/dev/null || printf 0)"
+      now="$(date +%s)"
+      if [[ "$last_poll" =~ ^[0-9]+$ ]] && (( now - last_poll <= 10 )); then
+        printf '[OK]   Android Host connected to status endpoint; server status: '
+        if server_is_running && [ -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then printf 'RUNNING\n'; else printf 'STOPPED\n'; fi
+        printf '[INFO] Live status socket: %s\n' "$CONTROL_SOCKET"
+        return 0
+      fi
+    fi
+    if (( attempt % 3 == 0 )); then printf '[WAIT] Host has not polled yet (%s/15 seconds).\n' "$attempt"; fi
+    sleep 1
+  done
+  printf '[WARN] Host launch was requested, but no live status poll was received within 15 seconds.\n'
+  printf '[INFO] Run termux-xwayland status to inspect Host detection.\n'
+  return 1
+}
 start_session() {
+  printf '[INFO] Starting Termux-XWayland...\n'
+  printf '[INFO] Checking Android Host installation...\n'
   detect_host || {
     notify_user "Termux-XWayland" "Android host not found. Install the Termux-XWayland APK first."
-    fail "Android host not detected; checked ${APP_IDS[*]}"
+    fail "Android Host not detected; checked \${APP_IDS[*]}"
   }
-  start_server
+  printf '[OK]   Android Host installed (%s).\n' "$DETECTED_APP_ID"
   local session_id port
   session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
   [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a host launch session ID"
+  printf '[INFO] Starting filesystem control socket at %s...\n' "$CONTROL_SOCKET"
   port="$(start_monitor "$session_id")" || {
     stop_server >/dev/null 2>&1 || true
-    fail "could not start Android host status monitor"
+    fail "could not start Android Host status monitor"
   }
+  printf '[OK]   Filesystem control socket ready: %s\n' "$CONTROL_SOCKET"
   [ -x "$TERMUX_OPEN" ] || {
     stop_server >/dev/null 2>&1 || true
     stop_monitor
     fail "termux-open is unavailable; install/update termux-tools"
   }
-  if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"; then
-    stop_server >/dev/null 2>&1 || true
-    stop_monitor
-    fail "could not open Android host deep link"
+  printf '[INFO] Opening Android Host app...\n'
+  timeout 5 "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=starting&port=$port" >/dev/null 2>&1 &
+  local open_pid=$!
+  sleep 1
+  if kill -0 "$open_pid" 2>/dev/null; then
+    printf '[INFO] Host launch request dispatched (launcher process still running in background).\n'
+  else
+    if ! wait "$open_pid"; then
+      stop_server >/dev/null 2>&1 || true
+      stop_monitor
+      fail "Android Host launch command failed; check termux-open and the Host APK"
+    fi
+    printf '[OK]   Host launch request sent to Android.\n'
   fi
-  notify_user "Termux-XWayland" "Wayland socket is ready. Android host launch request sent; live frame transport is still pending."
-  printf 'Wayland server started; Android host launch request sent. Live Wayland frames are not connected yet.\n'
+  printf '[INFO] Host discovery socket is ready before Weston startup.\n'
+  start_server
+  printf '[OK]   Wayland socket ready: %s/%s\n' "$RUNTIME_DIR" "$WAYLAND_SOCKET"
+  notify_user "Termux-XWayland" "Wayland is ready. Android Host launch requested; waiting for live status polling."
+  wait_for_host_connection || true
+  printf '[INFO] Current connection status: '
+  show_control_status
+  printf '[INFO] Wayland frame/input streaming is not integrated yet.\n'
+}
+prepare_file_probe() {
+  local probe_dir probe_file
+  probe_dir="${TERMUX_XWAYLAND_PROBE_DIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}"
+  probe_file="$probe_dir/termux-xwayland-host-read-probe.txt"
+  mkdir -p "$probe_dir" || fail "cannot prepare Termux tmp directory"
+  printf 'TERMUX_XWAYLAND_HOST_FILE_READ_PROBE_V1\n' > "$probe_file" || fail "cannot write file probe"
+  chmod 644 "$probe_file" || fail "cannot set readable file permissions"
+  printf '[OK]   Created Host file-read probe: %s\n' "$probe_file"
+  printf '[INFO] Probe file mode: '
+  stat -c '%a' "$probe_file" 2>/dev/null || ls -l "$probe_file"
+  printf '[INFO] Now tap "Test direct read from Termux tmp" in the Android Host app.\n'
 }
 case "${1:-status}" in
   status|check) show_status ;;
   status-handler) status_handler "${2:-}" "${3:-}" ;;
   monitor-stop) stop_monitor ;;
+  prepare-file-probe) prepare_file_probe ;;
   start) start_session ;;
-  server-start) start_server ;;
+  server-start)
+    detect_host || fail "Android host not installed; install the Termux-XWayland host APK before starting Wayland."
+    start_server
+    local session_id
+    session_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \\n')"
+    [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "could not generate a host status session ID"
+    start_monitor "$session_id" >/dev/null
+    printf 'Wayland status endpoint active on 127.0.0.1:%s; open the Android host to check live status.\\n' "$STATUS_PORT"
+    ;;
   stop|server-stop) stop_server ;;
   --version|-V) printf 'termux-xwayland companion 0.3.0 (authenticated control IPC; frame transport pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|server-start|stop|monitor-stop|--version|--help]
+Usage: termux-xwayland [status|check|start|server-start|stop|monitor-stop|prepare-file-probe|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
 start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
 stop          Stop the Weston process started by this companion.
 monitor-stop  Stop the loopback status monitor.
+prepare-file-probe Create a known-readable file in Termux tmp for the Host direct-read test.
 --version     Print version and current implementation status.
 
-The control endpoint accepts calls only from the installed com.termux UID.
+The read-only status endpoint uses $PREFIX/tmp/termux-xwayland-control.sock so the host can rediscover live status after app data is cleared or the app is reinstalled.
 This is control-plane IPC only: live frame/input transport is not integrated.
 EOF
     ;;
