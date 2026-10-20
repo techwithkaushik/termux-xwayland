@@ -28,6 +28,8 @@ grep -q 'native Wayland capture' README.md
 grep -q 'direct abstract AF_UNIX socket' README.md
 grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Direct socket transport active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+test "$(grep -c 'override fun onDestroy()' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt)" -eq 1
+grep -q 'directSocketServer?.close()' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.removeCallbacks(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
