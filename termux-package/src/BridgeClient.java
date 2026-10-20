@@ -55,7 +55,7 @@ public final class BridgeClient {
                 | (long)(welcome.payload[3] & 0xff);
             if (termuxUid != android.os.Process.myUid()) {
                 throw new SecurityException("Kernel peer UID mismatch: WELCOME=" + termuxUid
-                    + " but Termux process UID=" + Process.myUid());
+                    + " but Termux process UID=" + android.os.Process.myUid());
             }
             System.out.println("SESSION_CONNECTED host_uid=" + termuxUid + " transport=abstract-unix-socket");
             System.out.flush();
