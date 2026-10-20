@@ -393,7 +393,10 @@ stop_session() {
 launch_x11_client() {
   shift
   [ "$#" -gt 0 ] || fail "Usage: termux-xwayland x11 COMMAND [ARGS...]"
-  export DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}"
+  local display
+  display="$(resolve_xwayland_display)" || fail "XWayland display is not ready; start Weston and inspect $LOG_FILE"
+  export DISPLAY="$display"
+  export XDG_RUNTIME_DIR="$RUNTIME_DIR"
   exec "$@"
 }
 case "${1:-status}" in
