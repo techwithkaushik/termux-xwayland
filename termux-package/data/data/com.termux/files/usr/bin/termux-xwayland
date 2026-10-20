@@ -175,7 +175,7 @@ start_server() {
           fi
           sleep 0.25
         done
-        if [[ ! "${TERMUX_XWAYLAND_DISPLAY:-}" =~ ^:[0-9]+$ ]]; then
+        if [[ ! "$xdisplay" =~ ^:[0-9]+$ ]]; then
           tail -n 40 "$LOG_FILE" 2>/dev/null || true
           kill "$pid" 2>/dev/null || true
           rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_SOCKET"
