@@ -2,17 +2,17 @@
 
 Termux XWayland pairs the existing Android display-host APK with a Termux-installed CLI/DEB. The supported flow does **not** require a second companion APK.
 
-> **Current milestone:** the previous Binder FD transport has been removed from the runtime path. The Android host now listens on a session-named abstract AF_UNIX socket; the Termux app_process client connects directly, authenticates the per-session ID, verifies the kernel-reported peer UID, and sends bounded TXWB v1 frames. This removes the failing bindService/MIUI hidden-context path. Cross-UID abstract sockets can still be denied by Android/MIUI SELinux policy, so the new transport must be verified on the target phone before calling the stream fixed.
+> **Current milestone:** the device confirmed that cross-UID abstract AF_UNIX connections fail with `Permission denied` on this Android/MIUI build. The runtime transport is therefore being moved to **authenticated TCP bound exclusively to 127.0.0.1:38473**. It is loopback-only (not LAN/public), uses the per-session random ID in the TXWB HELLO handshake, and does not require a separate companion APK. Device verification is still required after installing the new APK and DEB.
 
 ## Current implementation
 
-- **Android host:** Kotlin UI and a direct abstract AF_UNIX socket listener; verifies the kernel-reported Termux UID and validates incoming RGBA frames before display.
-- **Termux package:** termux-xwayland starts Weston/XWayland, launches the socket client and reports heartbeat/frame-capture state separately.
-- **Termux client:** termux-package/src/BridgeClient.java is compiled to DEX in CI and packaged in the Termux DEB. It uses optional ffmpeg X11 capture and sends 640×360 RGBA frames at 2 FPS over the direct socket.
-- **No Binder service or separate companion APK:** the app does not call bindService; the unused Binder service has been removed.
-- **No TCP frame/input fallback:** the loopback status monitor is control-plane polling only. Frames and input are not sent over TCP. No root, SELinux weakening, allow-external-apps=true or Termux RUN_COMMAND is required.
+- **Android host:** Kotlin UI listens on `127.0.0.1:38473` only, validates the session HELLO, bounds incoming TXWB frames and renders RGBA frames.
+- **Termux package:** `termux-xwayland` starts Weston/XWayland and launches the client from the existing Termux installation.
+- **Termux client:** `termux-package/src/BridgeClient.java` is compiled to DEX in CI and packaged in the Termux DEB. It connects to loopback TCP, authenticates the session, and can send 640×360 RGBA frames at 2 FPS when ffmpeg/XWayland are available.
+- **No Binder service or separate companion APK:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
+- **Network exposure:** the frame bridge binds only to IPv4 loopback `127.0.0.1`; it must never bind to `0.0.0.0` or a LAN address. Session authentication remains mandatory.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
-- **Remaining:** target-device verification of cross-UID socket access, native Wayland capture/surface integration, Android touch/keyboard forwarding, resize/clipboard routing and backpressure/reconnect handling.
+- **Remaining:** on-device verification of loopback connection and actual frames, native Wayland capture/surface integration, Android touch/keyboard forwarding, resize/clipboard routing and reconnect handling.
 
 ## Build and run
 
@@ -35,7 +35,7 @@ termux-xwayland start
 termux-xwayland status
 ```
 
-The frame path requires XWayland, ffmpeg and an X11 client. If Android/MIUI denies the cross-UID abstract socket, inspect $PREFIX/tmp/termux-xwayland-$(id -u)/binder-session.log; the log should now report SOCKET_CLIENT_ERROR, not a Binder bind failure.
+The frame path requires XWayland, ffmpeg and an X11 client. Inspect `$PREFIX/tmp/termux-xwayland-$(id -u)/binder-session.log` if the authenticated loopback connection fails. The bridge binds only to `127.0.0.1:38473`.
 
 ## Verification boundary
 
