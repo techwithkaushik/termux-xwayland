@@ -63,6 +63,23 @@ class MainActivity : Activity() {
         window.statusBarColor = ink
         window.navigationBarColor = ink
         setContentView(buildScreen())
+        handleLaunchIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
+    private fun handleLaunchIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "termuxxwayland" || data.host != "start") return
+
+        statusTitle.text = "Termux launch request received"
+        statusDescription.text =
+            "The Termux CLI opened this host successfully. This confirms the launch request only; authorized Termux-to-host IPC and live desktop streaming are not connected yet."
+        Log.i("TermuxXWayland", "Termux host launch intent received")
     }
 
     private fun buildScreen(): View {
