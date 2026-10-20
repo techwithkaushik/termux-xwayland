@@ -297,12 +297,16 @@ public final class BridgeClient {
             return null;
         }
         try {
+            String termuxTmp = System.getenv("TMPDIR");
+            File logDirectory = new File(termuxTmp == null
+                ? "/data/data/com.termux/files/usr/tmp" : termuxTmp);
+            File ffmpegLog = new File(logDirectory, "termux-xwayland-ffmpeg.log");
             Process process = new ProcessBuilder(
                 ffmpeg, "-hide_banner", "-loglevel", "error",
                 "-f", "x11grab", "-framerate", "2", "-video_size", "640x360",
                 "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
                 "-f", "rawvideo", "pipe:1"
-            ).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            ).redirectError(ProcessBuilder.Redirect.to(ffmpegLog)).start();
             System.out.println("FRAME_CAPTURE_STARTED display=" + display + " size=640x360 fps=2");
             System.out.flush();
             return process;
