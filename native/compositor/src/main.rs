@@ -3,9 +3,7 @@ mod protocol;
 
 fn main() {
     #[cfg(target_os = "android")]
-    android_logger::init_once(
-        android_logger::Config::default().with_tag("TermuxXWayland"),
-    );
+    android_logger::init_once(android_logger::Config::default().with_tag("TermuxXWayland"));
     #[cfg(not(target_os = "android"))]
     env_logger::init();
     log::info!(
