@@ -93,7 +93,7 @@ jobs:
           gradle --no-daemon --no-build-cache clean
           gradle --no-daemon --no-build-cache :android-app:testDebugUnitTest :android-app:assembleDebug
       - name: Build Termux app_process socket client DEX
-        run: bash tools/build-termux-socket-client.sh dist/termux-socket-client
+        run: bash tools/build-termux-binder-client.sh dist/termux-socket-client
       - name: Upload Termux socket client DEX
         uses: actions/upload-artifact@v4
         with:
