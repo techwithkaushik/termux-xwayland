@@ -7,6 +7,8 @@ import android.os.IBinder
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import java.io.Closeable
 import java.io.FileInputStream
@@ -28,7 +30,7 @@ class BridgeSessionService : Service() {
     private data class Session(val hostEnd: ParcelFileDescriptor) : Closeable {
         private val closed = AtomicBoolean(false)
         override fun close() {
-            if (closed.compareAndSet(false, true)) runCatching { hostEnd.close() }
+            if (closed.compareAndSet(false, true)) {\n            runCatching { Os.shutdown(hostEnd.fileDescriptor, OsConstants.SHUT_RDWR) }\n            runCatching { hostEnd.close() }\n        }
         }
     }
 
