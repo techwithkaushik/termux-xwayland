@@ -26,4 +26,4 @@ mapfile -t class_files < <(find "$out/classes" -type f -name '*.class' -print)
 "$d8" --min-api 29 --output "$out/dex" "${class_files[@]}"
 cp "$out/dex/classes.dex" "$out/bridge-client.dex"
 test -s "$out/bridge-client.dex"
-echo "Built Termux app_process direct socket client DEX: $out/bridge-client.dex"
+echo "Built Termux app_process Binder FD client DEX: $out/bridge-client.dex"
