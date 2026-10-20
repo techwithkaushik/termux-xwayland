@@ -338,12 +338,12 @@ public final class BridgeClient {
                 "-f", "x11grab", "-framerate", "2", "-video_size", "640x360",
                 "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
                 "-f", "rawvideo", "pipe:1"
-            ).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            ).redirectError(ProcessBuilder.Redirect.INHERIT).start();
             System.out.println("FRAME_CAPTURE_STARTED display=" + display + " size=640x360 fps=2");
             System.out.flush();
             return process;
         } catch (IOException error) {
-            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=process_start_failed");
+            System.err.println("FRAME_CAPTURE_UNAVAILABLE reason=process_start_failed error=" + error);
             System.out.flush();
             return null;
         }
