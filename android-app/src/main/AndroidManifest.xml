@@ -14,7 +14,7 @@
         <service
             android:name=".BridgeSessionService"
             android:exported="true"
-            android:description="@string/app_name" />
+            />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTop"
