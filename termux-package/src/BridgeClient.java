@@ -2,7 +2,6 @@ package org.techwithkaushik.termuxxwayland.client;
 
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
-import android.os.Process;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -54,7 +53,7 @@ public final class BridgeClient {
                 | ((long)(welcome.payload[1] & 0xff) << 16)
                 | ((long)(welcome.payload[2] & 0xff) << 8)
                 | (long)(welcome.payload[3] & 0xff);
-            if (termuxUid != Process.myUid()) {
+            if (termuxUid != android.os.Process.myUid()) {
                 throw new SecurityException("Kernel peer UID mismatch: WELCOME=" + termuxUid
                     + " but Termux process UID=" + Process.myUid());
             }
