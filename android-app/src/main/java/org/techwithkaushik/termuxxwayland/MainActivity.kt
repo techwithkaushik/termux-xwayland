@@ -3,9 +3,7 @@ package org.techwithkaushik.termuxxwayland
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.ComponentName
 import android.content.Context
-import android.content.ServiceConnection
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.content.Intent
@@ -15,10 +13,8 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
-import android.os.IBinder
 import android.os.Looper
 import android.os.Process
-import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -55,34 +51,6 @@ class MainActivity : Activity() {
     private lateinit var statusDescription: TextView
     private lateinit var binderStatusDescription: TextView
     private lateinit var previewImage: ImageView
-    private var binderServiceBound = false
-    private var binderFrameCount = 0L
-    private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
-    private val binderServiceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName, service: IBinder) {
-            val local = service as? BridgeSessionService.BridgeBinder ?: return
-            localBridgeBinder = local
-            local.frameListener = { frame ->
-                runOnUiThread {
-                    if (isFinishing || isDestroyed || !::previewImage.isInitialized) return@runOnUiThread
-                    previewImage.setImageBitmap(
-                        Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
-                    )
-                    previewImage.visibility = View.VISIBLE
-                    binderFrameCount++
-                    if (::binderStatusDescription.isInitialized) {
-                        binderStatusDescription.text =
-                            "Binder transport active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
-                    }
-                }
-            }
-        }
-
-        override fun onServiceDisconnected(name: ComponentName) {
-            localBridgeBinder?.frameListener = null
-            localBridgeBinder = null
-        }
-    }
     private lateinit var connectButton: Button
     @Volatile private var activeSocket: LocalSocket? = null
     @Volatile private var connecting = false
@@ -122,23 +90,13 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        if (!binderServiceBound) {
-            binderServiceBound = runCatching {
-                bindService(Intent(this, BridgeSessionService::class.java), binderServiceConnection, Context.BIND_AUTO_CREATE)
-            }.getOrDefault(false)
-        }
+        runCatching { startService(Intent(this, BridgeSessionService::class.java)) }
         statusPollHandler.removeCallbacks(statusPollRunnable)
         statusPollHandler.post(statusPollRunnable)
     }
 
     override fun onStop() {
         statusPollHandler.removeCallbacks(statusPollRunnable)
-        localBridgeBinder?.frameListener = null
-        localBridgeBinder = null
-        if (binderServiceBound) {
-            runCatching { unbindService(binderServiceConnection) }
-            binderServiceBound = false
-        }
         super.onStop()
     }
 
