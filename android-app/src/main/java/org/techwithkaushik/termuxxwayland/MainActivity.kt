@@ -25,7 +25,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -54,7 +53,7 @@ class MainActivity : Activity() {
     private lateinit var statusTitle: TextView
     private lateinit var statusDescription: TextView
     private lateinit var binderStatusDescription: TextView
-    private lateinit var previewImage: ImageView
+    private lateinit var previewImage: DesktopSurfaceView
     private var binderServiceBound = false
     private var binderFrameCount = 0L
     private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
@@ -65,7 +64,7 @@ class MainActivity : Activity() {
             local.frameListener = { frame ->
                 runOnUiThread {
                     if (isFinishing || isDestroyed || !::previewImage.isInitialized) return@runOnUiThread
-                    previewImage.setImageBitmap(
+                    previewImage.setFrame(
                         Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
                     )
                     previewImage.visibility = View.VISIBLE
@@ -291,12 +290,9 @@ class MainActivity : Activity() {
             13, muted, false
         ).apply { setPadding(0, dp(8), 0, 0) }
         status.addView(binderStatusDescription)
-        previewImage = ImageView(this).apply {
+        previewImage = DesktopSurfaceView(this).apply {
             visibility = View.GONE
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Termux XWayland desktop frame"
-            setBackgroundColor(Color.rgb(20, 29, 43))
         }
         status.addView(previewImage, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
@@ -471,7 +467,7 @@ class MainActivity : Activity() {
                     } else {
                         "Connected (same UID)"
                     }
-                    previewImage.setImageBitmap(testFrame)
+                    previewImage.setFrame(testFrame)
                     previewImage.visibility = View.VISIBLE
                     statusDescription.text = String.format(
                         java.util.Locale.US,
@@ -488,7 +484,7 @@ class MainActivity : Activity() {
                                     val bitmap = decodeTestFrame(message.payload)
                                     runOnUiThread {
                                         if (activeSocket === sessionSocket) {
-                                            previewImage.setImageBitmap(bitmap)
+                                            previewImage.setFrame(bitmap)
                                             statusTitle.text = "Frame received"
                                             statusDescription.text =
                                                 "Receiving bridge frames. Desktop capture is not yet wired into the Termux server."
@@ -542,7 +538,7 @@ class MainActivity : Activity() {
             try { socket?.close() } catch (_: Exception) { }
         }
         connectButton.text = "Run legacy socket diagnostic"
-        previewImage.setImageDrawable(null)
+        previewImage.clearFrame()
         previewImage.visibility = View.GONE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
