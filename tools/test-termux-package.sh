@@ -46,6 +46,9 @@ check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
 check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
+check_grep 'resolve_xwayland_display()' "$script" "XWayland display is detected from the Weston log"
+check_grep 'xserver listening on display' "$script" "frame capture uses Weston's actual XWayland display"
+check_grep 'nohup env -u DISPLAY' "$script" "Binder session can connect without XWayland capture"
 check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
