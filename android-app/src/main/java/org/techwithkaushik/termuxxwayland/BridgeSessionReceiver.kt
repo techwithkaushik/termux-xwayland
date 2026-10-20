@@ -8,8 +8,9 @@ import android.util.Log
 
 /**
  * Receives the Termux:X11-style callback Binder sent by the Termux-side
- * app_process. The sender UID is checked before forwarding the Binder to the
- * in-app session service.
+ * app_process. Android 10 does not expose the sender UID through the public
+ * receiver API, so this validates the interface descriptor as a sanity check;
+ * the Termux-side endpoint independently validates the host UID on callback.
  */
 class BridgeSessionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -42,7 +43,6 @@ class BridgeSessionReceiver : BroadcastReceiver() {
         const val EXTRA_CLIENT_BINDER = "termuxxwayland.session.client_binder"
         const val EXTRA_REMOTE_BUNDLE = "termuxxwayland.session.remote_bundle"
         const val EXTRA_REMOTE_CLIENT = "termuxxwayland.session.remote_client"
-        const val TERMUX_PACKAGE = "com.termux"
         private const val TAG = "TermuxXWayland"
     }
 }
