@@ -153,7 +153,7 @@ status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Binder transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no Binder session initially" >&2; exit 1; }
+grep -Fq 'Direct socket transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no direct socket session initially" >&2; exit 1; }
 grep -Fq 'Android host detection: not active' <<<"$status_output" || {
   echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
@@ -163,7 +163,7 @@ grep -Fq 'Native Wayland frame stream: not integrated' <<<"$status_output" || {
 
 "${cli_env[@]}" bash "$script" start >/dev/null
 launch_uri="$(cat "$open_log")"
-grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock Binder client did not connect" >&2; exit 1; }
+grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock direct socket client did not connect" >&2; exit 1; }
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
    "$launch_uri" == *"&server=running&port="* &&
    "$launch_uri" != *"&token="* ]] || {
@@ -177,7 +177,7 @@ port="${port%%&*}"
   echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Binder transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh Binder heartbeat" >&2; exit 1; }
+grep -Fq 'Direct socket transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh direct socket heartbeat" >&2; exit 1; }
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
 }
