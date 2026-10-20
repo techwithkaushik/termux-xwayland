@@ -300,6 +300,25 @@ start_binder_session() {
   return 1
 }
 
+show_logs() {
+  local target="${1:-all}" file found=0
+  case "$target" in all|session|weston|monitor) ;; *) printf 'Usage: termux-xwayland logs [all|session|weston|monitor]\n' >&2; return 2 ;; esac
+  for file in "$SESSION_LOG_FILE" "$LOG_FILE" "$MONITOR_LOG_FILE"; do
+    case "$target:$file" in
+      session:*session*) ;;
+      weston:*weston*) ;;
+      monitor:*monitor*) ;;
+      all:*) ;;
+      *) continue ;;
+    esac
+    [ -f "$file" ] || continue
+    found=1
+    printf '\n===== %s =====\n' "$file"
+    tail -n 250 "$file"
+  done
+  if [ "$found" -eq 0 ]; then printf 'No logs found yet under %s\n' "$RUNTIME_DIR"; fi
+}
+
 show_status() {
   local host_found=0
   if detect_host; then
@@ -377,6 +396,7 @@ launch_x11_client() {
 }
 case "${1:-status}" in
   status|check) show_status ;;
+  logs) show_logs "${2:-all}" ;;
   status-handler) status_handler "${2:-}" "${3:-}" ;;
   monitor-stop) stop_monitor ;;
   start) start_session ;;
@@ -387,9 +407,10 @@ case "${1:-status}" in
   --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; optional XWayland frame capture)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
+Usage: termux-xwayland [status|check|logs [all|session|weston|monitor]|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
+logs          Show recent session, Weston and monitor logs with error details.
 start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
 stop          Stop the Binder session, monitor and Weston process.
