@@ -140,8 +140,8 @@ MOCK_SOCAT
 cat > "$mock_app_process" <<'MOCK_APP_PROCESS'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'SESSION_CONNECTED host_uid=1000 transport=binder-fd\n'
-printf 'SESSION_HEALTHY epoch_seconds=%s transport=binder-fd\n' "$(date +%s)"
+printf 'SESSION_CONNECTED host_uid=1000 transport=abstract-unix-socket\n'
+printf 'SESSION_HEALTHY epoch_seconds=%s transport=abstract-unix-socket\n' "$(date +%s)"
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 MOCK_APP_PROCESS
