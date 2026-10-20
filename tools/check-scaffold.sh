@@ -25,8 +25,8 @@ bash -n tools/probe-weston-x11-client.sh
 test -x tools/capture-x11-frame.sh
 test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
-grep -q 'no real desktop rendering yet' README.md
-grep -q 'synthetic RGBA test frame' README.md
+grep -q 'real Wayland surface' README.md
+grep -q 'not a frame/input transport' README.md
 grep -q 'Connect securely' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
 grep -q 'LocalSocketAddress.Namespace.ABSTRACT' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
