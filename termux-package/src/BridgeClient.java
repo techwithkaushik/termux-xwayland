@@ -134,18 +134,27 @@ public final class BridgeClient {
     }
 
     private static Context createTermuxContext() throws Exception {
+        /*
+         * app_process already runs with the invoking Termux UID. Do not create
+         * a package context through ActivityThread.systemMain(): on some MIUI
+         * Android 10 builds that path initializes the system theme compatibility
+         * loader and crashes when its optional theme_compatibility.xml is absent.
+         *
+         * The system context is used only as a Context facade for PackageManager
+         * lookup and bindService. Binder still sees this process's real Termux UID;
+         * the host independently authorizes that UID before returning a session FD.
+         */
         Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
         Method systemMain = activityThreadClass.getDeclaredMethod("systemMain");
         systemMain.setAccessible(true);
         Object activityThread = systemMain.invoke(null);
         Method getSystemContext = activityThreadClass.getDeclaredMethod("getSystemContext");
         getSystemContext.setAccessible(true);
-        Context systemContext = (Context) getSystemContext.invoke(activityThread);
-        Context termuxContext = systemContext.createPackageContext(TERMUX_PACKAGE, 0);
-        if (!TERMUX_PACKAGE.equals(termuxContext.getPackageName())) {
-            throw new SecurityException("Android did not create a com.termux package context");
+        Object value = getSystemContext.invoke(activityThread);
+        if (!(value instanceof Context)) {
+            throw new IllegalStateException("ActivityThread returned no Android system context");
         }
-        return termuxContext;
+        return (Context) value;
     }
 
     private static String findHostPackage(Context context) {
