@@ -28,7 +28,7 @@ bash -n tools/capture-x11-frame.sh
 grep -q 'native Wayland capture' README.md
 grep -q 'optional XWayland frame path' README.md
 grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Binder transport: active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'startService(Intent(this, BridgeSessionService::class.java))' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.removeCallbacks(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
@@ -38,12 +38,13 @@ grep -q 'candidate.peerCredentials' android-app/src/main/java/org/techwithkaushi
 grep -q 'BridgeMessageKind.PING' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
-grep -q 'Only the installed Termux package may open a bridge session' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
-grep -q 'ParcelFileDescriptor.createSocketPair' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+grep -q 'LocalServerSocket(SOCKET_NAME)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+! grep -q 'bindService(' termux-package/src/BridgeClient.java
+! grep -q 'createTermuxContext' termux-package/src/BridgeClient.java
 ! grep -q 'ipc-companion' settings.gradle.kts
 ! grep -q 'ipc-companion' .github/workflows/ci.yml
-grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
-grep -q 'updateBinderState("connected")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+grep -q 'SESSION_CONNECTED transport=abstract-unix' termux-package/src/BridgeClient.java
+grep -q 'Abstract socket server listening' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'BridgeMessageKind.FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
 grep -q 'XWayland frame capture: sending recent frames' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
