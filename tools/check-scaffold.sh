@@ -47,6 +47,9 @@ grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
 grep -q 'updateBinderState("connected")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'BridgeMessageKind.FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
+grep -q 'FRAME_CAPTURE_UNAVAILABLE reason=native_wayland_capture_helper_not_installed' termux-package/src/BridgeClient.java
+grep -q 'FRAME_CAPTURE_STOPPED' termux-package/src/BridgeClient.java
+! grep -q 'ffmpeg' termux-package/src/BridgeClient.java
 grep -q 'ACTION_OPEN_SESSION' termux-package/src/BridgeClient.java
 ! grep -q 'context.bindService' termux-package/src/BridgeClient.java
 grep -q 'interfaceDescriptor' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
