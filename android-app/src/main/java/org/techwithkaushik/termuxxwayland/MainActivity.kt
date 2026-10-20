@@ -103,7 +103,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(8), 0, dp(8))
         })
         content.addView(label(
-            "Connect this Android display host to a Termux bridge running on the same device.",
+            "Android display host for a Termux-installed bridge. Live IPC and desktop streaming are not connected yet.",
             15, muted, false
         ))
 
@@ -158,37 +158,12 @@ class MainActivity : Activity() {
         }, margins(bottom = 8))
         content.addView(infoCard(
             "What this test proves",
-            "Cross-UID IPC passed means the token was accepted, the Termux process UID was reported, a synthetic frame arrived, and Android PING received a Termux PONG. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
+            "No active Termux bridge session is connected. A successful diagnostic handshake is not a desktop stream; real Wayland frames, compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
-        content.addView(label("Binder IPC capability probe", 20, ink, true).apply {
-            setPadding(0, dp(12), 0, dp(8))
-        })
         content.addView(infoCard(
-            "Separate companion APK",
-            "Tests Android-authorized Binder communication with a separately installed companion app. Both APKs must be signed with the same certificate. This proves host-to-companion IPC only; it does not yet connect Termux or stream desktop frames."
-        ), margins(bottom = 10))
-        binderProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        binderProbeDescription = label(
-            "Sends a bounded 16 KiB test payload and verifies the exact echo, caller identity, service UID, and Android API level.",
-            13, muted, false
-        )
-        content.addView(binderProbeTitle)
-        content.addView(binderProbeDescription, margins(bottom = 8))
-        binderProbeButton = actionButton("Run Binder capability probe") { runBinderProbe() }
-        content.addView(binderProbeButton, margins(bottom = 16))
-        binderFdProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        binderFdProbeDescription = label(
-            "Tests a bounded 16 KiB bidirectional payload over two Binder-transferred file descriptors. This is a companion capability test, not Termux integration.",
-            13, muted, false
-        )
-        content.addView(binderFdProbeTitle)
-        content.addView(binderFdProbeDescription, margins(bottom = 8))
-        binderFdProbeButton = actionButton("Test Binder file descriptor handoff") { runBinderFdProbe() }
-        content.addView(binderFdProbeButton, margins(bottom = 16))
+            "IPC status",
+            "The old separate-companion Binder probes have been retired. The supported design is a Termux-installed bridge package; no live Termux-to-host session or desktop frame stream is connected yet."
+        ), margins(top = 8, bottom = 16))
 
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
