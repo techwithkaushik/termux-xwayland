@@ -91,6 +91,57 @@ class BridgeSessionService : Service() {
 
     private val binder = BridgeBinder()
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val remoteClient = intent?.extras?.getBinder(BridgeSessionReceiver.EXTRA_REMOTE_CLIENT)
+        if (remoteClient != null) {
+            Thread({ openRemoteClientSession(remoteClient) }, "txw-open-remote-session").apply {
+                isDaemon = true
+                start()
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    /**
+     * Open a session by calling the Binder endpoint that Termux sent in its
+     * package-targeted broadcast. This avoids binding a service from an
+     * unregistered app_process ActivityThread.
+     */
+    private fun openRemoteClientSession(remoteClient: IBinder) {
+        val request = Parcel.obtain()
+        val response = Parcel.obtain()
+        var hostEnd: ParcelFileDescriptor? = null
+        try {
+            request.writeInterfaceToken(DESCRIPTOR)
+            request.writeInt(PROTOCOL_VERSION)
+            if (!remoteClient.transact(TRANSACTION_OPEN_SESSION, request, response, 0)) {
+                throw IOException("Termux Binder endpoint rejected OPEN_SESSION")
+            }
+            response.readException()
+            hostEnd = response.readParcelable(ParcelFileDescriptor::class.java.classLoader)
+                ?: throw IOException("Termux Binder endpoint returned no session FD")
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not open Termux-initiated Binder session", error)
+            hostEnd?.close()
+            return
+        } finally {
+            request.recycle()
+            response.recycle()
+        }
+
+        val session = Session(hostEnd)
+        synchronized(lock) {
+            activeSession?.close()
+            activeSession = session
+        }
+        updateBinderState("connecting")
+        Log.i(TAG, "Termux-initiated Binder FD session opened")
+        Thread({ serve(session) }, "txw-binder-session").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
