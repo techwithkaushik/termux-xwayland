@@ -84,16 +84,33 @@ static const struct wl_registry_listener registry_listener = {
     registry_global, registry_remove
 };
 
-static void capture_format(void *data, struct weston_capture_source_v1 *source, uint32_t format) {
+static void capture_format(void *data, struct weston_capture_source_v1 *source, uint32_t drm_format) {
     struct capture_state *s = data;
     (void)source;
     s->source_events_seen++;
-    fprintf(stderr, "CAPTURE_EVENT: format=0x%08x\n", format);
-    if (format == WL_SHM_FORMAT_XRGB8888 || format == WL_SHM_FORMAT_ARGB8888) {
-        if (!s->got_format || format == WL_SHM_FORMAT_ARGB8888) {
-            s->format = format;
-            s->got_format = 1;
-        }
+    fprintf(stderr, "CAPTURE_EVENT: drm_format=0x%08x\\n", drm_format);
+
+    /*
+     * Weston reports DRM fourcc values; wl_shm buffers use wl_shm_format
+     * enum values. Map explicitly before creating the shared-memory buffer.
+     */
+    uint32_t shm_format;
+    switch (drm_format) {
+    case 0x34325258u: /* DRM_FORMAT_XRGB8888: XR24 */
+        shm_format = WL_SHM_FORMAT_XRGB8888;
+        break;
+    case 0x34325241u: /* DRM_FORMAT_ARGB8888: AR24 */
+        shm_format = WL_SHM_FORMAT_ARGB8888;
+        break;
+    default:
+        txw_log("WARN", "unsupported_capture_format",
+                "drm_format=0x%08x", drm_format);
+        return;
+    }
+
+    if (!s->got_format || shm_format == WL_SHM_FORMAT_ARGB8888) {
+        s->format = shm_format;
+        s->got_format = 1;
     }
 }
 static void capture_size(void *data, struct weston_capture_source_v1 *source, int32_t width, int32_t height) {
