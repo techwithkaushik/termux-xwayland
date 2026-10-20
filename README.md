@@ -12,7 +12,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 - **No Binder service or separate companion APK:** the app does not call bindService; the unused Binder service has been removed.
 - **No TCP frame/input fallback:** the loopback status monitor is control-plane polling only. Frames and input are not sent over TCP. No root, SELinux weakening, allow-external-apps=true or Termux RUN_COMMAND is required.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
-- **Remaining:** target-device verification of cross-UID socket access, native Wayland surface capture, Android touch/keyboard forwarding, resize/clipboard routing and backpressure/reconnect handling.
+- **Remaining:** target-device verification of cross-UID socket access, native Wayland capture/surface integration, Android touch/keyboard forwarding, resize/clipboard routing and backpressure/reconnect handling.
 
 ## Build and run
 
