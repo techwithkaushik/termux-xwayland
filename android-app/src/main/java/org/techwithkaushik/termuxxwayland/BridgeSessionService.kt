@@ -210,8 +210,8 @@ class BridgeSessionService : Service() {
                     else -> throw IOException("Unexpected message kind ${message.kind}")
                 }
             }
-        } catch (error: IOException) {
-            if (!session.closed.get()) Log.i(TAG, "Bridge session ended: ${error.message}")
+        } catch (error: Exception) {
+            if (!session.closed.get()) Log.e(TAG, "Bridge session failed: ${error.javaClass.name}: ${error.message}", error)
         } finally {
             session.close()
             synchronized(lock) {
