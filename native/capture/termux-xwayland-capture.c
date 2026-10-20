@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -135,6 +136,56 @@ static int make_buffer_file(size_t bytes) {
     return fd;
 }
 
+struct sync_wait_state { int done; };
+static void sync_wait_done(void *data, struct wl_callback *callback, uint32_t serial) {
+    (void)serial;
+    ((struct sync_wait_state *)data)->done = 1;
+    wl_callback_destroy(callback);
+}
+static const struct wl_callback_listener sync_wait_listener = { sync_wait_done };
+
+/* Bound protocol handshakes so a wedged compositor produces a useful error
+ * instead of requiring the caller to kill this helper with timeout(1). */
+static int roundtrip_with_timeout(struct wl_display *display, int timeout_ms) {
+    struct sync_wait_state state = {0};
+    struct wl_callback *callback = wl_display_sync(display);
+    if (!callback) return -1;
+    if (wl_callback_add_listener(callback, &sync_wait_listener, &state) < 0) {
+        wl_callback_destroy(callback);
+        return -1;
+    }
+    if (wl_display_flush(display) < 0) {
+        wl_callback_destroy(callback);
+        return -1;
+    }
+    int remaining = timeout_ms;
+    while (!state.done && remaining > 0) {
+        struct pollfd pfd = { .fd = wl_display_get_fd(display), .events = POLLIN };
+        int slice = remaining > 250 ? 250 : remaining;
+        int rc = poll(&pfd, 1, slice);
+        if (rc < 0) {
+            if (errno == EINTR) continue;
+            wl_callback_destroy(callback);
+            return -1;
+        }
+        remaining -= slice;
+        if (rc > 0) {
+            if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                wl_callback_destroy(callback);
+                errno = EPIPE;
+                return -1;
+            }
+            if (wl_display_dispatch(display) < 0) return -1;
+        }
+    }
+    if (!state.done) {
+        wl_callback_destroy(callback);
+        errno = ETIMEDOUT;
+        return -2;
+    }
+    return 0;
+}
+
 static int run_capture(struct capture_state *s, int requested_width, int requested_height) {
     if (wl_display_roundtrip(s->display) < 0) {
         fprintf(stderr, "CAPTURE_ERROR: initial Wayland roundtrip failed\n");
@@ -152,18 +203,21 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         return 4;
     }
     weston_capture_source_v1_add_listener(s->source, &source_listener, s);
-    if (wl_display_roundtrip(s->display) < 0) {
+    int handshake = roundtrip_with_timeout(s->display, 5000);
+    if (handshake < 0) {
         const struct wl_interface *interface = NULL;
         uint32_t object_id = 0;
         uint32_t code = wl_display_get_protocol_error(s->display, &interface, &object_id);
         if (interface) {
             fprintf(stderr, "CAPTURE_PROTOCOL_ERROR: interface=%s code=%u object=%u\n",
                     interface->name, code, object_id);
+        } else if (handshake == -2 || errno == ETIMEDOUT) {
+            fprintf(stderr, "CAPTURE_TIMEOUT: compositor did not complete source handshake within 5000ms\n");
         } else {
-            fprintf(stderr, "CAPTURE_CONNECTION_ERROR: roundtrip after source create failed: %s\n",
+            fprintf(stderr, "CAPTURE_CONNECTION_ERROR: source handshake failed: %s\n",
                     strerror(errno));
         }
-        fprintf(stderr, "CAPTURE_ERROR: source initialization disconnected (size=%d format=%d formats_done=%d events=%d)\n",
+        fprintf(stderr, "CAPTURE_ERROR: source initialization incomplete (size=%d format=%d formats_done=%d events=%d)\n",
                 s->got_size, s->got_format, s->formats_done, s->source_events_seen);
         return 5;
     }
