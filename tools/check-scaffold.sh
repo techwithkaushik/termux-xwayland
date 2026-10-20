@@ -23,6 +23,11 @@ test -f tools/wayland-globals-probe.c
 grep -q 'weston_capture_v1' tools/wayland-globals-probe.c
 grep -q 'wayland-globals-probe.c' tools/probe-weston-capture.sh
 test -f tools/probe-weston-capture-build.sh
+test -f native/capture/termux-xwayland-capture.c
+grep -q 'weston_capture_v1_create' native/capture/termux-xwayland-capture.c
+test -f tools/build-native-capture.sh
+bash -n tools/build-native-capture.sh
+grep -q 'weston-output-capture.xml' tools/build-native-capture.sh
 bash -n tools/probe-weston-capture-build.sh
 test -f docs/weston-capture-build-gate.md
 grep -q 'privileged' docs/weston-capture-build-gate.md
