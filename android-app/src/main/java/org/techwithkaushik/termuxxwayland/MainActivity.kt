@@ -3,6 +3,7 @@ package org.techwithkaushik.termuxxwayland
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.content.Intent
@@ -225,11 +226,11 @@ class MainActivity : Activity() {
         when (prefs.getString("state", "disconnected")) {
             "request_received" -> {
                 statusTitle.text = "Termux launch request received"
-                statusDescription.text = "The launch request arrived. Checking Weston status separately from the Binder session."
+                statusDescription.text = "The launch request arrived. Checking Weston status separately from the direct socket stream."
             }
             "server_running" -> {
                 statusTitle.text = "Termux server confirmed"
-                statusDescription.text = "The status endpoint confirms Weston and its Wayland socket are running. This is not proof of an active Binder session or desktop stream."
+                statusDescription.text = "The status endpoint confirms Weston and its Wayland socket are running. The desktop stream is reported separately by the direct socket bridge."
             }
             "server_stopped" -> {
                 statusTitle.text = "Termux server stopped"
@@ -250,19 +251,6 @@ class MainActivity : Activity() {
             else -> {
                 statusTitle.text = "Waiting for Termux"
                 statusDescription.text = "Run termux-xwayland start in Termux. The host will open when the Wayland socket is ready."
-            }
-        }
-        if (::binderStatusDescription.isInitialized) {
-            val binderState = getSharedPreferences("termux_binder_session", MODE_PRIVATE)
-                .getString("state", "disconnected")
-            binderStatusDescription.text = when (binderState) {
-                "connecting" -> "Binder transport: connecting; waiting for an authorized Termux PING/PONG."
-                "connected" -> if (binderFrameCount > 0L) {
-                    "Binder transport: active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
-                } else {
-                    "Binder transport: active; Termux UID authorization and PING/PONG are confirmed. Waiting for XWayland frames."
-                }
-                else -> "Binder transport: disconnected; no active authenticated Binder heartbeat."
             }
         }
     }
@@ -295,7 +283,7 @@ class MainActivity : Activity() {
         status.addView(statusTitle)
         status.addView(statusDescription)
         binderStatusDescription = label(
-            "Binder transport: disconnected; no active authenticated Binder heartbeat.",
+            "Direct socket transport: waiting for an authenticated Termux connection.",
             13, muted, false
         ).apply { setPadding(0, dp(8), 0, 0) }
         status.addView(binderStatusDescription)
@@ -316,7 +304,7 @@ class MainActivity : Activity() {
         })
         content.addView(infoCard(
             "Historical abstract-socket test",
-            "This legacy test is not used by the production Binder session. Cross-UID AF_UNIX connect returned EACCES on the target Android 10 device."
+            "This diagnostic is separate from the automatic session socket. Cross-UID AF_UNIX permissions depend on the Android build and must be verified on-device."
         ), margins(bottom = 10))
         tokenInput = field("Session token (64 hex characters)", "", secret = true)
         content.addView(tokenInput, margins(bottom = 8))
@@ -328,7 +316,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(12), 0, dp(8))
         })
         content.addView(label(
-            "Install the Termux-XWayland DEB and the existing Android host APK. Start the session from Termux; the Binder heartbeat is shown above separately from Weston status.",
+            "Install the Termux-XWayland DEB and the existing Android host APK. Start the session from Termux; direct AF_UNIX connection and desktop frames are reported above.",
             14, muted, false
         ))
         content.addView(codeCard(commands), margins(top = 12, bottom = 8))
@@ -339,7 +327,7 @@ class MainActivity : Activity() {
         }, margins(bottom = 8))
         content.addView(infoCard(
             "What this test proves",
-            "This legacy button exercises the historical abstract-socket smoke test only. Production Binder status above changes to active only after the Termux UID is authorized and a valid PING/PONG round trip succeeds. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
+            "This legacy button exercises the historical abstract-socket smoke test only. The production session uses a session-authenticated abstract AF_UNIX socket and verifies the kernel-reported Termux UID. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
