@@ -332,10 +332,28 @@ start_session() {
     stop_server >/dev/null 2>&1 || true
     fail "Android host opened, but the Termux Binder session could not connect; inspect $SESSION_LOG_FILE"
   fi
-  notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
-  printf 'Wayland server started; Android host launch request sent.\n'
-  printf 'Binder transport: connected (PING/PONG verified).\n'
-  printf 'Wayland frame stream: not connected (real compositor frames are not integrated yet).\n'
+  notify_user "Termux-XWayland" "Binder session connected. Starting an X11 terminal for visible output."
+  # Weston starts headless; without an X11 client the Android host has no
+  # useful desktop pixels to display. Start xterm automatically when available.
+  if command -v xterm >/dev/null 2>&1; then
+    local x11_socket="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix/X0"
+    local x11_attempt
+    for x11_attempt in 1 2 3 4 5 6 7 8 9 10; do
+      [ -S "$x11_socket" ] && break
+      sleep 0.25
+    done
+    if [ -S "$x11_socket" ]; then
+      DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}" nohup xterm -geometry 80x24+0+0 </dev/null >>"$RUNTIME_DIR/xterm.log" 2>&1 &
+      printf 'X11 client: launched xterm (DISPLAY=%s)\\n' "${TERMUX_XWAYLAND_DISPLAY:-:0}"
+    else
+      printf 'X11 client: XWayland socket not ready; launch manually with: termux-xwayland x11 xterm\\n' >&2
+    fi
+  else
+    printf 'X11 client: xterm is not installed; run: pkg install xterm\\n' >&2
+  fi
+  printf 'Wayland server started; Android host launch request sent.\\n'
+  printf 'Binder transport: connected (PING/PONG verified).\\n'
+  printf 'XWayland frame forwarding requires ffmpeg and a running X11 client.\\n'
 }
 stop_session() {
   stop_binder_session
