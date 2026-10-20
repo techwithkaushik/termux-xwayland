@@ -266,7 +266,7 @@ start_binder_session() {
   [[ "$session_id" =~ ^[a-f0-9]{32}$ ]] || fail "direct socket session ID is missing or invalid"
   prepare_runtime_dir
   if [ ! -s "$CLIENT_DEX" ]; then
-    printf 'termux-xwayland: Binder client DEX missing: %s. Install the latest DEB package.\n' "$CLIENT_DEX" >&2
+    printf 'termux-xwayland: direct socket client DEX missing: %s. Install the latest DEB package.\n' "$CLIENT_DEX" >&2
     return 1
   fi
   if [ ! -x "$APP_PROCESS_BIN" ]; then
@@ -279,12 +279,12 @@ start_binder_session() {
   fi
   stop_binder_session
   : > "$SESSION_LOG_FILE"
-  nohup env DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+  nohup env DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}" TERMUX_XWAYLAND_SESSION_ID="$session_id" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   local pid=$! attempt
   printf '%s\n' "$pid" > "$SESSION_PID_FILE"
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
     if grep -Fq 'SESSION_CONNECTED' "$SESSION_LOG_FILE" 2>/dev/null; then
-      printf 'Binder transport: connected (persistent Binder FD session)\n'
+      printf 'Direct socket transport: connected (authenticated abstract AF_UNIX session)\n'
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -315,9 +315,9 @@ show_status() {
   fi
   show_control_status
   if binder_session_is_running; then
-    printf 'Binder transport: connected (fresh PING/PONG heartbeat)\n'
+    printf 'Direct socket transport: connected (fresh PING/PONG heartbeat)\n'
   else
-    printf 'Binder transport: not connected\n'
+    printf 'Direct socket transport: not connected\n'
   fi
   if frame_capture_is_active; then
     printf 'XWayland frame capture: sending recent frames to Android\n'
@@ -352,13 +352,13 @@ start_session() {
     stop_monitor
     fail "could not open Android host deep link"
   fi
-  if ! start_binder_session; then
+  if ! start_binder_session "$session_id"; then
     stop_binder_session
     stop_monitor
     stop_server >/dev/null 2>&1 || true
     fail "Android host opened, but the Termux direct socket session could not connect; inspect $SESSION_LOG_FILE"
   fi
-  notify_user "Termux-XWayland" "Binder session connected. Starting an X11 terminal for visible output."
+  notify_user "Termux-XWayland" "Direct socket session connected. Starting an X11 terminal for visible output."
   # Weston starts headless; without an X11 client the Android host has no
   # useful desktop pixels to display. Start xterm automatically when available.
   if command -v xterm >/dev/null 2>&1; then
@@ -387,7 +387,7 @@ stop_session() {
   stop_binder_session
   stop_monitor
   stop_server
-  printf 'Binder transport: stopped\n'
+  printf 'Direct socket transport: stopped\n'
 }
 launch_x11_client() {
   shift
