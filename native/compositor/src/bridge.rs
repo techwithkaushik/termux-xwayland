@@ -223,6 +223,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn authenticated_stream_sends_bounded_frame_and_round_trips_ping_pong_close() {
+        use std::os::unix::net::UnixStream;
+        use std::thread;
+
+        let token = [0x5a_u8; 32];
+        let (server, mut client) = UnixStream::pair().unwrap();
+        let server_token = token;
+        let worker = thread::spawn(move || handle_client(server, &server_token));
+
+        Message::new(MessageKind::Hello, token.to_vec())
+            .unwrap()
+            .write_to(&mut client)
+            .unwrap();
+
+        let welcome = Message::read_from(&mut client).unwrap();
+        assert_eq!(welcome.kind, MessageKind::Welcome);
+        assert_eq!(
+            welcome.payload,
+            (unsafe { libc::geteuid() } as u32).to_be_bytes()
+        );
+
+        let frame = Message::read_from(&mut client).unwrap();
+        assert_eq!(frame.kind, MessageKind::Frame);
+        assert!(frame.payload.len() >= 8);
+        let width = u16::from_be_bytes([frame.payload[0], frame.payload[1]]) as usize;
+        let height = u16::from_be_bytes([frame.payload[2], frame.payload[3]]) as usize;
+        assert_eq!((width, height), (320, 180));
+        assert_eq!(frame.payload[4], 1); // RGBA8888
+        assert_eq!(&frame.payload[5..8], &[0, 0, 0]);
+        assert_eq!(frame.payload.len(), 8 + width * height * 4);
+
+        Message::new(MessageKind::Ping, Vec::new())
+            .unwrap()
+            .write_to(&mut client)
+            .unwrap();
+        let pong = Message::read_from(&mut client).unwrap();
+        assert_eq!(pong.kind, MessageKind::Pong);
+        assert!(pong.payload.is_empty());
+
+        Message::new(MessageKind::Close, Vec::new())
+            .unwrap()
+            .write_to(&mut client)
+            .unwrap();
+        let close = Message::read_from(&mut client).unwrap();
+        assert_eq!(close.kind, MessageKind::Close);
+        assert!(close.payload.is_empty());
+        worker.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn authenticated_stream_rejects_wrong_token_before_welcome() {
+        use std::os::unix::net::UnixStream;
+        use std::thread;
+
+        let expected = [0x11_u8; 32];
+        let wrong = [0x22_u8; 32];
+        let (server, mut client) = UnixStream::pair().unwrap();
+        let worker = thread::spawn(move || handle_client(server, &expected));
+
+        Message::new(MessageKind::Hello, wrong.to_vec())
+            .unwrap()
+            .write_to(&mut client)
+            .unwrap();
+        drop(client);
+
+        let error = worker.join().unwrap().unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
     fn welcome_uid_payload_is_a_big_endian_u32() {
         let uid = 10_123_u32;
         let payload = uid.to_be_bytes();

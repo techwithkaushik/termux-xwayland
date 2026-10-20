@@ -11,6 +11,8 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import java.io.EOFException
 import java.io.IOException
+import java.io.DataInputStream
+import java.io.DataOutputStream
 
 /**
  * Minimal capability probe only. This is not yet a Termux bridge or frame transport.
@@ -31,7 +33,7 @@ class IpcProbeService : Service() {
                 reply?.writeString(DESCRIPTOR)
                 return true
             }
-            if (code != TRANSACTION_ECHO && code != TRANSACTION_FD_ECHO) return super.onTransact(code, data, reply, flags)
+            if (code != TRANSACTION_ECHO && code != TRANSACTION_FD_ECHO && code != TRANSACTION_PING && code != TRANSACTION_STREAM) return super.onTransact(code, data, reply, flags)
             if (reply == null) return false
 
             return try {
@@ -43,7 +45,25 @@ class IpcProbeService : Service() {
                     throw SecurityException("Binder probe caller signature is not trusted")
                 }
 
-                if (code == TRANSACTION_ECHO) {
+                if (code == TRANSACTION_STREAM) {
+                    val inputFd = ParcelFileDescriptor.CREATOR.createFromParcel(data)
+                    val outputFd = ParcelFileDescriptor.CREATOR.createFromParcel(data)
+                    Thread({ runStreamEcho(inputFd, outputFd) }, "binder-stream-echo").start()
+                    reply.writeNoException()
+                    reply.writeInt(Process.myUid())
+                    reply.writeInt(callerUid)
+                    reply.writeInt(Build.VERSION.SDK_INT)
+                    true
+                } else if (code == TRANSACTION_PING) {
+                    val nonce = data.readLong()
+                    reply.writeNoException()
+                    reply.writeInt(Process.myUid())
+                    reply.writeInt(callerUid)
+                    reply.writeInt(Build.VERSION.SDK_INT)
+                    reply.writeLong(nonce)
+                    reply.writeLong(android.os.SystemClock.elapsedRealtime())
+                    true
+                } else if (code == TRANSACTION_ECHO) {
                     val payloadSize = data.readInt()
                     if (payloadSize !in 0..MAX_PAYLOAD_BYTES) {
                         throw IllegalArgumentException(
@@ -96,6 +116,33 @@ class IpcProbeService : Service() {
         }
     }
 
+    private fun runStreamEcho(inputFd: ParcelFileDescriptor, outputFd: ParcelFileDescriptor) {
+        try {
+            DataInputStream(ParcelFileDescriptor.AutoCloseInputStream(inputFd)).use { input ->
+                DataOutputStream(ParcelFileDescriptor.AutoCloseOutputStream(outputFd)).use { output ->
+                    while (true) {
+                        val size = try { input.readInt() } catch (_: EOFException) { break }
+                        if (size !in 0..MAX_STREAM_FRAME_BYTES) throw IOException("Invalid stream frame size: $size")
+                        val payload = ByteArray(size)
+                        try {
+                            input.readFully(payload)
+                            output.writeInt(payload.size)
+                            output.write(payload)
+                            output.flush()
+                        } finally {
+                            payload.fill(0)
+                        }
+                    }
+                }
+            }
+        } catch (_: IOException) {
+            // Closing either pipe ends this diagnostic stream; never keep a dead session alive.
+        } finally {
+            try { inputFd.close() } catch (_: Exception) { }
+            try { outputFd.close() } catch (_: Exception) { }
+        }
+    }
+
     private fun readFully(input: java.io.InputStream, payload: ByteArray) {
         var offset = 0
         while (offset < payload.size) {
@@ -113,6 +160,9 @@ class IpcProbeService : Service() {
         private const val DESCRIPTOR = "org.techwithkaushik.termuxxwayland.ipc.PROBE"
         private const val TRANSACTION_ECHO = IBinder.FIRST_CALL_TRANSACTION + 17
         private const val TRANSACTION_FD_ECHO = IBinder.FIRST_CALL_TRANSACTION + 18
+        private const val TRANSACTION_PING = IBinder.FIRST_CALL_TRANSACTION + 19
+        private const val TRANSACTION_STREAM = IBinder.FIRST_CALL_TRANSACTION + 20
+        private const val MAX_STREAM_FRAME_BYTES = 64 * 1024
         private const val MAX_PAYLOAD_BYTES = 64 * 1024
     }
 }
