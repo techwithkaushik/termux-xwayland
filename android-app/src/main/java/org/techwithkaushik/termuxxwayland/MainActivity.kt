@@ -233,7 +233,7 @@ class MainActivity : Activity() {
         status.addView(statusTitle)
         status.addView(statusDescription)
         binderStatusDescription = label(
-            "Binder transport: disconnected; no active authenticated Binder heartbeat.",
+            "Socket transport: listener starts with the host app; waiting for Termux to connect.",
             13, muted, false
         ).apply { setPadding(0, dp(8), 0, 0) }
         status.addView(binderStatusDescription)
