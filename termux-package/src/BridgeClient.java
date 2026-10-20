@@ -415,9 +415,11 @@ public final class BridgeClient {
      * a clear diagnostic rather than sending misleading black frames.
      */
     private static Process startFrameCapture() {
-        String display = System.getenv("DISPLAY");
+        // Native capture connects to a Wayland socket, not the X11 DISPLAY.
+        // DISPLAY (often :0) is only for xdotool/XWayland input routing.
+        String display = System.getenv("WAYLAND_DISPLAY");
         if (display == null || display.trim().isEmpty()) {
-            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=DISPLAY_not_set");
+            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=WAYLAND_DISPLAY_not_set");
             System.out.flush();
             return null;
         }
