@@ -1,115 +1,317 @@
 package org.techwithkaushik.termuxxwayland.client;
 
-import java.net.InetSocketAddress;
-import java.net.Socket;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Binder;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.Parcel;
+import android.os.ParcelFileDescriptor;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Termux-side direct AF_UNIX client, launched by app_process under the existing
- * Termux UID. It deliberately never creates an Android Context or calls
- * bindService/Binder, avoiding MIUI hidden-context failures and Binder policy.
+ * Runs inside the existing Termux UID via app_process. No companion APK,
+ * RUN_COMMAND permission, root, TCP listener, or SELinux change is required.
  */
 public final class BridgeClient {
+    private static final String TAG = "TermuxXWaylandClient";
+    private static final String TERMUX_PACKAGE = "com.termux";
+    private static final String[] HOST_PACKAGES = {
+        "org.techwithkaushik.termuxxwayland",
+        "org.techwithkaushik.termuxxwayland.debug"
+    };
+    private static final String SERVICE_CLASS =
+        "org.techwithkaushik.termuxxwayland.BridgeSessionService";
+    private static final String DESCRIPTOR =
+        "org.techwithkaushik.termuxxwayland.IBridgeSession";
+    private static final int OPEN_SESSION = IBinder.FIRST_CALL_TRANSACTION;
     private static final int VERSION = 1;
     private static final int MAX_PAYLOAD = 16 * 1024 * 1024;
     private static final byte[] MAGIC = new byte[] { 0x54, 0x58, 0x57, 0x42 };
-    private static final int HELLO = 1, WELCOME = 2, FRAME = 3, PING = 7, PONG = 8, CLOSE = 9;
-    private static final int FRAME_WIDTH = 640, FRAME_HEIGHT = 360;
+    private static final int WELCOME = 2;
+    private static final int PING = 7;
+    private static final int PONG = 8;
+    private static final int CLOSE = 9;
+    private static final int FRAME = 3;
+    private static final int FRAME_WIDTH = 640;
+    private static final int FRAME_HEIGHT = 360;
     private static final int FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 4;
-    private static volatile Process activeCapture;
-    private static final Object OUTPUT_LOCK = new Object();
+    private static volatile Process activeFrameCapture;
 
     private BridgeClient() {}
 
     public static void main(String[] args) {
         if (args.length > 0 && "--help".equals(args[0])) {
-            System.out.println("BridgeClient: connects to the authenticated 127.0.0.1 loopback bridge.");
+            System.out.println("BridgeClient: opens a Termux-authorized Binder session and maintains TXWB PING/PONG.");
             return;
         }
-        String sessionId = System.getenv("TERMUX_XWAYLAND_SESSION_ID");
-        if (sessionId == null || !sessionId.matches("[a-f0-9]{32}")) {
-            System.err.println("SOCKET_CLIENT_ERROR: TERMUX_XWAYLAND_SESSION_ID must be 32 lowercase hex characters.");
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Process capture = activeFrameCapture;
+            if (capture != null) capture.destroy();
+        }, "termux-xwayland-capture-cleanup"));
+        // ActivityThread/ContextImpl may construct Handlers during initialization.
+        // Prepare the main looper before constructing any Android app context.
+        try {
+            if (Looper.myLooper() == null) Looper.prepareMainLooper();
+        } catch (RuntimeException error) {
+            System.err.println("BINDER_CLIENT_ERROR: cannot prepare Android looper: " + error);
             System.exit(2);
             return;
         }
 
-        Socket socket = null;
+        final Context context;
         try {
-            socket = connectWithRetry();
-            socket.setSoTimeout(10000);
-            DataInputStream input = new DataInputStream(socket.getInputStream());
-            DataOutputStream output = new DataOutputStream(socket.getOutputStream());
-            writeFrame(output, HELLO, sessionId.getBytes(StandardCharsets.US_ASCII));
-            Frame welcome = readFrame(input);
-            if (welcome.kind != WELCOME || welcome.payload.length != 4) {
-                throw new IOException("Invalid direct-socket WELCOME");
-            }
-            long termuxUid = ((long)(welcome.payload[0] & 0xff) << 24)
-                | ((long)(welcome.payload[1] & 0xff) << 16)
-                | ((long)(welcome.payload[2] & 0xff) << 8)
-                | (long)(welcome.payload[3] & 0xff);
-            if (termuxUid != android.os.Process.myUid()) {
-                throw new SecurityException("Kernel peer UID mismatch: WELCOME=" + termuxUid
-                    + " but Termux process UID=" + android.os.Process.myUid());
-            }
-            System.out.println("SESSION_CONNECTED host_uid=" + termuxUid + " transport=loopback-tcp");
-            System.out.flush();
-
-            Process capture = startFrameCapture();
-            activeCapture = capture;
-            if (capture != null) startFrameForwarder(capture, output);
-            final Socket sessionSocket = socket;
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                Process running = activeCapture;
-                if (running != null) running.destroy();
-                try { sessionSocket.close(); } catch (Exception ignored) {}
-            }, "termux-xwayland-socket-cleanup"));
-
-            while (true) {
-                writeFrame(output, PING, new byte[0]);
-                Frame response = readFrame(input);
-                if (response.kind == CLOSE) break;
-                if (response.kind != PONG || response.payload.length != 0) {
-                    throw new IOException("Unexpected direct-socket heartbeat response");
-                }
-                System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
-                    + " transport=loopback-tcp");
-                System.out.flush();
-                Thread.sleep(5000L);
-            }
+            context = createSystemContext();
         } catch (Exception error) {
-            System.err.println("SOCKET_CLIENT_ERROR: " + error.getClass().getSimpleName() + ": " + error.getMessage());
-            System.err.flush();
+            System.err.println("BINDER_CLIENT_ERROR: cannot create system context: " + error);
+            error.printStackTrace(System.err);
+            System.exit(2);
+            return;
+        }
+
+        final String hostPackage = findHostPackage(context);
+        if (hostPackage == null) {
+            System.err.println("BINDER_CLIENT_ERROR: Termux-XWayland host APK is not installed.");
+            System.exit(3);
+            return;
+        }
+        final int hostUid;
+        try {
+            hostUid = context.getPackageManager().getApplicationInfo(hostPackage, 0).uid;
+        } catch (PackageManager.NameNotFoundException error) {
+            System.err.println("BINDER_CLIENT_ERROR: host package disappeared: " + hostPackage);
+            System.exit(3);
+            return;
+        }
+
+        ClientEndpoint endpoint = new ClientEndpoint(hostUid);
+        android.os.Bundle bundle = new android.os.Bundle();
+        bundle.putBinder(EXTRA_CLIENT_BINDER, endpoint);
+        Intent intent = new Intent(ACTION_OPEN_SESSION)
+            .setPackage(hostPackage)
+            .putExtra(EXTRA_BUNDLE, bundle);
+        sendSessionBroadcast(context, intent);
+        System.out.println("BINDER_CONNECTING host=" + hostPackage + " transport=upstream-broadcast-binder");
+        System.out.flush();
+        Looper.loop();
+    }
+
+    private static void sendSessionBroadcast(Context context, Intent intent) {
+        try {
+            context.sendBroadcast(intent);
+            return;
+        } catch (RuntimeException firstError) {
+            System.err.println("BINDER_BROADCAST_CONTEXT_FALLBACK: " + firstError.getClass().getSimpleName());
+        }
+
+        /*
+         * Termux:X11 uses the ActivityManager broadcast path as a fallback when
+         * a system Context's package attribution is rejected. Invoke the public
+         * Binder interface reflectively so this client remains SDK-compilable.
+         */
+        try {
+            Class<?> activityManager = Class.forName("android.app.ActivityManager");
+            Object manager = activityManager.getMethod("getService").invoke(null);
+            Method broadcast = null;
+            for (Method method : manager.getClass().getMethods()) {
+                if ("broadcastIntent".equals(method.getName())
+                        && method.getParameterTypes().length == 13) {
+                    broadcast = method;
+                    break;
+                }
+            }
+            if (broadcast == null) throw new NoSuchMethodException("IActivityManager.broadcastIntent");
+            Object[] args = new Object[] {
+                null, intent, null, null, 0, null, null, null, -1, null, false, false, 0
+            };
+            Object result = broadcast.invoke(manager, args);
+            if (result instanceof Integer && ((Integer) result) < 0) {
+                throw new IOException("ActivityManager rejected the session broadcast: " + result);
+            }
+            return;
+        } catch (Exception fallbackError) {
+            System.err.println("BINDER_CLIENT_ERROR: session broadcast failed: " + fallbackError);
+            fallbackError.printStackTrace(System.err);
             System.exit(4);
-        } finally {
-            Process capture = activeCapture;
-            if (capture != null) capture.destroy();
-            if (socket != null) try { socket.close(); } catch (IOException ignored) {}
         }
     }
 
-    private static Socket connectWithRetry() throws Exception {
-        IOException last = null;
-        for (int attempt = 0; attempt < 40; attempt++) {
-            Socket socket = new Socket();
+    private static Context createSystemContext() throws Exception {
+        /*
+         * Follow Termux:X11's app_process bootstrap: allocate ActivityThread without
+         * running its constructor and obtain the platform context. This context is
+         * used only to send a package-targeted broadcast carrying our Binder endpoint;
+         * we never bind an Android service from the synthetic app_process caller.
+         */
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        java.lang.reflect.Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object unsafe = unsafeField.get(null);
+        Object activityThread = unsafeClass.getMethod("allocateInstance", Class.class)
+            .invoke(unsafe, Class.forName("android.app.ActivityThread"));
+        Method getSystemContext = activityThread.getClass().getDeclaredMethod("getSystemContext");
+        getSystemContext.setAccessible(true);
+        PrintStream originalErr = System.err;
+        Object value;
+        try {
+            // MIUI 12 can print a harmless missing theme-compatibility XML trace.
+            System.setErr(new PrintStream(new OutputStream() {
+                @Override public void write(int ignored) {}
+            }));
+            value = getSystemContext.invoke(activityThread);
+        } finally {
+            System.setErr(originalErr);
+        }
+        if (!(value instanceof Context)) {
+            throw new IllegalStateException("Android did not provide a system context");
+        }
+        return (Context) value;
+    }
+
+    private static String findHostPackage(Context context) {
+        PackageManager packageManager = context.getPackageManager();
+        for (String packageName : HOST_PACKAGES) {
             try {
-                socket.connect(new InetSocketAddress("127.0.0.1", 38473), 1000);
-                System.out.println("SOCKET_CONNECTED endpoint=127.0.0.1:38473");
-                System.out.flush();
-                return socket;
-            } catch (IOException error) {
-                last = error;
-                try { socket.close(); } catch (IOException ignored) {}
-                Thread.sleep(250L);
+                packageManager.getPackageInfo(packageName, 0);
+                return packageName;
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // Try the other supported application ID.
             }
         }
-        throw new IOException("Android loopback bridge did not become ready within 10 seconds; last connect error: "
-            + (last == null ? "no connection attempt completed" : last.getClass().getSimpleName() + ": " + last.getMessage()), last);
+        return null;
+    }
+
+    private static final String ACTION_OPEN_SESSION =
+        "org.techwithkaushik.termuxxwayland.action.OPEN_TERMUX_SESSION";
+    private static final String EXTRA_BUNDLE = "termuxxwayland.session.bundle";
+    private static final String EXTRA_CLIENT_BINDER = "termuxxwayland.session.client_binder";
+
+    /**
+     * The host calls into this Binder after receiving it in a package-targeted
+     * broadcast. This reverses the old broken flow: app_process never calls
+     * Context.bindService(), so ActivityManager does not need to register it as
+     * an Android application process.
+     */
+    private static final class ClientEndpoint extends Binder {
+        private final int expectedHostUid;
+        private final AtomicBoolean opened = new AtomicBoolean(false);
+
+        ClientEndpoint(int expectedHostUid) {
+            this.expectedHostUid = expectedHostUid;
+            attachInterface(null, DESCRIPTOR);
+        }
+
+        @Override
+        protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
+                throws android.os.RemoteException {
+            if (code != OPEN_SESSION) return super.onTransact(code, data, reply, flags);
+            data.enforceInterface(DESCRIPTOR);
+            if (Binder.getCallingUid() != expectedHostUid) {
+                throw new SecurityException("Only the installed Termux-XWayland host may open this session");
+            }
+            if (data.readInt() != VERSION) {
+                reply.writeException(new IllegalArgumentException("Unsupported bridge protocol version"));
+                return true;
+            }
+            if (!opened.compareAndSet(false, true)) {
+                reply.writeException(new IllegalStateException("A session is already open"));
+                return true;
+            }
+            ParcelFileDescriptor[] pair;
+            try {
+                pair = ParcelFileDescriptor.createSocketPair();
+            } catch (IOException error) {
+                opened.set(false);
+                reply.writeException(error);
+                return true;
+            }
+            try {
+                reply.writeNoException();
+                reply.writeParcelable(pair[1], 0);
+            } catch (RuntimeException error) {
+                opened.set(false);
+                try { pair[0].close(); } catch (IOException ignored) {}
+                throw error;
+            } finally {
+                try { pair[1].close(); } catch (IOException ignored) {}
+            }
+            Thread worker = new Thread(() -> {
+                try {
+                    runSession(pair[0]);
+                } catch (Exception error) {
+                    System.err.println("BINDER_SESSION_ERROR: " + error);
+                    System.err.flush();
+                } finally {
+                    opened.set(false);
+                    Looper.getMainLooper().quit();
+                }
+            }, "termux-xwayland-binder-session");
+            worker.setDaemon(false);
+            worker.start();
+            return true;
+        }
+    }
+
+    private static void runSession(ParcelFileDescriptor descriptor) throws Exception {
+        if (descriptor == null) throw new IOException("Host returned no session FD");
+
+        try (ParcelFileDescriptor ownedDescriptor = descriptor) {
+            DataInputStream input = new DataInputStream(new FileInputStream(ownedDescriptor.getFileDescriptor()));
+            DataOutputStream output = new DataOutputStream(new FileOutputStream(ownedDescriptor.getFileDescriptor()));
+            Frame welcome = readFrame(input);
+            if (welcome.kind != WELCOME || welcome.payload.length != 4) {
+                throw new IOException("Invalid TXWB WELCOME frame");
+            }
+            long hostUid = ((long) (welcome.payload[0] & 0xff) << 24)
+                | ((long) (welcome.payload[1] & 0xff) << 16)
+                | ((long) (welcome.payload[2] & 0xff) << 8)
+                | (long) (welcome.payload[3] & 0xff);
+            System.out.println("SESSION_WELCOME host_uid=" + hostUid + " transport=binder-fd");
+            System.out.flush();
+            boolean connected = false;
+            Process frameCapture = null;
+            try {
+                while (true) {
+                    writeFrame(output, PING, new byte[0]);
+                    Frame pong = readFrame(input);
+                    if (pong.kind != PONG || pong.payload.length != 0) {
+                        if (pong.kind == CLOSE) break;
+                        throw new IOException("Unexpected response to TXWB PING");
+                    }
+                    if (!connected) {
+                        connected = true;
+                        System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
+                        System.out.flush();
+                        // Frame capture must never block the PING/PONG heartbeat loop.
+                        Thread captureStarter = new Thread(() -> {
+                            Process capture = startFrameCapture();
+                            activeFrameCapture = capture;
+                            if (capture != null) startFrameForwarder(capture, output);
+                        }, "termux-xwayland-frame-capture-start");
+                        captureStarter.setDaemon(true);
+                        captureStarter.start();
+                    }
+                    System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
+                        + " transport=binder-fd");
+                    System.out.flush();
+                    Thread.sleep(5000L);
+                }
+            } finally {
+                if (frameCapture != null) frameCapture.destroy();
+                activeFrameCapture = null;
+            }
+        }
     }
 
     private static Process startFrameCapture() {
@@ -126,16 +328,18 @@ public final class BridgeClient {
             return null;
         }
         try {
-            Process process = new ProcessBuilder(ffmpeg, "-hide_banner", "-loglevel", "error",
+            Process process = new ProcessBuilder(
+                ffmpeg, "-hide_banner", "-loglevel", "warning",
                 "-f", "x11grab", "-framerate", "2", "-video_size", "640x360",
                 "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
-                "-f", "rawvideo", "pipe:1")
-                .redirectError(ProcessBuilder.Redirect.DISCARD).start();
-            System.out.println("FRAME_CAPTURE_STARTED display=" + display + " size=640x360 fps=2");
+                "-f", "rawvideo", "pipe:1"
+            ).redirectErrorStream(true).start();
+            System.out.println("FRAME_CAPTURE_STARTED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " display=" + display + " size=640x360 fps=2");
             System.out.flush();
             return process;
         } catch (IOException error) {
-            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=process_start_failed");
+            System.err.println("FRAME_CAPTURE_START_FAILED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " reason=process_start_failed error=" + error.getClass().getName() + " message=" + String.valueOf(error.getMessage()));
+            error.printStackTrace(System.err);
             System.out.flush();
             return null;
         }
@@ -155,11 +359,11 @@ public final class BridgeClient {
         Thread thread = new Thread(() -> {
             byte[] pixels = new byte[FRAME_BYTES];
             byte[] payload = new byte[8 + FRAME_BYTES];
-            payload[0] = (byte)(FRAME_WIDTH >>> 8);
-            payload[1] = (byte)FRAME_WIDTH;
-            payload[2] = (byte)(FRAME_HEIGHT >>> 8);
-            payload[3] = (byte)FRAME_HEIGHT;
-            payload[4] = 1; // RGBA8888
+            payload[0] = (byte) (FRAME_WIDTH >>> 8);
+            payload[1] = (byte) FRAME_WIDTH;
+            payload[2] = (byte) (FRAME_HEIGHT >>> 8);
+            payload[3] = (byte) FRAME_HEIGHT;
+            payload[4] = 1;
             long lastLog = 0L;
             try (DataInputStream raw = new DataInputStream(capture.getInputStream())) {
                 while (!Thread.currentThread().isInterrupted()) {
@@ -169,13 +373,13 @@ public final class BridgeClient {
                     long now = System.currentTimeMillis();
                     if (lastLog == 0L || now - lastLog >= 5000L) {
                         lastLog = now;
-                        System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L)
-                            + " transport=loopback-tcp");
+                        System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L) + " transport=binder-fd");
                         System.out.flush();
                     }
                 }
             } catch (IOException error) {
-                System.out.println("FRAME_CAPTURE_STOPPED reason=" + error.getClass().getSimpleName());
+                System.err.println("FRAME_CAPTURE_STOPPED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " reason=" + error.getClass().getName() + " message=" + String.valueOf(error.getMessage()));
+                error.printStackTrace(System.err);
                 System.out.flush();
             }
         }, "termux-xwayland-frame-forwarder");
@@ -192,17 +396,20 @@ public final class BridgeClient {
         if ((header[4] & 0xff) != VERSION) throw new IOException("Unsupported TXWB version");
         if (header[6] != 0 || header[7] != 0) throw new IOException("Nonzero TXWB reserved bits");
         int kind = header[5] & 0xff;
-        long length = ((long)(header[8] & 0xff) << 24) | ((long)(header[9] & 0xff) << 16)
-            | ((long)(header[10] & 0xff) << 8) | (long)(header[11] & 0xff);
+        if (kind < 1 || kind > 9) throw new IOException("Unknown TXWB message kind");
+        long length = ((long) (header[8] & 0xff) << 24)
+            | ((long) (header[9] & 0xff) << 16)
+            | ((long) (header[10] & 0xff) << 8)
+            | (long) (header[11] & 0xff);
         if (length > MAX_PAYLOAD) throw new IOException("TXWB payload exceeds limit");
-        byte[] payload = new byte[(int)length];
+        byte[] payload = new byte[(int) length];
         input.readFully(payload);
         return new Frame(kind, payload);
     }
 
     private static void writeFrame(DataOutputStream output, int kind, byte[] payload) throws IOException {
         if (payload.length > MAX_PAYLOAD) throw new IOException("TXWB payload exceeds limit");
-        synchronized (OUTPUT_LOCK) {
+        synchronized (output) {
             output.write(MAGIC);
             output.writeByte(VERSION);
             output.writeByte(kind);
@@ -216,6 +423,9 @@ public final class BridgeClient {
     private static final class Frame {
         final int kind;
         final byte[] payload;
-        Frame(int kind, byte[] payload) { this.kind = kind; this.payload = payload; }
+        Frame(int kind, byte[] payload) {
+            this.kind = kind;
+            this.payload = payload;
+        }
     }
 }
