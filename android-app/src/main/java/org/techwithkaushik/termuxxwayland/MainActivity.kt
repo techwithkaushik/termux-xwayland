@@ -2,8 +2,6 @@ package org.techwithkaushik.termuxxwayland
 
 import android.app.Activity
 import android.content.ClipData
-import android.content.ComponentName
-import android.content.ServiceConnection
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.LocalSocket
@@ -16,8 +14,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.IBinder
-import android.os.Parcel
 import android.os.Process
 import android.os.ParcelFileDescriptor
 import android.text.InputType
@@ -38,8 +34,6 @@ import java.net.Socket
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
@@ -51,11 +45,6 @@ class MainActivity : Activity() {
     private val page = Color.rgb(246, 248, 252)
     private val SOCKET_PREFIX = "termux_xwayland_"
     private companion object {
-        const val BINDER_PROBE_DESCRIPTOR = "org.techwithkaushik.termuxxwayland.ipc.PROBE"
-        const val BINDER_PROBE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 17
-        const val BINDER_PROBE_PAYLOAD_BYTES = 16 * 1024
-        const val BINDER_PROBE_MAX_PAYLOAD_BYTES = 64 * 1024
-        const val BINDER_FD_PROBE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 18
     }
 
     private lateinit var tokenInput: EditText
@@ -65,15 +54,6 @@ class MainActivity : Activity() {
     private lateinit var connectButton: Button
     @Volatile private var activeSocket: LocalSocket? = null
     @Volatile private var connecting = false
-    private lateinit var binderProbeTitle: TextView
-    private lateinit var binderProbeDescription: TextView
-    private lateinit var binderProbeButton: Button
-    private var binderProbeConnection: ServiceConnection? = null
-    @Volatile private var binderProbeRunning = false
-    private lateinit var binderFdProbeTitle: TextView
-    private lateinit var binderFdProbeDescription: TextView
-    private lateinit var binderFdProbeButton: Button
-    @Volatile private var binderFdProbeRunning = false
     private lateinit var tcpProbeTitle: TextView
     private lateinit var tcpProbeDescription: TextView
     private lateinit var tcpProbeButton: Button
@@ -280,36 +260,6 @@ class MainActivity : Activity() {
             "What this test proves",
             "Cross-UID IPC passed means the token was accepted, the Termux process UID was reported, a synthetic frame arrived, and Android PING received a Termux PONG. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
-        content.addView(label("Binder IPC capability probe", 20, ink, true).apply {
-            setPadding(0, dp(12), 0, dp(8))
-        })
-        content.addView(infoCard(
-            "Separate companion APK",
-            "Tests Android-authorized Binder communication with a separately installed companion app. Both APKs must be signed with the same certificate. This proves host-to-companion IPC only; it does not yet connect Termux or stream desktop frames."
-        ), margins(bottom = 10))
-        binderProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        binderProbeDescription = label(
-            "Sends a bounded 16 KiB test payload and verifies the exact echo, caller identity, service UID, and Android API level.",
-            13, muted, false
-        )
-        content.addView(binderProbeTitle)
-        content.addView(binderProbeDescription, margins(bottom = 8))
-        binderProbeButton = actionButton("Run Binder capability probe") { runBinderProbe() }
-        content.addView(binderProbeButton, margins(bottom = 16))
-        binderFdProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        binderFdProbeDescription = label(
-            "Tests a bounded 16 KiB bidirectional payload over two Binder-transferred file descriptors. This is a companion capability test, not Termux integration.",
-            13, muted, false
-        )
-        content.addView(binderFdProbeTitle)
-        content.addView(binderFdProbeDescription, margins(bottom = 8))
-        binderFdProbeButton = actionButton("Test Binder file descriptor handoff") { runBinderFdProbe() }
-        content.addView(binderFdProbeButton, margins(bottom = 16))
-
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
@@ -525,228 +475,6 @@ class MainActivity : Activity() {
         statusDescription.text = "Bridge session closed."
     }
 
-    private fun runBinderProbe() {
-        if (binderProbeRunning) return
-        binderProbeRunning = true
-        binderProbeButton.isEnabled = false
-        binderProbeTitle.text = "Binding companion…"
-        binderProbeDescription.text = "Requesting the signature-protected Binder service."
-
-        val connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, service: IBinder) {
-                Thread({
-                    val result = try {
-                        performBinderProbe(service)
-                    } catch (error: Exception) {
-                        "FAIL • ${error.message ?: error.javaClass.simpleName}"
-                    }
-                    runOnUiThread {
-                        if (binderProbeConnection === this) {
-                            try { unbindService(this) } catch (_: Exception) { }
-                            binderProbeConnection = null
-                        }
-                        binderProbeRunning = false
-                        binderProbeButton.isEnabled = true
-                        binderProbeTitle.text = if (result.startsWith("PASS")) {
-                            "Binder probe passed"
-                        } else {
-                            "Binder probe failed"
-                        }
-                        binderProbeDescription.text = result
-                    }
-                }, "binder-ipc-probe").start()
-            }
-
-            override fun onServiceDisconnected(name: ComponentName) {
-                runOnUiThread {
-                    if (binderProbeRunning) {
-                        binderProbeTitle.text = "Companion disconnected"
-                        binderProbeDescription.text =
-                            "The Binder service disconnected before the probe completed."
-                    }
-                }
-            }
-        }
-        binderProbeConnection = connection
-        val intent = Intent().setComponent(
-            ComponentName(
-                "org.techwithkaushik.termuxxwayland.companion",
-                "org.techwithkaushik.termuxxwayland.companion.IpcProbeService"
-            )
-        )
-        val bound = try {
-            bindService(intent, connection, Context.BIND_AUTO_CREATE)
-        } catch (_: SecurityException) {
-            false
-        } catch (_: Exception) {
-            false
-        }
-        if (!bound) {
-            binderProbeConnection = null
-            binderProbeRunning = false
-            binderProbeButton.isEnabled = true
-            binderProbeTitle.text = "Companion unavailable"
-            binderProbeDescription.text =
-                "Install the companion APK built from :ipc-companion and ensure both APKs use the same signing certificate. No socket or network fallback was attempted."
-        }
-    }
-
-    private fun runBinderFdProbe() {
-        if (binderFdProbeRunning) return
-        binderFdProbeRunning = true
-        binderFdProbeButton.isEnabled = false
-        binderFdProbeTitle.text = "Binding companion…"
-        binderFdProbeDescription.text = "Preparing two one-shot pipes and a bounded echo payload."
-        Thread({
-            val result = try {
-                performBinderFdProbe()
-            } catch (error: Exception) {
-                "FAIL • ${error.message ?: error.javaClass.simpleName}"
-            }
-            runOnUiThread {
-                binderFdProbeRunning = false
-                binderFdProbeButton.isEnabled = true
-                binderFdProbeTitle.text = if (result.startsWith("PASS")) {
-                    "Binder FD handoff passed"
-                } else {
-                    "Binder FD handoff failed"
-                }
-                binderFdProbeDescription.text = result
-            }
-        }, "binder-fd-probe").start()
-    }
-
-    private fun performBinderFdProbe(): String {
-        val payload = ByteArray(16 * 1024) { index -> ((index * 17 + 11) and 0xff).toByte() }
-        val inputPipe = ParcelFileDescriptor.createPipe()
-        val outputPipe = ParcelFileDescriptor.createPipe()
-        val echoed = java.io.ByteArrayOutputStream(payload.size)
-        var writerFailure: Throwable? = null
-        var readerFailure: Throwable? = null
-        val writer = Thread({
-            try {
-                ParcelFileDescriptor.AutoCloseOutputStream(inputPipe[1]).use { it.write(payload) }
-            } catch (error: Throwable) {
-                writerFailure = error
-            }
-        }, "binder-fd-writer")
-        val reader = Thread({
-            try {
-                ParcelFileDescriptor.AutoCloseInputStream(outputPipe[0]).use { input ->
-                    val buffer = ByteArray(2048)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        if (count == 0) continue
-                        if (echoed.size() + count > payload.size) {
-                            throw IOException("FD echo exceeded expected payload size")
-                        }
-                        echoed.write(buffer, 0, count)
-                    }
-                }
-            } catch (error: Throwable) {
-                readerFailure = error
-            }
-        }, "binder-fd-reader")
-        val request = Parcel.obtain()
-        val response = Parcel.obtain()
-        var parcelsRecycled = false
-        try {
-            request.writeInterfaceToken(BINDER_PROBE_DESCRIPTOR)
-            request.writeInt(payload.size)
-            inputPipe[0].writeToParcel(request, 0)
-            outputPipe[1].writeToParcel(request, 0)
-            writer.start()
-            reader.start()
-            var apiLevel = -1
-            val binding = bindProbeForFd()
-            val binder = binding.first
-            try {
-                if (!binder.transact(BINDER_FD_PROBE_TRANSACTION, request, response, 0)) {
-                    throw IOException("Companion does not implement FD handoff transaction")
-                }
-                response.readException()
-                val serviceUid = response.readInt()
-                val callerUid = response.readInt()
-                apiLevel = response.readInt()
-                val echoedSize = response.readInt()
-                if (serviceUid == callerUid || callerUid != Process.myUid()) {
-                    throw IOException("Unexpected Binder caller/service UID")
-                }
-                if (echoedSize != payload.size) throw IOException("FD echo size mismatch: $echoedSize")
-            } finally {
-                unbindProbeForFd(binding.second)
-            }
-            // Parcel retains duplicated FD references. Recycle it before waiting for EOF,
-            // otherwise the output pipe can stay open and the reader blocks indefinitely.
-            request.recycle()
-            response.recycle()
-            parcelsRecycled = true
-            try { inputPipe[0].close() } catch (_: Exception) { }
-            try { outputPipe[1].close() } catch (_: Exception) { }
-            writer.join(5000)
-            reader.join(5000)
-            if (writer.isAlive || reader.isAlive) throw IOException("FD pipe worker timed out")
-            writerFailure?.let { throw IOException("FD input pipe failed", it) }
-            readerFailure?.let { throw IOException("FD output pipe failed", it) }
-            if (!echoed.toByteArray().contentEquals(payload)) {
-                throw IOException("FD echo bytes did not match the original payload")
-            }
-            return "PASS • Android API $apiLevel • exact ${payload.size}-byte round trip through two Binder-transferred pipe FDs. One-shot companion test only; Termux integration and sustained streaming remain unverified."
-        } finally {
-            try { inputPipe[0].close() } catch (_: Exception) { }
-            try { inputPipe[1].close() } catch (_: Exception) { }
-            try { outputPipe[0].close() } catch (_: Exception) { }
-            try { outputPipe[1].close() } catch (_: Exception) { }
-            if (!parcelsRecycled) {
-                request.recycle()
-                response.recycle()
-            }
-            payload.fill(0)
-        }
-    }
-
-    private fun bindProbeForFd(): Pair<IBinder, ServiceConnection> {
-        val latch = CountDownLatch(1)
-        var connectedBinder: IBinder? = null
-        val connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, service: IBinder) {
-                connectedBinder = service
-                latch.countDown()
-            }
-
-            override fun onServiceDisconnected(name: ComponentName) {
-                latch.countDown()
-            }
-        }
-        val intent = Intent().setComponent(
-            ComponentName(
-                "org.techwithkaushik.termuxxwayland.companion",
-                "org.techwithkaushik.termuxxwayland.companion.IpcProbeService"
-            )
-        )
-        val bound = try {
-            bindService(intent, connection, Context.BIND_AUTO_CREATE)
-        } catch (error: Exception) {
-            false
-        }
-        if (!bound) throw IOException("Could not bind the signature-protected Binder companion")
-        if (!latch.await(5, TimeUnit.SECONDS)) {
-            try { unbindService(connection) } catch (_: Exception) { }
-            throw IOException("Timed out waiting for Binder companion")
-        }
-        val binder = connectedBinder
-        if (binder == null) {
-            try { unbindService(connection) } catch (_: Exception) { }
-            throw IOException("Binder companion disconnected before FD test")
-        }
-        return Pair(binder, connection)
-    }
-
-    private fun unbindProbeForFd(connection: ServiceConnection) {
-        try { unbindService(connection) } catch (_: Exception) { }
-    }
-
     private fun runTcpProbe() {
         if (tcpProbeRunning) return
         tcpProbeRunning = true
@@ -818,46 +546,6 @@ class MainActivity : Activity() {
         }, "tcp-framed-protocol-probe").start()
     }
 
-    private fun performBinderProbe(remote: IBinder): String {
-        val payload = ByteArray(BINDER_PROBE_PAYLOAD_BYTES) { index ->
-            ((index * 31 + 7) and 0xff).toByte()
-        }
-        val request = Parcel.obtain()
-        val response = Parcel.obtain()
-        try {
-            request.writeInterfaceToken(BINDER_PROBE_DESCRIPTOR)
-            request.writeInt(payload.size)
-            request.writeByteArray(payload)
-            if (!remote.transact(BINDER_PROBE_TRANSACTION, request, response, 0)) {
-                throw IOException("Companion does not implement the Binder probe transaction")
-            }
-            response.readException()
-            val serviceUid = response.readInt()
-            val callerUid = response.readInt()
-            val apiLevel = response.readInt()
-            val echoedSize = response.readInt()
-            if (echoedSize !in 0..BINDER_PROBE_MAX_PAYLOAD_BYTES) {
-                throw IOException("Companion returned an invalid payload length")
-            }
-            val echoed = ByteArray(echoedSize)
-            response.readByteArray(echoed)
-            if (callerUid != Process.myUid()) {
-                throw IOException("Companion reported an unexpected caller UID")
-            }
-            if (serviceUid == callerUid) {
-                throw IOException("Probe service is not running under a separate app UID")
-            }
-            if (echoedSize != payload.size || !echoed.contentEquals(payload)) {
-                throw IOException("Binder echo payload did not match the request")
-            }
-            return "PASS • host UID $callerUid → companion UID $serviceUid • Android API $apiLevel • exact ${payload.size}-byte echo. This verifies one bounded Binder round trip only; Termux integration and streaming remain unverified."
-        } finally {
-            request.recycle()
-            response.recycle()
-            payload.fill(0)
-        }
-    }
-
     private fun socketNameForToken(token: ByteArray): String {
         val fingerprint = token.take(8).joinToString("") { byte ->
             (byte.toInt() and 0xff).toString(16).padStart(2, '0')
@@ -877,11 +565,6 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         try { activeSocket?.close() } catch (_: Exception) { }
         activeSocket = null
-        binderProbeConnection?.let { connection ->
-            try { unbindService(connection) } catch (_: Exception) { }
-        }
-        binderProbeConnection = null
-        binderProbeRunning = false
         super.onDestroy()
     }
 
