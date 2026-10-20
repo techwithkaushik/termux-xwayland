@@ -1,14 +1,13 @@
 # Local bridge protocol v1
 
-**Status:** bounded TXWB framing, Termux-authorized Binder IPC, socket file-descriptor handoff, optional X11 frame capture, and Android-side frame decoding/rendering are implemented. Native Wayland capture and Android input forwarding are not implemented.
+**Status:** bounded TXWB framing, Termux-authorized Binder IPC, socket file-descriptor handoff, Android-side frame decoding/rendering, and experimental input forwarding are implemented. The current frame producer still uses optional X11 capture; native Weston-composed output capture remains unfinished.
 
 ## Transport and security
 
-- The Android display-host app listens on IPv4 loopback TCP `127.0.0.1:38473` only. It must never bind to `0.0.0.0`, a LAN interface, or a public address.
-- The Termux `app_process` client connects to `127.0.0.1:38473`. This replaces abstract AF_UNIX for this device because on-device testing showed `Permission denied` for the cross-UID abstract-socket connection.
-- The transport does not use Wi-Fi or the Internet, but TCP loopback is still reachable by local apps. A fresh random 32-character lowercase hex session ID is required in the TXWB `HELLO` payload before the host sends `WELCOME`. Never log session payloads. This handshake is a local pairing gate, not a substitute for a future stronger secret broker.
-- The Android host binds only to loopback and validates the session ID before accepting frames. Do not add unauthenticated listeners or fall back to a public TCP address.
-- The server handles one client at a time. Clipboard and input messages are not enabled.
+- The Android display-host app exposes a Binder session endpoint. The Termux `app_process` client requests a session through the exported bootstrap receiver and receives a socket file-descriptor pair; the byte stream is carried over those descriptors.
+- Production bridge traffic must remain on the authenticated Binder bootstrap + passed file descriptors. Do not reintroduce loopback TCP, LAN listeners, or a public endpoint.
+- The host validates the session request and bounds each framed message before processing it. Never log session payloads or treat a successful Binder handoff as proof that desktop pixels are being captured.
+- The server handles one client session at a time. Input/clipboard support is versioned separately and must remain bounded; clipboard handling must be opt-in.
 
 ## Frame format
 
