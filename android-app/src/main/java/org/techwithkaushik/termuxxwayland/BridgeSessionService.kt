@@ -29,6 +29,8 @@ class BridgeSessionService : Service() {
 
     private data class Session(val hostEnd: ParcelFileDescriptor) : Closeable {
         val closed = AtomicBoolean(false)
+        @Volatile var output: FileOutputStream? = null
+        val writeLock = Any()
 
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
@@ -44,6 +46,16 @@ class BridgeSessionService : Service() {
         internal fun dispatchFrame(payload: ByteArray) {
             val frame = RgbaFrameCodec.decode(payload)
             frameListener?.invoke(frame)
+        }
+
+        /** Sends validated, bounded pointer/key events back through the same Binder-transferred FD. */
+        internal fun sendInput(payload: ByteArray) {
+            require(payload.size in 1..128) { "Input event payload must be 1..128 bytes" }
+            val session = synchronized(lock) { activeSession } ?: return
+            val output = session.output ?: return
+            synchronized(session.writeLock) {
+                if (!session.closed.get()) BridgeProtocol.write(output, BridgeMessageKind.INPUT, payload)
+            }
         }
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != TRANSACTION_OPEN_SESSION) return super.onTransact(code, data, reply, flags)
@@ -173,6 +185,7 @@ class BridgeSessionService : Service() {
     private fun serve(session: Session) {
         val input = FileInputStream(session.hostEnd.fileDescriptor)
         val output = FileOutputStream(session.hostEnd.fileDescriptor)
+        session.output = output
         try {
             val hostUid = Process.myUid()
             BridgeProtocol.write(
@@ -190,7 +203,7 @@ class BridgeSessionService : Service() {
                 when (message.kind) {
                     BridgeMessageKind.PING -> {
                         if (message.payload.isNotEmpty()) throw IOException("PING payload must be empty")
-                        BridgeProtocol.write(output, BridgeMessageKind.PONG)
+                        synchronized(session.writeLock) { BridgeProtocol.write(output, BridgeMessageKind.PONG) }
                         updateBinderState("connected")
                     }
                     BridgeMessageKind.FRAME -> {
@@ -213,6 +226,7 @@ class BridgeSessionService : Service() {
         } catch (error: IOException) {
             if (!session.closed.get()) Log.i(TAG, "Bridge session ended: ${error.message}")
         } finally {
+            session.output = null
             session.close()
             synchronized(lock) {
                 if (activeSession === session) {
