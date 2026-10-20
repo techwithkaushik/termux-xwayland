@@ -46,7 +46,7 @@ check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
 check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process direct socket client"
-check_grep 'Direct socket transport: connected (authenticated abstract AF_UNIX session)' "$script" "start waits for direct socket session"
+check_grep 'Loopback transport: connected (authenticated 127.0.0.1 TCP session)' "$script" "start waits for direct socket session"
 check_grep 'xserver listening on display' "$script" "discover the actual XWayland display instead of assuming :0"
 check_grep 'x11_number="${x11_number#:}"' "$script" "derive the X11 socket number from the selected display"
 check_grep 'nohup xterm -geometry 80x24+0+0' "$script" "launch a visible X11 terminal after session startup"
@@ -140,8 +140,8 @@ MOCK_SOCAT
 cat > "$mock_app_process" <<'MOCK_APP_PROCESS'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'SESSION_CONNECTED host_uid=1000 transport=abstract-unix-socket\n'
-printf 'SESSION_HEALTHY epoch_seconds=%s transport=abstract-unix-socket\n' "$(date +%s)"
+printf 'SESSION_CONNECTED host_uid=1000 transport=loopback-tcp\n'
+printf 'SESSION_HEALTHY epoch_seconds=%s transport=loopback-tcp\n' "$(date +%s)"
 trap 'exit 0' TERM INT
 while :; do sleep 1; done
 MOCK_APP_PROCESS
