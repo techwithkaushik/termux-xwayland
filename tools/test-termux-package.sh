@@ -153,7 +153,7 @@ status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Direct socket transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no direct socket session initially" >&2; exit 1; }
+grep -Fq 'Loopback transport: not connected' <<<"$status_output" || { echo "FAIL: status should report no loopback session initially" >&2; exit 1; }
 grep -Fq 'Android host detection: not active' <<<"$status_output" || {
   echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
@@ -177,7 +177,7 @@ port="${port%%&*}"
   echo "FAIL: could not parse monitor session parameters" >&2; exit 1;
 }
 running_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Direct socket transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh direct socket heartbeat" >&2; exit 1; }
+grep -Fq 'Loopback transport: connected (fresh PING/PONG heartbeat)' <<<"$running_status" || { echo "FAIL: status should report a fresh loopback heartbeat" >&2; exit 1; }
 grep -Fq 'Wayland server: running' <<<"$running_status" || {
   echo "FAIL: status should detect the started Wayland server" >&2; exit 1;
 }
@@ -216,7 +216,7 @@ if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
 fi
 "${cli_env[@]}" bash "$script" stop >/dev/null
 stopped_status="$("${cli_env[@]}" bash "$script" status)"
-grep -Fq 'Direct socket transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped direct socket session" >&2; exit 1; }
+grep -Fq 'Loopback transport: not connected' <<<"$stopped_status" || { echo "FAIL: status should report stopped loopback session" >&2; exit 1; }
 grep -Fq 'Wayland server: not running' <<<"$stopped_status" || {
   echo "FAIL: status should report the stopped server" >&2; exit 1;
 }
