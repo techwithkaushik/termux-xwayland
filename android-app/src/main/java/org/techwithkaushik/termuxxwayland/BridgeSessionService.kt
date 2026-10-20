@@ -37,7 +37,14 @@ class BridgeSessionService : Service() {
         }
     }
 
-    private val binder = object : Binder() {
+    inner class BridgeBinder : Binder() {
+        @Volatile
+        internal var frameListener: ((RgbaFrameCodec.Frame) -> Unit)? = null
+
+        internal fun dispatchFrame(payload: ByteArray) {
+            val frame = RgbaFrameCodec.decode(payload)
+            frameListener?.invoke(frame)
+        }
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != TRANSACTION_OPEN_SESSION) return super.onTransact(code, data, reply, flags)
             data.enforceInterface(DESCRIPTOR)
@@ -82,6 +89,8 @@ class BridgeSessionService : Service() {
         }
     }
 
+    private val binder = BridgeBinder()
+
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
@@ -124,6 +133,9 @@ class BridgeSessionService : Service() {
                         if (message.payload.isNotEmpty()) throw IOException("PING payload must be empty")
                         BridgeProtocol.write(output, BridgeMessageKind.PONG)
                         updateBinderState("connected")
+                    }
+                    BridgeMessageKind.FRAME -> {
+                        binder.dispatchFrame(message.payload)
                     }
                     BridgeMessageKind.CLOSE -> {
                         if (message.payload.isNotEmpty()) throw IOException("CLOSE payload must be empty")

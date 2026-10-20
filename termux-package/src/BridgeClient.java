@@ -15,6 +15,7 @@ import android.util.Log;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -44,6 +45,11 @@ public final class BridgeClient {
     private static final int PING = 7;
     private static final int PONG = 8;
     private static final int CLOSE = 9;
+    private static final int FRAME = 3;
+    private static final int FRAME_WIDTH = 640;
+    private static final int FRAME_HEIGHT = 360;
+    private static final int FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 4;
+    private static volatile Process activeFrameCapture;
 
     private BridgeClient() {}
 
@@ -52,6 +58,10 @@ public final class BridgeClient {
             System.out.println("BridgeClient: opens a Termux-authorized Binder session and maintains TXWB PING/PONG.");
             return;
         }
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Process capture = activeFrameCapture;
+            if (capture != null) capture.destroy();
+        }, "termux-xwayland-capture-cleanup"));
         final Context context;
         try {
             context = createTermuxContext();
@@ -183,23 +193,103 @@ public final class BridgeClient {
             System.out.println("SESSION_WELCOME host_uid=" + hostUid + " transport=binder-fd");
             System.out.flush();
             boolean connected = false;
-            while (true) {
-                writeFrame(output, PING, new byte[0]);
-                Frame pong = readFrame(input);
-                if (pong.kind != PONG || pong.payload.length != 0) {
-                    if (pong.kind == CLOSE) break;
-                    throw new IOException("Unexpected response to TXWB PING");
+            Process frameCapture = null;
+            try {
+                while (true) {
+                    writeFrame(output, PING, new byte[0]);
+                    Frame pong = readFrame(input);
+                    if (pong.kind != PONG || pong.payload.length != 0) {
+                        if (pong.kind == CLOSE) break;
+                        throw new IOException("Unexpected response to TXWB PING");
+                    }
+                    if (!connected) {
+                        connected = true;
+                        System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
+                        frameCapture = startFrameCapture();
+                        activeFrameCapture = frameCapture;
+                        if (frameCapture != null) startFrameForwarder(frameCapture, output);
+                    }
+                    System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
+                        + " transport=binder-fd");
+                    System.out.flush();
+                    Thread.sleep(5000L);
                 }
-                if (!connected) {
-                    connected = true;
-                    System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
-                }
-                System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
-                    + " transport=binder-fd");
-                System.out.flush();
-                Thread.sleep(5000L);
+            } finally {
+                if (frameCapture != null) frameCapture.destroy();
+                activeFrameCapture = null;
             }
         }
+    }
+
+    private static Process startFrameCapture() {
+        String display = System.getenv("DISPLAY");
+        if (display == null || display.trim().isEmpty()) {
+            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=DISPLAY_not_set");
+            System.out.flush();
+            return null;
+        }
+        String ffmpeg = findExecutable("ffmpeg");
+        if (ffmpeg == null) {
+            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=ffmpeg_not_installed");
+            System.out.flush();
+            return null;
+        }
+        try {
+            Process process = new ProcessBuilder(
+                ffmpeg, "-hide_banner", "-loglevel", "error",
+                "-f", "x11grab", "-framerate", "2", "-video_size", "640x360",
+                "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
+                "-f", "rawvideo", "pipe:1"
+            ).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            System.out.println("FRAME_CAPTURE_STARTED display=" + display + " size=640x360 fps=2");
+            System.out.flush();
+            return process;
+        } catch (IOException error) {
+            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=process_start_failed");
+            System.out.flush();
+            return null;
+        }
+    }
+
+    private static String findExecutable(String name) {
+        String path = System.getenv("PATH");
+        if (path == null) return null;
+        for (String directory : path.split(File.pathSeparator)) {
+            File candidate = new File(directory, name);
+            if (candidate.isFile() && candidate.canExecute()) return candidate.getAbsolutePath();
+        }
+        return null;
+    }
+
+    private static void startFrameForwarder(Process capture, DataOutputStream output) {
+        Thread thread = new Thread(() -> {
+            byte[] pixels = new byte[FRAME_BYTES];
+            byte[] payload = new byte[8 + FRAME_BYTES];
+            payload[0] = (byte) (FRAME_WIDTH >>> 8);
+            payload[1] = (byte) FRAME_WIDTH;
+            payload[2] = (byte) (FRAME_HEIGHT >>> 8);
+            payload[3] = (byte) FRAME_HEIGHT;
+            payload[4] = 1;
+            long lastLog = 0L;
+            try (DataInputStream raw = new DataInputStream(capture.getInputStream())) {
+                while (!Thread.currentThread().isInterrupted()) {
+                    raw.readFully(pixels);
+                    System.arraycopy(pixels, 0, payload, 8, pixels.length);
+                    writeFrame(output, FRAME, payload);
+                    long now = System.currentTimeMillis();
+                    if (lastLog == 0L || now - lastLog >= 5000L) {
+                        lastLog = now;
+                        System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L) + " transport=binder-fd");
+                        System.out.flush();
+                    }
+                }
+            } catch (IOException error) {
+                System.out.println("FRAME_CAPTURE_STOPPED reason=" + error.getClass().getSimpleName());
+                System.out.flush();
+            }
+        }, "termux-xwayland-frame-forwarder");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private static Frame readFrame(DataInputStream input) throws IOException {
@@ -224,13 +314,15 @@ public final class BridgeClient {
 
     private static void writeFrame(DataOutputStream output, int kind, byte[] payload) throws IOException {
         if (payload.length > MAX_PAYLOAD) throw new IOException("TXWB payload exceeds limit");
-        output.write(MAGIC);
-        output.writeByte(VERSION);
-        output.writeByte(kind);
-        output.writeShort(0);
-        output.writeInt(payload.length);
-        output.write(payload);
-        output.flush();
+        synchronized (output) {
+            output.write(MAGIC);
+            output.writeByte(VERSION);
+            output.writeByte(kind);
+            output.writeShort(0);
+            output.writeInt(payload.length);
+            output.write(payload);
+            output.flush();
+        }
     }
 
     private static final class Frame {

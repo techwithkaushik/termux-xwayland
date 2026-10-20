@@ -42,6 +42,10 @@ grep -q 'ParcelFileDescriptor.createSocketPair' android-app/src/main/java/org/te
 ! grep -q 'ipc-companion' .github/workflows/ci.yml
 grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
 grep -q 'updateBinderState("connected")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+grep -q 'BridgeMessageKind.FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
+grep -q 'XWayland frame capture: sending recent frames' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+grep -q 'termux-xwayland x11' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
 
 test -f termux-package/DEBIAN/control

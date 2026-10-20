@@ -144,7 +144,18 @@ start_server() {
   rm -f "$PID_FILE"
   command -v "$WESTON_BIN" >/dev/null 2>&1 || fail "Weston is not installed. Run: pkg install weston"
   rm -f "$RUNTIME_DIR/$WAYLAND_SOCKET"
-  XDG_RUNTIME_DIR="$RUNTIME_DIR" "$WESTON_BIN" --backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" >/dev/null 2>&1 &
+  local weston_args=(--backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" --no-config)
+  local x11_socket_dir="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix"
+  if command -v Xwayland >/dev/null 2>&1; then
+    if [[ ! -e "$x11_socket_dir" ]]; then
+      mkdir -m 1777 "$x11_socket_dir" || fail "cannot create X11 socket directory: $x11_socket_dir"
+      chmod 1777 "$x11_socket_dir" || fail "cannot set standard permissions on new X11 socket directory"
+    elif [[ ! -d "$x11_socket_dir" ]]; then
+      fail "X11 socket path exists but is not a directory: $x11_socket_dir"
+    fi
+    weston_args+=(--xwayland --width=640 --height=360)
+  fi
+  XDG_RUNTIME_DIR="$RUNTIME_DIR" "$WESTON_BIN" "${weston_args[@]}" >/dev/null 2>&1 &
   local pid=$!
   printf '%s\n' "$pid" > "$PID_FILE"
   local attempt
@@ -205,6 +216,14 @@ binder_session_is_running() {
   now="$(date +%s)"
   (( now >= last_healthy && now - last_healthy <= 15 ))
 }
+frame_capture_is_active() {
+  session_process_is_running || return 1
+  local last_frame now
+  last_frame="$(sed -n 's/.*FRAME_SENT epoch_seconds=\([0-9][0-9]*\).*/\1/p' "$SESSION_LOG_FILE" | tail -n 1)"
+  [[ "$last_frame" =~ ^[0-9]+$ ]] || return 1
+  now="$(date +%s)"
+  (( now >= last_frame && now - last_frame <= 10 ))
+}
 stop_binder_session() {
   if session_process_is_running; then
     local pid attempt
@@ -234,7 +253,7 @@ start_binder_session() {
   fi
   stop_binder_session
   : > "$SESSION_LOG_FILE"
-  nohup env CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+  nohup env DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   local pid=$! attempt
   printf '%s\n' "$pid" > "$SESSION_PID_FILE"
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
@@ -274,7 +293,12 @@ show_status() {
   else
     printf 'Binder transport: not connected\n'
   fi
-  printf 'Wayland frame stream: not connected (real compositor frames are not integrated yet)\n'
+  if frame_capture_is_active; then
+    printf 'XWayland frame capture: sending recent frames to Android\n'
+  else
+    printf 'XWayland frame capture: waiting (requires XWayland, ffmpeg and an X11 client)\n'
+  fi
+  printf 'Native Wayland frame stream: not integrated\n'
   if [ "$host_found" -eq 1 ]; then return 0; fi
   return 1
 }
@@ -319,6 +343,12 @@ stop_session() {
   stop_server
   printf 'Binder transport: stopped\n'
 }
+launch_x11_client() {
+  shift
+  [ "$#" -gt 0 ] || fail "Usage: termux-xwayland x11 COMMAND [ARGS...]"
+  export DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}"
+  exec "$@"
+}
 case "${1:-status}" in
   status|check) show_status ;;
   status-handler) status_handler "${2:-}" "${3:-}" ;;
@@ -327,16 +357,18 @@ case "${1:-status}" in
   server-start) start_server ;;
   stop) stop_session ;;
   server-stop) stop_server ;;
+  x11) launch_x11_client "$@" ;;
   --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder FD session heartbeat; desktop frames pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor-stop|--version|--help]
+Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
 start         Start Weston, then send the Android host a validated launch request.
 server-start Start Weston without opening the Android host.
 stop          Stop the Binder session, monitor and Weston process.
 server-stop   Stop only the Weston process.
+x11 COMMAND   Launch an X11 app with DISPLAY set to the managed XWayland server.
 monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
