@@ -66,7 +66,16 @@ public final class BridgeClient {
         try {
             context = createTermuxContext();
         } catch (Exception error) {
-            System.err.println("BINDER_CLIENT_ERROR: cannot create Termux context: " + error);
+            System.err.println("BINDER_CLIENT_ERROR: cannot create Termux context");
+            Throwable cause = error;
+            int depth = 0;
+            while (cause != null && depth++ < 12) {
+                System.err.println("  cause[" + (depth - 1) + "]: "
+                    + cause.getClass().getName() + ": " + cause.getMessage());
+                cause = cause.getCause();
+            }
+            error.printStackTrace(System.err);
+            System.err.flush();
             System.exit(2);
             return;
         }
