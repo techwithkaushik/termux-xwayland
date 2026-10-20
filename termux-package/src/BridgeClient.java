@@ -280,21 +280,58 @@ public final class BridgeClient {
                 | (long) (welcome.payload[3] & 0xff);
             System.out.println("SESSION_WELCOME host_uid=" + hostUid + " transport=binder-fd");
             System.out.flush();
-            boolean connected = false;
-            Process frameCapture = null;
-            try {
-                while (true) {
-                    writeFrame(output, PING, new byte[0]);
-                    Frame pong = readFrame(input);
-                    if (pong.kind != PONG || pong.payload.length != 0) {
-                        if (pong.kind == CLOSE) break;
-                        throw new IOException("Unexpected response to TXWB PING");
+
+            // One reader owns the FD input stream. Frames, PONG and Android INPUT
+            // may arrive independently; treating every response as PONG broke duplex.
+            final java.util.concurrent.BlockingQueue<Frame> incoming =
+                new java.util.concurrent.LinkedBlockingQueue<>(32);
+            final AtomicBoolean readerFailed = new AtomicBoolean(false);
+            Thread reader = new Thread(() -> {
+                try {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        Frame frame = readFrame(input);
+                        if (!incoming.offer(frame, 2, java.util.concurrent.TimeUnit.SECONDS)) {
+                            throw new IOException("TXWB inbound queue is full");
+                        }
+                        if (frame.kind == CLOSE) break;
                     }
+                } catch (Exception error) {
+                    readerFailed.set(true);
+                    System.err.println("BINDER_READER_STOPPED: " + error);
+                }
+            }, "termux-xwayland-binder-reader");
+            reader.setDaemon(true);
+            reader.start();
+
+            boolean connected = false;
+            try {
+                while (!readerFailed.get()) {
+                    writeFrame(output, PING, new byte[0]);
+                    long deadline = System.currentTimeMillis() + 5000L;
+                    boolean gotPong = false;
+                    while (System.currentTimeMillis() < deadline && !readerFailed.get()) {
+                        Frame message = incoming.poll(250, java.util.concurrent.TimeUnit.MILLISECONDS);
+                        if (message == null) continue;
+                        if (message.kind == PONG && message.payload.length == 0) {
+                            gotPong = true;
+                            break;
+                        }
+                        if (message.kind == INPUT) {
+                            handleInput(message.payload);
+                            continue;
+                        }
+                        if (message.kind == CLOSE) return;
+                        if (message.kind == FRAME || message.kind == RESIZE || message.kind == CLIPBOARD) {
+                            System.err.println("UNEXPECTED_ANDROID_MESSAGE kind=" + message.kind);
+                            continue;
+                        }
+                        throw new IOException("Unexpected inbound TXWB message kind=" + message.kind);
+                    }
+                    if (!gotPong) throw new IOException("Timed out waiting for TXWB PONG");
                     if (!connected) {
                         connected = true;
                         System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
                         System.out.flush();
-                        // Frame capture must never block the PING/PONG heartbeat loop.
                         Thread captureStarter = new Thread(() -> {
                             Process capture = startFrameCapture();
                             activeFrameCapture = capture;
@@ -306,12 +343,62 @@ public final class BridgeClient {
                     System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
                         + " transport=binder-fd");
                     System.out.flush();
-                    Thread.sleep(5000L);
                 }
             } finally {
-                if (frameCapture != null) frameCapture.destroy();
+                reader.interrupt();
+                Process capture = activeFrameCapture;
+                if (capture != null) capture.destroy();
                 activeFrameCapture = null;
             }
+        }
+    }
+
+    /** Decode bounded normalized touch events and route them to the active XWayland display. */
+    private static void handleInput(byte[] payload) {
+        if (payload.length == 0 || payload.length > 128) return;
+        String event = new String(payload, StandardCharsets.US_ASCII);
+        String[] fields = event.trim().split("\\s+");
+        if (fields.length != 3) {
+            System.err.println("INPUT_REJECTED reason=invalid_fields");
+            return;
+        }
+        String action = fields[0];
+        final float nx;
+        final float ny;
+        try {
+            nx = Float.parseFloat(fields[1]);
+            ny = Float.parseFloat(fields[2]);
+        } catch (NumberFormatException invalid) {
+            System.err.println("INPUT_REJECTED reason=invalid_coordinates");
+            return;
+        }
+        if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) {
+            System.err.println("INPUT_REJECTED reason=coordinates_out_of_range");
+            return;
+        }
+        String xdotool = findExecutable("xdotool");
+        if (xdotool == null) {
+            System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
+            return;
+        }
+        int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (FRAME_WIDTH - 1)));
+        int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (FRAME_HEIGHT - 1)));
+        try {
+            ProcessBuilder command = new ProcessBuilder(xdotool, "mousemove", Integer.toString(x), Integer.toString(y));
+            if ("DOWN".equals(action)) {
+                command.command().add("mousedown");
+                command.command().add("1");
+            } else if ("UP".equals(action) || "CANCEL".equals(action)) {
+                command.command().add("mouseup");
+                command.command().add("1");
+            } else if (!"MOVE".equals(action)) {
+                System.err.println("INPUT_REJECTED reason=unknown_action");
+                return;
+            }
+            Process process = command.redirectErrorStream(true).start();
+            if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly();
+        } catch (Exception error) {
+            System.err.println("INPUT_DISPATCH_FAILED: " + error.getClass().getSimpleName());
         }
     }
 
