@@ -5,34 +5,27 @@
 
 ## Context
 
-The original Termux-side client was launched with `/system/bin/app_process` under the existing Termux UID. It constructed a synthetic `ActivityThread` and `ContextImpl` from Termux's `ApplicationInfo`, then called `Context.bindService()` on the Android host's `BridgeSessionService`.
-
-On Android 10 / MIUI, that failed before the host service received a request:
-
-```
-SecurityException: Unable to find app for caller android.app.IApplicationThread...
-when binding service ...BridgeSessionService
-```
-
-ActivityManager resolves the caller's `IApplicationThread` to a registered process record before accepting a service bind. Creating an `ActivityThread` reflectively does not register the `app_process` process.
+The old Termux-side client ran in `app_process`, constructed a synthetic `ActivityThread`/context, then called `Context.bindService()`. Android 10 / MIUI rejected it with `Unable to find app for caller IApplicationThread`, because ActivityManager does not register this synthetic process as a normal application process.
 
 ## Decision
 
-Adapt the established Termux:X11 `CmdEntryPoint` pattern instead of binding a service from `app_process`:
+Adapt the Termux:X11 `CmdEntryPoint` pattern instead of binding a service from `app_process`:
 
-1. Construct the platform context using the Unsafe-allocated `ActivityThread` approach used by Termux:X11.
+1. Construct the platform context using the Unsafe-allocated `ActivityThread` approach.
 2. Send a package-targeted broadcast carrying a Binder endpoint to the existing host APK.
-3. Validate the broadcast sender UID against the installed `com.termux` package before forwarding the Binder to the in-app session service.
+3. The host receiver checks the Binder descriptor and forwards it to the in-app session service.
 4. The host service calls back into the Termux-side Binder endpoint; the endpoint checks the host UID and transfers one end of a connected socket pair through Binder.
-5. Keep the session protocol on the transferred FD; do not use TCP, root, SELinux weakening, or a separate companion APK.
+5. Keep the TXWB session protocol on the transferred FD; no TCP, root, SELinux weakening, or separately installable companion APK.
 
-The host session service is non-exported. The receiver is exported only because the existing Termux process must notify it; it rejects senders whose UID does not map to `com.termux`.
+## Security qualification
+
+Android 10's public `BroadcastReceiver` API does not expose the original sender UID, so this receiver does not claim to authenticate broadcast origin. Binder descriptor validation is a sanity check, not authentication. The Termux endpoint checks the host UID before handing over an FD, payloads remain bounded, and the host service refuses to replace an active session. This limits the broadcast surface but does not make the broadcast itself a security boundary.
 
 ## Validation
 
-- Static scaffold checks now assert that the receiver is present and the client does not call `Context.bindService()`.
-- GitHub Actions must compile the Java DEX and Android Kotlin service/receiver.
-- Android 10 / MIUI device testing is still required to prove the broadcast is delivered, the Binder callback succeeds, and the FD session reaches PING/PONG. CI success alone is not proof of end-to-end operation.
+- Scaffold checks assert the receiver exists and the client no longer calls `Context.bindService()`.
+- GitHub Actions must compile the Java DEX and Android Kotlin receiver/service.
+- Android 10 / MIUI device testing is required to prove broadcast delivery, Binder callback, FD handoff, PING/PONG and visible XWayland frames. CI success alone is not proof.
 
 ## Reference implementation
 
