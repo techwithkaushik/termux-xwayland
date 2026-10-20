@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
     <!-- Kept only for explicitly user-triggered, one-shot diagnostics. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <application
@@ -11,10 +14,6 @@
             android:authorities="${applicationId}.control"
             android:exported="true"
             android:grantUriPermissions="false" />
-        <service
-            android:name=".BridgeSessionService"
-            android:exported="true"
-            />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTop"
