@@ -358,7 +358,7 @@ case "${1:-status}" in
   stop) stop_session ;;
   server-stop) stop_server ;;
   x11) launch_x11_client "$@" ;;
-  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder FD session heartbeat; desktop frames pending)\n' ;;
+  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; optional XWayland frame capture)\n' ;;
   --help|-h|help)
     cat <<'EOF'
 Usage: termux-xwayland [status|check|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
@@ -373,7 +373,7 @@ monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
 The control endpoint accepts calls only from the installed com.termux UID.
-The Binder FD session is live; real compositor frames and Android input routing are not integrated.
+XWayland frame capture is optional and requires ffmpeg; native Wayland capture and Android input routing are not integrated.
 EOF
     ;;
   *) printf 'Unknown command: %s\nRun termux-xwayland --help\n' "$1" >&2; exit 64 ;;

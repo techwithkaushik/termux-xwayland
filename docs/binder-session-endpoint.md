@@ -1,26 +1,28 @@
-# Binder session endpoint
+# Binder and frame transport
 
-The existing Android host APK exposes `BridgeSessionService`. No second companion APK is built or installed.
+The existing Android host APK exposes `BridgeSessionService`; the Termux DEB includes the Java `app_process` client. No second companion APK is built or installed.
 
-## Security and transport
+## Security and session
 
 - The service checks the actual Binder caller UID against Android's package-manager mapping for `com.termux`.
 - Binder transfers a connected socket FD; no cross-UID AF_UNIX connect is required.
-- No TCP listener is used for frames or input. The legacy loopback status monitor is separate control-plane polling only.
-- A replacement session closes the previous host FD. Service destruction and peer EOF close the active session.
+- No TCP listener carries frames or input. The loopback status monitor is separate control-plane polling only.
 - TXWB v1 framing enforces known message kinds, reserved-bit validation and a 16 MiB payload ceiling.
-- The host persists Binder state only after a valid PING/PONG exchange. The Termux CLI requires a recent heartbeat; a stale log line alone is not considered connected.
+- The client reports connected only after a valid PING/PONG and logs a timestamped heartbeat every five seconds. The CLI considers the session healthy only while that heartbeat is fresh.
 
-## Binder wire contract
+## XWayland frame path
 
-1. Bind to `org.techwithkaushik.termuxxwayland/.BridgeSessionService`.
-2. Transact with descriptor `org.techwithkaushik.termuxxwayland.IBridgeSession` and code `IBinder.FIRST_CALL_TRANSACTION`.
-3. Write protocol version `1` to the request parcel.
-4. Read a `ParcelFileDescriptor` from the reply; the socket begins with TXWB `WELCOME` carrying the host UID.
-5. Send empty `PING` and require empty `PONG`. The client prints `SESSION_CONNECTED` only after the first PONG and logs a timestamped heartbeat every five seconds. Send empty `CLOSE` for orderly shutdown.
+When `Xwayland` and `ffmpeg` are installed, the CLI starts Weston with a 640×360 headless output and XWayland enabled. The client starts an optional ffmpeg X11 capture at 2 FPS and sends bounded RGBA `FRAME` messages through the Binder-transferred FD. The Android service validates each frame with `RgbaFrameCodec` and hands decoded pixels to the existing activity for display.
+
+If ffmpeg, XWayland, or a usable X11 display is unavailable, the Binder heartbeat remains available and frame capture reports waiting/unavailable rather than claiming desktop output. Launch an X11 app with `termux-xwayland x11 xterm` (or another installed app).
+
+This frame path is X11/XWayland-only and still needs target-device visual verification. Native Wayland capture and input forwarding are not implemented.
 
 ## Remaining work
 
-The Binder heartbeat is not a desktop stream. A real compositor frame source, Android rendering of a real Wayland surface, input/resize/clipboard routing, reconnect/backpressure policy, and target-device verification are still outstanding. The historical abstract-socket diagnostic is not the production connection path.
+- Verify XWayland output dimensions and frame content on Android 10 / MIUI.
+- Add bounded backpressure, capture-process restart and explicit stream shutdown handling.
+- Implement native Wayland capture through a safe compositor API; do not enable the risky Weston debug capture protocol in production.
+- Implement Android touch/keyboard forwarding and resize/clipboard routing after frame delivery is proven.
 
-CI verifies host compilation, DEX generation, package lifecycle tests and native protocol tests. It cannot prove Binder authorization or FD lifecycle behavior on Android 10 / MIUI.
+CI validates builds and package wiring, but cannot prove the target phone's XWayland display or actual visible frame content.

@@ -45,7 +45,7 @@ Payloads are limited to 16 MiB. Receivers validate the header and length before 
 
 - `HELLO`: exactly 32 bytes of session token. Never log payload bytes.
 - `WELCOME`: exactly 4 bytes containing the Termux process effective UID as an unsigned big-endian `u32`. The Android app compares this with `Process.myUid()` to show whether the connection crosses app UIDs.
-- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, initially `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The smoke test sends one 320×180 synthetic pattern after `WELCOME`; Android validates metadata and exact payload length before rendering. The 16 MiB envelope cap means larger frames must be tiled or compressed rather than bypassing the limit.
+- `FRAME`: width (`u16`), height (`u16`), pixel format (`u8`, `1` = RGBA8888), three reserved zero bytes, then `width × height × 4` bytes. The legacy abstract-socket probe sends one synthetic 320×180 pattern. The Binder path can send actual X11/XWayland captures as 640×360 RGBA at 2 FPS when ffmpeg is available; the Android service validates metadata and exact payload length before rendering. Native Wayland capture is not implemented. The 16 MiB envelope cap means larger frames must be tiled or compressed rather than bypassing the limit.
 - `RESIZE`: width (`u16`) and height (`u16`); reject zero dimensions and values beyond implementation limits.
 - `CLIPBOARD`: UTF-8 bytes, maximum 1 MiB, only after explicit session authentication. Never automatically execute clipboard contents.
 - `PING`, `PONG`, `CLOSE`: empty payloads in version 1.

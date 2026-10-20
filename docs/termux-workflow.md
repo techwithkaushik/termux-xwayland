@@ -2,9 +2,9 @@
 
 ## Current milestone
 
-The Android host exposes `BridgeSessionService`; the Termux DEB contains a Java client compiled to DEX in CI. The client binds under the existing Termux UID, receives a connected FD over Binder, validates TXWB v1 frames and maintains PING/PONG. This is a transport milestone only; real Wayland frames, Android rendering and input forwarding are not complete.
+The Termux DEB contains a Java Binder client compiled to DEX in CI. It binds under the existing Termux UID, receives a connected FD, validates TXWB v1 frames and maintains a PING/PONG heartbeat. When XWayland and ffmpeg are installed, the client can also capture a 640×360 X11/XWayland image at 2 FPS and send RGBA `FRAME` messages over Binder. The Android service validates and displays received frames. This path requires target-device visual verification; native Wayland capture and input forwarding remain incomplete.
 
-The old abstract AF_UNIX cross-UID connection failed with `EACCES` on the target Android 10 device. It remains diagnostic only. The retired `:ipc-companion` test APK is no longer part of Gradle settings, CI or the supported install flow.
+The old abstract AF_UNIX cross-UID connection failed with `EACCES` on the target Android 10 device. It remains diagnostic only. The retired `:ipc-companion` APK is not part of the supported install flow.
 
 ## Build artifacts
 
@@ -13,33 +13,26 @@ CI publishes:
 - `termux-xwayland-binder-client-dex`: DEX for the Termux-side `app_process` client.
 - `termux-xwayland-bridge-deb`: Termux CLI and Binder client DEX.
 
-For local builds with JDK 17, Gradle 8.9 and the Android SDK:
+## Install and run
+
+Install the DEB inside Termux using `dpkg -i`. For optional XWayland capture, install the required Termux packages:
 
 ```bash
-gradle :android-app:testDebugUnitTest :android-app:assembleDebug
-bash tools/build-termux-binder-client.sh dist/termux-binder-client
-install -D -m 0644 dist/termux-binder-client/bridge-client.dex \
-  termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
-bash tools/test-termux-package.sh
-bash termux-package/build-deb.sh dist
+pkg install weston socat xorg-server ffmpeg xterm
+termux-xwayland start
+termux-xwayland x11 xterm
+termux-xwayland status
 ```
 
-Install the DEB inside Termux using `dpkg -i`, then run `termux-xwayland status` and `termux-xwayland start`. Start launches Weston, opens the host, starts the Binder client and waits for the host's WELCOME plus initial PING/PONG. Use `termux-xwayland stop` to close the Binder session and stop the monitor and Weston.
+`termux-xwayland start` starts Weston, opens the host, starts the Binder client and waits for an authorized PING/PONG. If XWayland and ffmpeg are available, it also starts a frame-capture process. `termux-xwayland x11 COMMAND` launches an X11 client using `DISPLAY=:0`. `termux-xwayland status` reports the Binder heartbeat and recent frame capture separately. `termux-xwayland stop` closes the Binder session and stops the monitor and Weston.
 
-## Security and diagnostics
+## Security and limitations
 
-- The Binder service authorizes the actual Binder caller UID through Android's package manager and accepts only the installed `com.termux` package.
-- The socket FD is transferred through Binder; the client does not connect to a cross-UID AF_UNIX path.
-- No companion APK, Termux RUN_COMMAND, root, SELinux change or TCP frame/input fallback is used.
-- The loopback-only status monitor is low-rate status/control data only, not a frame/input channel.
-- The client/service integration has not yet been verified on the target Android 10 device. CI cannot establish MIUI Binder policy or FD lifecycle behavior.
+- The Binder service authorizes the actual caller UID through Android's package manager and accepts only the installed `com.termux` package.
+- The socket FD is transferred through Binder; no cross-UID AF_UNIX connect or TCP frame/input listener is used.
+- The loopback status monitor is low-rate control-plane polling only.
+- XWayland capture requires `xorg-server` and `ffmpeg`; without them the heartbeat remains usable and the frame stream reports waiting/unavailable.
+- The frame path is X11/XWayland-only, 640×360 at 2 FPS. Native Wayland surfaces, touch/keyboard, resize, clipboard, backpressure and reconnect are still future work.
+- CI cannot establish MIUI Binder policy, frame content or visual correctness on the target Android 10 phone.
 
-## Remaining work
-
-1. Verify binding, FD handoff, repeated PING/PONG, stop, reconnect and descriptor cleanup on the target phone.
-2. Route the session to a real compositor frame source with bounded backpressure.
-3. Render a real Wayland client surface in the Android host.
-4. Add Android input, resize and clipboard forwarding after real frame delivery works.
-5. Integrate XWayland and then desktop environments.
-
-Do not report the current Binder heartbeat or synthetic test frame as a working desktop stream.
+Do not report a working desktop until a real XWayland frame is visible on the device and the stream survives stop/reconnect.
