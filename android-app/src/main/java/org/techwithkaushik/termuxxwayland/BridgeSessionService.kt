@@ -2,180 +2,125 @@ package org.techwithkaushik.termuxxwayland
 
 import android.app.Service
 import android.content.Intent
-import android.os.Binder
+import android.net.LocalServerSocket
+import android.net.LocalSocket
 import android.os.IBinder
-import android.os.Parcel
-import android.os.ParcelFileDescriptor
 import android.os.Process
-import android.system.Os
-import android.system.OsConstants
 import android.util.Log
 import java.io.Closeable
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Termux-authorized Binder endpoint for a persistent TXWB framed session.
+ * Started host-side abstract Unix socket server.
  *
- * Binder transfers a connected socket FD to the real Termux UID. This avoids
- * cross-UID AF_UNIX connect permissions and never opens a TCP listener.
- * Rendering real Wayland frames is intentionally left to the compositor layer.
+ * No Binder interface is exposed. Termux connects directly using LocalSocket.
+ * Cross-UID socket access is device-policy dependent and must be validated on
+ * the target Android build.
  */
 class BridgeSessionService : Service() {
-    private val lock = Any()
-    private var activeSession: Session? = null
+    private val stopping = AtomicBoolean(false)
+    @Volatile private var server: LocalServerSocket? = null
+    @Volatile private var activeClient: LocalSocket? = null
 
-    private data class Session(val hostEnd: ParcelFileDescriptor) : Closeable {
-        val closed = AtomicBoolean(false)
-
-        override fun close() {
-            if (!closed.compareAndSet(false, true)) return
-            runCatching { Os.shutdown(hostEnd.fileDescriptor, OsConstants.SHUT_RDWR) }
-            runCatching { hostEnd.close() }
-        }
-    }
-
-    inner class BridgeBinder : Binder() {
-        @Volatile
-        internal var frameListener: ((RgbaFrameCodec.Frame) -> Unit)? = null
-
-        internal fun dispatchFrame(payload: ByteArray) {
-            val frame = RgbaFrameCodec.decode(payload)
-            frameListener?.invoke(frame)
-        }
-        override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-            if (code != TRANSACTION_OPEN_SESSION) return super.onTransact(code, data, reply, flags)
-            data.enforceInterface(DESCRIPTOR)
-            enforceTermuxCaller()
-            if (data.readInt() != PROTOCOL_VERSION) {
-                reply?.writeException(IllegalArgumentException("Unsupported bridge protocol version"))
-                return true
-            }
-
-            val pair = try {
-                ParcelFileDescriptor.createSocketPair()
-            } catch (error: IOException) {
-                reply?.writeException(error)
-                return true
-            }
-            val next = Session(pair[0])
-            synchronized(lock) {
-                activeSession?.close()
-                activeSession = next
-            }
-            updateBinderState("connecting")
-
-            try {
-                reply?.writeNoException()
-                reply?.writeParcelable(pair[1], 0)
-            } catch (error: RuntimeException) {
-                synchronized(lock) {
-                    if (activeSession === next) activeSession = null
-                    next.close()
-                }
-                throw error
-            } finally {
-                // Binder Parcel owns a transferred FD reference after marshalling.
-                runCatching { pair[1].close() }
-            }
-            Thread({ serve(next) }, "txw-binder-session").apply {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (server == null && !stopping.get()) {
+            Thread(::listen, "txw-abstract-socket-listener").apply {
                 isDaemon = true
                 start()
             }
-            Log.i(TAG, "Authorized Termux Binder session opened")
-            return true
         }
+        return START_STICKY
     }
 
-    private val binder = BridgeBinder()
-
-    override fun onBind(intent: Intent?): IBinder = binder
-
-    override fun onDestroy() {
-        synchronized(lock) {
-            activeSession?.close()
-            activeSession = null
-        }
-        updateBinderState("disconnected")
-        super.onDestroy()
-    }
-
-    private fun enforceTermuxCaller() {
-        val callingUid = Binder.getCallingUid()
-        val packages = packageManager.getPackagesForUid(callingUid).orEmpty()
-        if (callingUid == Process.myUid() || TERMUX_PACKAGE !in packages) {
-            Log.w(TAG, "Rejected Binder caller uid=$callingUid packages=${packages.joinToString()}")
-            throw SecurityException("Only the installed Termux package may open a bridge session")
-        }
-    }
-
-    private fun serve(session: Session) {
-        val input = FileInputStream(session.hostEnd.fileDescriptor)
-        val output = FileOutputStream(session.hostEnd.fileDescriptor)
+    private fun listen() {
         try {
-            val hostUid = Process.myUid()
-            BridgeProtocol.write(
-                output,
-                BridgeMessageKind.WELCOME,
-                byteArrayOf(
-                    (hostUid ushr 24).toByte(),
-                    (hostUid ushr 16).toByte(),
-                    (hostUid ushr 8).toByte(),
-                    hostUid.toByte()
-                )
-            )
-            while (!session.closed.get()) {
+            val socketServer = LocalServerSocket(SOCKET_NAME)
+            server = socketServer
+            Log.i(TAG, "Abstract socket server listening: @$SOCKET_NAME")
+            while (!stopping.get()) {
+                val client = socketServer.accept()
+                if (stopping.get()) {
+                    closeQuietly(client)
+                    break
+                }
+                synchronized(this) {
+                    closeQuietly(activeClient)
+                    activeClient = client
+                }
+                Thread({ serve(client) }, "txw-abstract-session").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+        } catch (error: IOException) {
+            if (!stopping.get()) Log.e(TAG, "Abstract socket listener failed", error)
+        } finally {
+            closeQuietly(server)
+            server = null
+        }
+    }
+
+    private fun serve(client: LocalSocket) {
+        try {
+            val input = client.inputStream
+            val output = client.outputStream
+            val uid = Process.myUid()
+            BridgeProtocol.write(output, BridgeMessageKind.WELCOME, byteArrayOf(
+                (uid ushr 24).toByte(), (uid ushr 16).toByte(),
+                (uid ushr 8).toByte(), uid.toByte()
+            ))
+            while (!stopping.get() && client.isConnected) {
                 val message = BridgeProtocol.read(input)
                 when (message.kind) {
+                    BridgeMessageKind.HELLO -> {
+                        // The current raw-socket migration is a transport prototype.
+                        // Token authentication must be restored before production use.
+                        Log.i(TAG, "Received TXWB HELLO")
+                    }
                     BridgeMessageKind.PING -> {
                         if (message.payload.isNotEmpty()) throw IOException("PING payload must be empty")
                         BridgeProtocol.write(output, BridgeMessageKind.PONG)
-                        updateBinderState("connected")
                     }
                     BridgeMessageKind.FRAME -> {
-                        binder.dispatchFrame(message.payload)
+                        // Frame reception is accepted; UI rendering is wired separately.
+                        Log.d(TAG, "Received frame payload bytes=${message.payload.size}")
                     }
                     BridgeMessageKind.CLOSE -> {
                         if (message.payload.isNotEmpty()) throw IOException("CLOSE payload must be empty")
                         BridgeProtocol.write(output, BridgeMessageKind.CLOSE)
                         break
                     }
-                    BridgeMessageKind.INPUT,
-                    BridgeMessageKind.RESIZE,
-                    BridgeMessageKind.CLIPBOARD -> {
-                        // Framing is accepted; routing to Android input/clipboard is not wired yet.
-                        Log.d(TAG, "Received framed control message kind=${message.kind}")
-                    }
-                    else -> throw IOException("Unexpected message kind ${message.kind}")
+                    else -> throw IOException("Unexpected TXWB message kind ${message.kind}")
                 }
             }
         } catch (error: IOException) {
-            if (!session.closed.get()) Log.i(TAG, "Bridge session ended: ${error.message}")
+            if (!stopping.get()) Log.w(TAG, "Socket session ended: ${error.message}")
         } finally {
-            session.close()
-            synchronized(lock) {
-                if (activeSession === session) {
-                    activeSession = null
-                    updateBinderState("disconnected")
-                }
+            closeQuietly(client)
+            synchronized(this) {
+                if (activeClient === client) activeClient = null
             }
         }
     }
 
-    private fun updateBinderState(state: String) {
-        getSharedPreferences("termux_binder_session", MODE_PRIVATE).edit()
-            .putString("state", state)
-            .putLong("updated_at", System.currentTimeMillis())
-            .apply()
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        stopping.set(true)
+        closeQuietly(activeClient)
+        activeClient = null
+        closeQuietly(server)
+        server = null
+        super.onDestroy()
+    }
+
+    private fun closeQuietly(closeable: Closeable?) {
+        try { closeable?.close() } catch (_: IOException) {}
     }
 
     companion object {
-        const val DESCRIPTOR = "org.techwithkaushik.termuxxwayland.IBridgeSession"
-        const val TRANSACTION_OPEN_SESSION = IBinder.FIRST_CALL_TRANSACTION
-        const val PROTOCOL_VERSION = 1
-        const val TERMUX_PACKAGE = "com.termux"
         private const val TAG = "TermuxXWayland"
+        private const val SOCKET_NAME = "termux-xwayland-control.sock"
     }
 }
