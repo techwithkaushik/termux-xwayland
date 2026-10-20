@@ -99,6 +99,7 @@ class MainActivity : Activity() {
     private val statusPollRunnable = object : Runnable {
         override fun run() {
             pollTermuxServerStatus()
+            refreshTermuxControlStatus()
             statusPollHandler.postDelayed(this, 2000)
         }
     }
@@ -126,9 +127,12 @@ class MainActivity : Activity() {
                 bindService(Intent(this, BridgeSessionService::class.java), binderServiceConnection, Context.BIND_AUTO_CREATE)
             }.getOrDefault(false)
         }
+        statusPollHandler.removeCallbacks(statusPollRunnable)
+        statusPollHandler.post(statusPollRunnable)
     }
 
     override fun onStop() {
+        statusPollHandler.removeCallbacks(statusPollRunnable)
         localBridgeBinder?.frameListener = null
         localBridgeBinder = null
         if (binderServiceBound) {
