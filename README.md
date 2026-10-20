@@ -12,7 +12,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 - **Packaging:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
 - **Transport security:** no production TCP listener is used. Binder caller UID checks and the session FD handoff are required.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
-- **Remaining:** on-device verification of loopback connection and actual frames, native Wayland capture/surface integration, Android touch/keyboard forwarding, resize/clipboard routing and reconnect handling.
+- **Remaining:** on-device verification of Binder session and actual frames, native Wayland capture/surface integration, Android touch/keyboard forwarding, resize/clipboard routing and reconnect handling.
 
 ## Build and run
 
