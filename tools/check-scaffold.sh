@@ -56,7 +56,8 @@ grep -q 'ACTION_OPEN_SESSION' termux-package/src/BridgeClient.java
 ! grep -q 'context.bindService' termux-package/src/BridgeClient.java
 grep -q 'interfaceDescriptor' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
 grep -q 'android:exported="false"' android-app/src/main/AndroidManifest.xml
-grep -q 'XWayland frame capture: sending recent frames' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+grep -q 'Native Wayland frame capture: unavailable (native helper not installed)' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+grep -q 'FFmpeg capture fallback: disabled' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'termux-xwayland x11' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
 
