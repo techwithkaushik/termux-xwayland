@@ -1,35 +1,41 @@
-# ADR 0002: Binder client process registration
+# ADR 0002: Termux:X11-style Binder bootstrap
 
-- Status: Blocked pending an approved transport/launch constraint change
+- Status: Implemented; target-device validation pending
 - Date: 2026-10-20
 
 ## Context
 
-The Termux-side client is launched with `/system/bin/app_process` under the existing Termux UID. It constructs a synthetic `ActivityThread` and `ContextImpl` from Termux's `ApplicationInfo`, then calls `Context.bindService()` on the Android host's `BridgeSessionService`.
+The original Termux-side client was launched with `/system/bin/app_process` under the existing Termux UID. It constructed a synthetic `ActivityThread` and `ContextImpl` from Termux's `ApplicationInfo`, then called `Context.bindService()` on the Android host's `BridgeSessionService`.
 
-On the target Android 10 / MIUI device, this fails before the host service receives a request:
+On Android 10 / MIUI, that failed before the host service received a request:
 
 ```
 SecurityException: Unable to find app for caller android.app.IApplicationThread...
 when binding service ...BridgeSessionService
 ```
 
-Android's ActivityManager resolves the caller's `IApplicationThread` to a registered process record before accepting a service bind. Constructing an `ActivityThread` and application context reflectively does not register that process with ActivityManager. The platform implementation explicitly throws this exception when no process record is found.
+ActivityManager resolves the caller's `IApplicationThread` to a registered process record before accepting a service bind. Creating an `ActivityThread` reflectively does not register the `app_process` process.
 
 ## Decision
 
-Do not treat this Binder route as a working transport and do not add frame/input streaming on top of it. Do not retry with `ActivityThread.systemMain()/getSystemContext()`; that does not register the caller and triggers a separate MIUI theme-resource failure on this device.
+Adapt the established Termux:X11 `CmdEntryPoint` pattern instead of binding a service from `app_process`:
 
-Keep the current security constraints: no root, SELinux weakening, TCP/localhost fallback, Termux `RUN_COMMAND` dependency, or separately installable companion APK. The existing Android host APK is not being removed or replaced.
+1. Construct the platform context using the Unsafe-allocated `ActivityThread` approach used by Termux:X11.
+2. Send a package-targeted broadcast carrying a Binder endpoint to the existing host APK.
+3. Validate the broadcast sender UID against the installed `com.termux` package before forwarding the Binder to the in-app session service.
+4. The host service calls back into the Termux-side Binder endpoint; the endpoint checks the host UID and transfers one end of a connected socket pair through Binder.
+5. Keep the session protocol on the transferred FD; do not use TCP, root, SELinux weakening, or a separate companion APK.
 
-## Required next step
+The host session service is non-exported. The receiver is exported only because the existing Termux process must notify it; it rejects senders whose UID does not map to `com.termux`.
 
-A Binder-based design must originate from a real, ActivityManager-registered Android application process, or use another explicitly approved IPC bootstrap. The current constraints provide no registered Termux-side Android process and the attempted cross-UID abstract AF_UNIX route already failed with `EACCES` on the target device. Therefore no compliant, proven Binder bootstrap is available yet.
+## Validation
 
-Before implementing a new transport, validate a minimal end-to-end capability probe on Android 10 and confirm the caller identity and authorization boundary. A green CI build is not device IPC proof.
+- Static scaffold checks now assert that the receiver is present and the client does not call `Context.bindService()`.
+- GitHub Actions must compile the Java DEX and Android Kotlin service/receiver.
+- Android 10 / MIUI device testing is still required to prove the broadcast is delivered, the Binder callback succeeds, and the FD session reaches PING/PONG. CI success alone is not proof of end-to-end operation.
 
-## Validation evidence
+## Reference implementation
 
-- Device log: `bindService failed: java.lang.SecurityException: Unable to find app for caller ...`
-- Android framework source: `ActiveServices.bindServiceLocked` rejects a caller when `getRecordForApp(caller)` returns null: https://android.googlesource.com/platform/frameworks/base/+/oreo-release/services/core/java/com/android/server/am/ActiveServices.java
-- This is a process-registration failure, not a service export/permission tweak or a frame-capture issue.
+- [Termux:X11 CmdEntryPoint](https://github.com/termux/termux-x11/blob/master/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java)
+- [Termux:X11 LorieApp](https://github.com/termux/termux-x11/blob/master/lorie/src/main/java/com/termux/x11/LorieApp.java)
+- [Termux:X11 Loader](https://github.com/termux/termux-x11/blob/master/shell-loader/src/main/java/com/termux/x11/Loader.java)
