@@ -202,19 +202,7 @@ class MainActivity : Activity() {
                 statusDescription.text = "Run termux-xwayland start in Termux. The host will open when the Wayland socket is ready."
             }
         }
-        if (::binderStatusDescription.isInitialized) {
-            val binderState = getSharedPreferences("termux_binder_session", MODE_PRIVATE)
-                .getString("state", "disconnected")
-            binderStatusDescription.text = when (binderState) {
-                "connecting" -> "Binder transport: connecting; waiting for an authorized Termux PING/PONG."
-                "connected" -> if (binderFrameCount > 0L) {
-                    "Binder transport: active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
-                } else {
-                    "Binder transport: active; Termux UID authorization and PING/PONG are confirmed. Waiting for XWayland frames."
-                }
-                else -> "Binder transport: disconnected; no active authenticated Binder heartbeat."
-            }
-        }
+
     }
 
     private fun buildScreen(): View {
