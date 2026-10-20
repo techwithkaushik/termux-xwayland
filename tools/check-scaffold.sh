@@ -19,6 +19,10 @@ test -f tools/probe-android-ipc-prereqs.sh
 bash -n tools/probe-android-ipc-prereqs.sh
 test -f tools/probe-weston-headless.sh
 test -f tools/probe-weston-capture.sh
+test -f tools/probe-weston-capture-build.sh
+bash -n tools/probe-weston-capture-build.sh
+test -f docs/weston-capture-build-gate.md
+grep -q 'privileged' docs/weston-capture-build-gate.md
 bash -n tools/probe-weston-capture.sh
 test -f docs/weston-headless-probe.md
 bash -n tools/probe-weston-headless.sh
