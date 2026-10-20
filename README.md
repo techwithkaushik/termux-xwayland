@@ -8,7 +8,7 @@ A standalone Android display host for graphical sessions launched from Termux. T
 
 - Android host: Kotlin and Android Views, with a socket client and bounded protocol decoder.
 - Native endpoint: Rust single-client abstract AF_UNIX stream socket prototype for synthetic-frame diagnostics. Separately, the Termux CLI uses a loopback-only read-only status monitor; it is not a desktop transport.
-- Binder probe: a separately installed companion APK exposes a signature-permission-protected Binder service; the display host verifies a bounded 16 KiB echo and distinct app UIDs. The 16 KiB probe has been confirmed passing on the target phone. This is only a host-to-companion capability test, not a Termux connection or streaming transport.
+- The display host APK is the only required Android APK. A separate Binder companion APK is not required for the current Termux-to-host live status workflow.
 - Termux integration: run `termux-xwayland start`; once Weston creates its Wayland socket, the CLI opens the Android host with a session ID and a loopback status port. The host displays “Termux-Companion connection received” and polls whether Weston is still running. The read-only status endpoint binds to `127.0.0.1` and carries no frame/input data. No dependency on Termux RUN_COMMAND or `allow-external-apps=true`.
 - Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
@@ -23,7 +23,7 @@ tools/capture-x11-frame.sh is an optional, one-shot debugging helper only. FFmpe
 
 Android shell build (Gradle 8.9 and JDK 17):
 
-    gradle :android-app:assembleDebug :ipc-companion:assembleDebug
+    gradle :android-app:testDebugUnitTest :android-app:assembleDebug
 
 Native protocol/server checks from native/compositor:
 
@@ -32,13 +32,12 @@ Native protocol/server checks from native/compositor:
     cargo check
     cargo build --release
 
-See docs/termux-workflow.md for the diagnostic server workflow, docs/termux-companion-contract.md for the three-part integration contract, and docs/termux-deb-install.md for building/installing the initial Termux DEB package. Use feat/phase1-android-host until the PR is merged.
+See docs/termux-workflow.md for the diagnostic server workflow and docs/termux-deb-install.md for building/installing the initial Termux DEB package. Use feat/phase1-android-host until the PR is merged.
 
 ## Architecture and next milestones
 
 1. Buildable Android host and CI. **Complete.**
 2. Bounded bridge framing and protocol tests. **Implemented; cross-UID Android device connection fails with EACCES and is not a supported transport yet.**
-3. Binder capability probe implemented for host ↔ companion; install both APKs signed with the same certificate and verify on Android 10. This does not yet prove Termux-side access or frame streaming.
 4. Build a real Wayland compositor and render one real Wayland client surface in Android.
 5. Integrate upstream XWayland and verify a known X11 test client.
 6. Add input, resize, clipboard and lifecycle handling.
@@ -52,7 +51,6 @@ See docs/xwayland-integration-plan.md for the detailed process topology, rootful
 - The abstract AF_UNIX socket is diagnostic only; do not assume it works across Android UIDs.
 - The host handoff contains only a random session ID and the monitor port; it does not export a secret token. The status endpoint reports only whether this session's Wayland socket is running.
 - A token cannot override Android IPC authorization; the connection must be permitted before authentication can happen.
-- The Binder probe service is guarded by a signature-level permission. Install the companion APK first, then the display-host APK, and sign both with the same certificate. Do not treat this test as evidence that the existing Termux app can bind to this service.
 - Do not use TCP/localhost as a desktop-frame or input transport to bypass Android SELinux. The loopback status endpoint is read-only and carries no desktop data.
 - Do not disable SELinux or require root.
 - Do not assume GPU acceleration, DMA-BUF, zero-copy transport, or ARM32 dependency availability; test each explicitly.

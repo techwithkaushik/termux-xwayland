@@ -33,6 +33,7 @@ import android.widget.TextView
 import android.widget.Toast
 import java.nio.ByteBuffer
 import java.io.IOException
+import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.io.BufferedReader
@@ -51,6 +52,7 @@ class MainActivity : Activity() {
     private val page = Color.rgb(246, 248, 252)
     private val SOCKET_PREFIX = "termux_xwayland_"
     private companion object {
+        const val STATUS_PORT = 38470
         const val BINDER_PROBE_DESCRIPTOR = "org.techwithkaushik.termuxxwayland.ipc.PROBE"
         const val BINDER_PROBE_TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 17
         const val BINDER_PROBE_PAYLOAD_BYTES = 16 * 1024
@@ -78,6 +80,10 @@ class MainActivity : Activity() {
     private lateinit var tcpProbeDescription: TextView
     private lateinit var tcpProbeButton: Button
     @Volatile private var tcpProbeRunning = false
+    private lateinit var tmpReadProbeTitle: TextView
+    private lateinit var tmpReadProbeDescription: TextView
+    private lateinit var tmpReadProbeButton: Button
+    @Volatile private var tmpReadProbeRunning = false
     private lateinit var framedProbeTitle: TextView
     private lateinit var framedProbeDescription: TextView
     private lateinit var framedProbeButton: Button
@@ -100,34 +106,27 @@ class MainActivity : Activity() {
         refreshTermuxControlStatus()
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleTermuxIntent(intent)
-        refreshTermuxControlStatus()
-    }
-
     override fun onResume() {
         super.onResume()
         val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
-        val sessionId = prefs.getString("session_id", "").orEmpty()
-        val port = prefs.getInt("monitor_port", -1)
-        if (sessionId.matches(Regex("^[a-f0-9]{32}$")) && port in 30000..49999) {
-            // Persisted "running" is never trusted across Activity/process restarts.
-            prefs.edit().putString("state", "checking_status").apply()
-            refreshTermuxControlStatus()
-            statusPollHandler.removeCallbacks(statusPollRunnable)
-            pollTermuxServerStatus()
-            statusPollHandler.postDelayed(statusPollRunnable, 2000)
-        } else {
-            prefs.edit().putString("state", "disconnected").apply()
-            refreshTermuxControlStatus()
-        }
+        prefs.edit().putInt("monitor_port", STATUS_PORT)
+            .putString("state", "checking_status").apply()
+        refreshTermuxControlStatus()
+        statusPollHandler.removeCallbacks(statusPollRunnable)
+        pollTermuxServerStatus()
+        statusPollHandler.postDelayed(statusPollRunnable, 2000)
     }
 
     override fun onPause() {
         statusPollHandler.removeCallbacks(statusPollRunnable)
         super.onPause()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleTermuxIntent(intent)
+        refreshTermuxControlStatus()
     }
 
     private fun handleTermuxIntent(intent: Intent?) {
@@ -136,9 +135,9 @@ class MainActivity : Activity() {
         val sessionId = uri.getQueryParameter("session_id").orEmpty()
         val serverState = uri.getQueryParameter("server").orEmpty()
         val port = uri.getQueryParameter("port")?.toIntOrNull() ?: -1
-        if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
-            serverState != "running" ||
-            port !in 30000..49999) {
+        if ((!sessionId.matches(Regex("^[a-f0-9]{32}$")) && sessionId.isNotEmpty()) ||
+            serverState !in setOf("running", "starting") ||
+            (port !in 30000..49999 && port != STATUS_PORT)) {
             getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
                 .clear()
                 .putString("state", "invalid_request").apply()
@@ -148,7 +147,7 @@ class MainActivity : Activity() {
             .putString("state", "request_received")
             .putString("session_id", sessionId)
             .putString("server_state", serverState)
-            .putInt("monitor_port", port)
+            .putInt("monitor_port", STATUS_PORT)
             .putLong("received_at", System.currentTimeMillis())
             .apply()
         pollTermuxServerStatus()
@@ -157,22 +156,25 @@ class MainActivity : Activity() {
     private fun pollTermuxServerStatus() {
         val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
         val sessionId = prefs.getString("session_id", "").orEmpty()
-        val port = prefs.getInt("monitor_port", -1)
-        if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
-            port !in 30000..49999 ||
-            !statusPollInFlight.compareAndSet(false, true)) return
+        val port = STATUS_PORT
+        if (!statusPollInFlight.compareAndSet(false, true)) return
 
         Thread({
             var response: String? = null
             try {
-                Socket().use { socket ->
+                LocalSocket().use { socket ->
+                    socket.connect(
+                        LocalSocketAddress(
+                            "/data/data/com.termux/files/usr/tmp/termux-xwayland-control.sock",
+                            LocalSocketAddress.Namespace.FILESYSTEM
+                        )
+                    )
                     socket.soTimeout = 1500
-                    socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
-                    val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.US_ASCII)
-                    writer.write("STATUS $sessionId\n")
+                    val writer = OutputStreamWriter(socket.outputStream, Charsets.US_ASCII)
+                    writer.write("STATUS\n")
                     writer.flush()
                     response = BufferedReader(
-                        InputStreamReader(socket.getInputStream(), Charsets.US_ASCII)
+                        InputStreamReader(socket.inputStream, Charsets.US_ASCII)
                     ).readLine()
                 }
             } catch (_: IOException) {
@@ -183,11 +185,9 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val current = getSharedPreferences("termux_control_session", MODE_PRIVATE)
-                if (current.getString("session_id", "").orEmpty() != sessionId) return@runOnUiThread
                 val nextState = when (response) {
-                    "RUNNING $sessionId" -> "server_running"
-                    "STOPPED $sessionId" -> "server_stopped"
-                    "DENIED" -> "session_mismatch"
+                    "RUNNING" -> "server_running"
+                    "STOPPED" -> "server_stopped"
                     else -> "server_unreachable"
                 }
                 if (current.getString("state", "") != nextState) {
@@ -204,12 +204,12 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("termux_control_session", MODE_PRIVATE)
         when (prefs.getString("state", "disconnected")) {
             "request_received", "checking_status" -> {
-                statusTitle.text = "Checking Termux server…"
-                statusDescription.text = "Checking the current session now. A previously saved running status is not treated as live until the status endpoint replies."
+                statusTitle.text = "Termux-Companion connection received"
+                statusDescription.text = "Checking the current Wayland server directly. Saved status is not trusted; this check also works after clearing or reinstalling the host app."
             }
             "server_running" -> {
                 statusTitle.text = "Termux-Companion connection received"
-                statusDescription.text = "Connected to the Termux status endpoint. Weston and its Wayland socket are confirmed running. Live desktop frames and input are still pending."
+                statusDescription.text = "Connected to the Termux filesystem control socket. Weston and its Wayland socket are confirmed running. Live desktop frames and input are still pending."
             }
             "server_stopped" -> {
                 statusTitle.text = "Termux server stopped"
@@ -217,7 +217,7 @@ class MainActivity : Activity() {
             }
             "server_unreachable" -> {
                 statusTitle.text = "Termux server not reachable"
-                statusDescription.text = "The local status endpoint did not respond. Termux may be stopped, the monitor may have exited, or the session may have expired."
+                statusDescription.text = "The Termux filesystem control socket did not respond. Termux may be stopped, the monitor may have exited, or the session may have expired."
             }
             "session_mismatch" -> {
                 statusTitle.text = "Termux session mismatch"
@@ -332,6 +332,25 @@ class MainActivity : Activity() {
         content.addView(binderFdProbeDescription, margins(bottom = 8))
         binderFdProbeButton = actionButton("Test Binder file descriptor handoff") { runBinderFdProbe() }
         content.addView(binderFdProbeButton, margins(bottom = 16))
+
+        content.addView(label("Termux tmp direct-file access test", 20, ink, true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        content.addView(infoCard(
+            "Direct filesystem probe • Termux private app directory",
+            "Checks whether Android Host can read a known test file directly from Termux usr/tmp. This does not use TCP or a content provider. Prepare the file in Termux first, then tap Test."
+        ), margins(bottom = 10))
+        tmpReadProbeTitle = label("Not tested", 17, ink, true).apply {
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        tmpReadProbeDescription = label(
+            "In Termux run: termux-xwayland prepare-file-probe",
+            13, muted, false
+        )
+        content.addView(tmpReadProbeTitle)
+        content.addView(tmpReadProbeDescription, margins(bottom = 8))
+        tmpReadProbeButton = actionButton("Test direct read from Termux tmp") { runTmpReadProbe() }
+        content.addView(tmpReadProbeButton, margins(bottom = 16))
 
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
@@ -768,6 +787,55 @@ class MainActivity : Activity() {
 
     private fun unbindProbeForFd(connection: ServiceConnection) {
         try { unbindService(connection) } catch (_: Exception) { }
+    }
+
+    private fun runTmpReadProbe() {
+        if (tmpReadProbeRunning) return
+        tmpReadProbeRunning = true
+        tmpReadProbeButton.isEnabled = false
+        tmpReadProbeTitle.text = "Attempting direct file read…"
+        tmpReadProbeDescription.text = "Reading /data/data/com.termux/files/usr/tmp/termux-xwayland-host-read-probe.txt from the Android Host process."
+        Thread({
+            val result = try {
+                val probePath = "/data/data/com.termux/files/usr/tmp/termux-xwayland-host-read-probe.txt"
+                val probe = File(probePath)
+                if (!probe.exists()) {
+                    val parent = probe.parentFile
+                    val detail = when {
+                        parent == null -> "Parent directory is unknown."
+                        !parent.exists() -> "Termux tmp directory is not visible to this app."
+                        !parent.canRead() -> "Termux tmp directory exists but is not readable."
+                        else -> "Directory is visible, but the probe file is absent."
+                    }
+                    throw IOException(
+                        "Cannot see $probePath. $detail In Termux run: " +
+                            "echo PREFIX=\\\$PREFIX; ls -ld \\\$PREFIX/tmp; " +
+                            "ls -l \\\$PREFIX/tmp/termux-xwayland-host-read-probe.txt; " +
+                            "termux-xwayland prepare-file-probe. " +
+                            "Android may report an inaccessible cross-app path as missing."
+                    )
+                }
+                if (!probe.isFile) {
+                    throw IOException("Probe path exists but is not a regular file: $probePath")
+                }
+                if (!probe.canRead()) {
+                    throw IOException("Probe file is visible but not readable by Android Host: $probePath")
+                }
+                val actual = probe.readText(Charsets.UTF_8).trim()
+                if (actual != "TERMUX_XWAYLAND_HOST_FILE_READ_PROBE_V1") {
+                    throw IOException("File was opened but its contents did not match the expected probe token")
+                }
+                "PASS • Android Host read the exact probe token directly from Termux tmp. File permissions and parent-directory traversal allowed access on this device."
+            } catch (error: Exception) {
+                "FAIL • ${error.javaClass.simpleName}: ${error.message ?: "read failed"}. Unix mode bits alone may not bypass Android app sandbox or SELinux restrictions."
+            }
+            runOnUiThread {
+                tmpReadProbeRunning = false
+                tmpReadProbeButton.isEnabled = true
+                tmpReadProbeTitle.text = if (result.startsWith("PASS")) "Direct tmp read passed" else "Direct tmp read failed"
+                tmpReadProbeDescription.text = result
+            }
+        }, "termux-tmp-file-read-probe").start()
     }
 
     private fun runTcpProbe() {
