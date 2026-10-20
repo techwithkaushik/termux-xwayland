@@ -1,6 +1,6 @@
 # Local bridge protocol v1
 
-**Status:** bounded framing, authenticated abstract Unix-domain socket transport, one synthetic RGBA test frame, and Android-side frame decoding/rendering are implemented. This remains a transport/rendering smoke test; the test pattern is not desktop output. Wayland compositor integration, real frame capture, input forwarding and production session brokering are not implemented.
+**Status:** bounded TXWB framing, Termux-authorized Binder IPC, socket file-descriptor handoff, optional X11 frame capture, and Android-side frame decoding/rendering are implemented. Native Wayland capture and Android input forwarding are not implemented.
 
 ## Transport and security
 
