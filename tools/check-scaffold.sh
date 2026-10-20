@@ -49,7 +49,7 @@ grep -q 'BridgeMessageKind.FRAME' android-app/src/main/java/org/techwithkaushik/
 grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
 grep -q 'ACTION_OPEN_SESSION' termux-package/src/BridgeClient.java
 ! grep -q 'context.bindService' termux-package/src/BridgeClient.java
-grep -q 'getSendingUid' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
+grep -q 'interfaceDescriptor' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
 grep -q 'android:exported="false"' android-app/src/main/AndroidManifest.xml
 grep -q 'XWayland frame capture: sending recent frames' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'termux-xwayland x11' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
