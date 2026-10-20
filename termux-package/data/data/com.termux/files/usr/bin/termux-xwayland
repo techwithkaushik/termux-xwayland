@@ -295,10 +295,10 @@ start_binder_session() {
   local display=""
   if display="$(resolve_xwayland_display)"; then
     printf 'XWayland display detected: %s\n' "$display"
-    nohup env DISPLAY="$display" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+    nohup env DISPLAY="$display" WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   else
     printf 'XWayland display not detected; Binder session will start without frame capture.\n'
-    nohup env -u DISPLAY CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+    nohup env -u DISPLAY WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   fi
   local pid=$! attempt
   printf '%s\n' "$pid" > "$SESSION_PID_FILE"
