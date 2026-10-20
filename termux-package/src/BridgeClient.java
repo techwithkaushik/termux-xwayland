@@ -135,26 +135,67 @@ public final class BridgeClient {
 
     private static Context createTermuxContext() throws Exception {
         /*
-         * app_process already runs with the invoking Termux UID. Do not create
-         * a package context through ActivityThread.systemMain(): on some MIUI
-         * Android 10 builds that path initializes the system theme compatibility
-         * loader and crashes when its optional theme_compatibility.xml is absent.
-         *
-         * The system context is used only as a Context facade for PackageManager
-         * lookup and bindService. Binder still sees this process's real Termux UID;
-         * the host independently authorizes that UID before returning a session FD.
+         * Do not call ActivityThread.systemMain()/getSystemContext() here.
+         * MIUI Android 10 initializes ThemeCompatibilityLoader on that path and
+         * can throw when /data/system/theme_config/theme_compatibility.xml is
+         * absent. Build an app context directly from Termux's ApplicationInfo.
          */
         Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-        Method systemMain = activityThreadClass.getDeclaredMethod("systemMain");
-        systemMain.setAccessible(true);
-        Object activityThread = systemMain.invoke(null);
-        Method getSystemContext = activityThreadClass.getDeclaredMethod("getSystemContext");
-        getSystemContext.setAccessible(true);
-        Object value = getSystemContext.invoke(activityThread);
-        if (!(value instanceof Context)) {
-            throw new IllegalStateException("ActivityThread returned no Android system context");
+        Object activityThread = activityThreadClass.getDeclaredConstructor().newInstance();
+
+        Class<?> appGlobalsClass = Class.forName("android.app.AppGlobals");
+        Method getPackageManager = appGlobalsClass.getDeclaredMethod("getPackageManager");
+        getPackageManager.setAccessible(true);
+        Object packageManagerBinder = getPackageManager.invoke(null);
+        if (packageManagerBinder == null) {
+            throw new IllegalStateException("Android package manager is unavailable");
         }
-        return (Context) value;
+
+        Class<?> iPackageManagerClass = Class.forName("android.content.pm.IPackageManager");
+        Method getApplicationInfo = null;
+        for (Method method : iPackageManagerClass.getMethods()) {
+            if ("getApplicationInfo".equals(method.getName())
+                    && method.getParameterTypes().length == 3
+                    && method.getParameterTypes()[0] == String.class) {
+                getApplicationInfo = method;
+                break;
+            }
+        }
+        if (getApplicationInfo == null) {
+            throw new NoSuchMethodException("IPackageManager.getApplicationInfo(String, int, int)");
+        }
+        Object appInfo = getApplicationInfo.invoke(
+            packageManagerBinder, TERMUX_PACKAGE, 0, android.os.Process.myUid() / 100000
+        );
+        if (appInfo == null) {
+            throw new PackageManager.NameNotFoundException(TERMUX_PACKAGE);
+        }
+
+        Class<?> compatibilityInfoClass = Class.forName("android.content.res.CompatibilityInfo");
+        Object compatibilityInfo = compatibilityInfoClass.getField("DEFAULT_COMPATIBILITY_INFO").get(null);
+        Method getPackageInfoNoCheck = activityThreadClass.getDeclaredMethod(
+            "getPackageInfoNoCheck",
+            Class.forName("android.content.pm.ApplicationInfo"),
+            compatibilityInfoClass
+        );
+        getPackageInfoNoCheck.setAccessible(true);
+        Object loadedApk = getPackageInfoNoCheck.invoke(activityThread, appInfo, compatibilityInfo);
+
+        Class<?> contextImplClass = Class.forName("android.app.ContextImpl");
+        Method createAppContext = contextImplClass.getDeclaredMethod(
+            "createAppContext", activityThreadClass, Class.forName("android.app.LoadedApk")
+        );
+        createAppContext.setAccessible(true);
+        Object value = createAppContext.invoke(null, activityThread, loadedApk);
+        if (!(value instanceof Context)) {
+            throw new IllegalStateException("Android did not create a Termux application context");
+        }
+        Context context = (Context) value;
+        if (!TERMUX_PACKAGE.equals(context.getPackageName())) {
+            throw new SecurityException("Android returned an unexpected package context: "
+                + context.getPackageName());
+        }
+        return context;
     }
 
     private static String findHostPackage(Context context) {
