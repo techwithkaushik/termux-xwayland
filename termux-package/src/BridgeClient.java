@@ -62,6 +62,16 @@ public final class BridgeClient {
             Process capture = activeFrameCapture;
             if (capture != null) capture.destroy();
         }, "termux-xwayland-capture-cleanup"));
+        // ActivityThread/ContextImpl may construct Handlers during initialization.
+        // Prepare the main looper before constructing any Android app context.
+        try {
+            if (Looper.myLooper() == null) Looper.prepareMainLooper();
+        } catch (RuntimeException error) {
+            System.err.println("BINDER_CLIENT_ERROR: cannot prepare Android looper: " + error);
+            System.exit(2);
+            return;
+        }
+
         final Context context;
         try {
             context = createTermuxContext();
@@ -80,13 +90,6 @@ public final class BridgeClient {
             return;
         }
 
-        try {
-            if (Looper.myLooper() == null) Looper.prepareMainLooper();
-        } catch (RuntimeException error) {
-            System.err.println("BINDER_CLIENT_ERROR: cannot prepare Android looper: " + error);
-            System.exit(2);
-            return;
-        }
         final Handler mainHandler = new Handler(Looper.getMainLooper());
         final AtomicBoolean finished = new AtomicBoolean(false);
         final String hostPackage = findHostPackage(context);
