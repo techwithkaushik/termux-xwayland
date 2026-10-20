@@ -92,7 +92,8 @@ class BridgeSessionService : Service() {
     private val binder = BridgeBinder()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val remoteClient = intent?.extras?.getBinder(BridgeSessionReceiver.EXTRA_REMOTE_CLIENT)
+        val remoteClient = intent?.extras?.getBundle(BridgeSessionReceiver.EXTRA_REMOTE_BUNDLE)
+            ?.getBinder(BridgeSessionReceiver.EXTRA_REMOTE_CLIENT)
         if (remoteClient != null) {
             Thread({ openRemoteClientSession(remoteClient) }, "txw-open-remote-session").apply {
                 isDaemon = true
@@ -108,6 +109,12 @@ class BridgeSessionService : Service() {
      * unregistered app_process ActivityThread.
      */
     private fun openRemoteClientSession(remoteClient: IBinder) {
+        synchronized(lock) {
+            if (activeSession != null) {
+                Log.w(TAG, "Ignoring new Binder callback while a session is already active")
+                return
+            }
+        }
         val request = Parcel.obtain()
         val response = Parcel.obtain()
         var hostEnd: ParcelFileDescriptor? = null
