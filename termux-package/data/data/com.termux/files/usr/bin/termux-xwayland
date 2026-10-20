@@ -215,25 +215,25 @@ stop_binder_session() {
 start_binder_session() {
   prepare_runtime_dir
   if [ ! -s "$CLIENT_DEX" ]; then
-    printf 'termux-xwayland: Binder client DEX missing: %s. Install the latest DEB package.\\n' "$CLIENT_DEX" >&2
+    printf 'termux-xwayland: Binder client DEX missing: %s. Install the latest DEB package.\n' "$CLIENT_DEX" >&2
     return 1
   fi
   if [ ! -x "$APP_PROCESS_BIN" ]; then
-    printf 'termux-xwayland: Android app_process is unavailable: %s\\n' "$APP_PROCESS_BIN" >&2
+    printf 'termux-xwayland: Android app_process is unavailable: %s\n' "$APP_PROCESS_BIN" >&2
     return 1
   fi
   if binder_session_is_running; then
-    printf 'Binder transport: already connected\\n'
+    printf 'Binder transport: already connected\n'
     return 0
   fi
   stop_binder_session
   : > "$SESSION_LOG_FILE"
   nohup env CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   local pid=$! attempt
-  printf '%s\\n' "$pid" > "$SESSION_PID_FILE"
+  printf '%s\n' "$pid" > "$SESSION_PID_FILE"
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
     if grep -Fq 'SESSION_CONNECTED' "$SESSION_LOG_FILE" 2>/dev/null; then
-      printf 'Binder transport: connected (persistent Binder FD session)\\n'
+      printf 'Binder transport: connected (persistent Binder FD session)\n'
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -245,7 +245,7 @@ start_binder_session() {
   done
   tail -n 30 "$SESSION_LOG_FILE" 2>/dev/null || true
   stop_binder_session
-  printf 'termux-xwayland: Binder session did not connect within 12 seconds.\\n' >&2
+  printf 'termux-xwayland: Binder session did not connect within 12 seconds.\n' >&2
   return 1
 }
 
