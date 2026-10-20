@@ -54,7 +54,12 @@ check_grep 'logs) show_logs' "$script" "diagnostic logs command"
 check_grep 'show_logs() {' "$script" "diagnostic log reader"
 check_grep 'WESTON_CONSOLE_LOG_FILE="$RUNTIME_DIR/weston-console.log"' "$script" "Weston startup stderr log path"
 check_grep '2>&1 &' "$script" "Weston stdout and stderr are retained"
-check_grep 'FRAME_CAPTURE_EXITED' "$root/termux-package/src/BridgeClient.java" "frame capture exit diagnostics"
+check_grep 'FRAME_CAPTURE_STOPPED' "$root/termux-package/src/BridgeClient.java" "frame capture stop diagnostics"
+check_grep 'FRAME_CAPTURE_UNAVAILABLE reason=native_wayland_capture_helper_not_installed' "$root/termux-package/src/BridgeClient.java" "native capture helper fails closed when missing"
+if grep -Fq 'ffmpeg' "$root/termux-package/src/BridgeClient.java"; then
+  echo "FAIL: Binder frame capture must not depend on FFmpeg." >&2
+  exit 1
+fi
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
