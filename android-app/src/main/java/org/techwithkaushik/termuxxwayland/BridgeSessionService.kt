@@ -129,7 +129,8 @@ class BridgeSessionService : Service() {
             response.recycle()
         }
 
-        val session = Session(hostEnd)
+        val openedDescriptor = hostEnd ?: return
+        val session = Session(openedDescriptor)
         synchronized(lock) {
             activeSession?.close()
             activeSession = session
