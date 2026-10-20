@@ -237,6 +237,25 @@ stop_binder_session() {
   fi
   rm -f "$SESSION_PID_FILE"
 }
+resolve_xwayland_display() {
+  if [ -n "${TERMUX_XWAYLAND_DISPLAY:-}" ]; then
+    printf '%s\\n' "$TERMUX_XWAYLAND_DISPLAY"
+    return 0
+  fi
+  # Weston starts its Wayland socket before Xwayland is necessarily ready.
+  # Read the display number from Weston's own log instead of assuming :0.
+  local attempt display
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    display="$(sed -n 's/.*xserver listening on display :\\([0-9][0-9]*\\).*/:\\1/p' "$LOG_FILE" 2>/dev/null | tail -n 1)"
+    if [[ "$display" =~ ^:[0-9]+$ ]]; then
+      printf '%s\\n' "$display"
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
 start_binder_session() {
   prepare_runtime_dir
   if [ ! -s "$CLIENT_DEX" ]; then
@@ -253,7 +272,14 @@ start_binder_session() {
   fi
   stop_binder_session
   : > "$SESSION_LOG_FILE"
-  nohup env DISPLAY="${TERMUX_XWAYLAND_DISPLAY:-:0}" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+  local display=""
+  if display="$(resolve_xwayland_display)"; then
+    printf 'XWayland display detected: %s\\n' "$display"
+    nohup env DISPLAY="$display" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+  else
+    printf 'XWayland display not detected; Binder session will start without frame capture.\\n'
+    nohup env -u DISPLAY CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+  fi
   local pid=$! attempt
   printf '%s\n' "$pid" > "$SESSION_PID_FILE"
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
