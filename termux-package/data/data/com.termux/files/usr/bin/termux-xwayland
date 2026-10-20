@@ -360,7 +360,9 @@ start_session() {
   # Weston starts headless; without an X11 client the Android host has no
   # useful desktop pixels to display. Start xterm automatically when available.
   if command -v xterm >/dev/null 2>&1; then
-    local x11_socket="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix/X0"
+    local x11_number="${TERMUX_XWAYLAND_DISPLAY:-:0}"
+    x11_number="${x11_number#:}"
+    local x11_socket="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix/X${x11_number}"
     local x11_attempt
     for x11_attempt in 1 2 3 4 5 6 7 8 9 10; do
       [ -S "$x11_socket" ] && break
