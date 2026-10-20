@@ -185,9 +185,9 @@ public final class BridgeClient {
 
             while (true) {
                 writeFrame(output, PING, new byte[0]);
-                Frame response = readFrame(input);
-                if (response.kind != PONG || response.payload.length != 0) {
-                    if (response.kind == CLOSE) break;
+                Frame pong = readFrame(input);
+                if (pong.kind != PONG || pong.payload.length != 0) {
+                    if (pong.kind == CLOSE) break;
                     throw new IOException("Unexpected response to TXWB PING");
                 }
                 System.out.println("SESSION_HEALTHY transport=binder-fd");
