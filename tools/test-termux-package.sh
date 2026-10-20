@@ -50,6 +50,9 @@ check_grep 'resolve_xwayland_display()' "$script" "XWayland display is detected 
 check_grep 'xserver listening on display' "$script" "frame capture uses Weston's actual XWayland display"
 check_grep 'nohup env -u DISPLAY' "$script" "Binder session can connect without XWayland capture"
 check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
+check_grep 'logs) show_logs' "$script" "diagnostic logs command"
+check_grep 'show_logs() {' "$script" "diagnostic log reader"
+check_grep 'FRAME_CAPTURE_EXITED' "$root/termux-package/src/BridgeClient.java" "frame capture exit diagnostics"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
