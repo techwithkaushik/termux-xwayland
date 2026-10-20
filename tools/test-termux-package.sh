@@ -52,6 +52,8 @@ check_grep 'nohup env -u DISPLAY' "$script" "Binder session can connect without 
 check_grep 'Binder transport: connected (persistent Binder FD session)' "$script" "start waits for Binder session"
 check_grep 'logs) show_logs' "$script" "diagnostic logs command"
 check_grep 'show_logs() {' "$script" "diagnostic log reader"
+check_grep 'WESTON_CONSOLE_LOG_FILE="$RUNTIME_DIR/weston-console.log"' "$script" "Weston startup stderr log path"
+check_grep '2>&1 &' "$script" "Weston stdout and stderr are retained"
 check_grep 'FRAME_CAPTURE_EXITED' "$root/termux-package/src/BridgeClient.java" "frame capture exit diagnostics"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
