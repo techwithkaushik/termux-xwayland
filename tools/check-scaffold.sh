@@ -33,6 +33,12 @@ grep -q 'synthetic RGBA test frame' README.md
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
 grep -q 'Rust JNI socket reader' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Run Rust JNI socket test' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'Termux launch request received' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'android:launchMode="singleTop"' android-app/src/main/AndroidManifest.xml
+if grep -q 'BIND_IPC_PROBE' android-app/src/main/AndroidManifest.xml; then
+  echo "Retired Binder probe permission must not be requested by the host." >&2
+  exit 1
+fi
 grep -q 'nativeReadSocket' android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeBridge.kt
 grep -q 'Java_org_techwithkaushik_termuxxwayland_NativeBridge_nativeReadSocket' native/host-jni/src/lib.rs
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
