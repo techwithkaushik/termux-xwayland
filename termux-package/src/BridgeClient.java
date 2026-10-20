@@ -292,9 +292,15 @@ public final class BridgeClient {
                     if (!connected) {
                         connected = true;
                         System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
-                        frameCapture = startFrameCapture();
-                        activeFrameCapture = frameCapture;
-                        if (frameCapture != null) startFrameForwarder(frameCapture, output);
+                        System.out.flush();
+                        // Frame capture must never block the PING/PONG heartbeat loop.
+                        Thread captureStarter = new Thread(() -> {
+                            Process capture = startFrameCapture();
+                            activeFrameCapture = capture;
+                            if (capture != null) startFrameForwarder(capture, output);
+                        }, "termux-xwayland-frame-capture-start");
+                        captureStarter.setDaemon(true);
+                        captureStarter.start();
                     }
                     System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
                         + " transport=binder-fd");
