@@ -2,61 +2,46 @@ package org.techwithkaushik.termuxxwayland
 
 import android.app.Service
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
-import android.os.RemoteException
 import android.util.Log
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Binder entry point for the Termux-side session client.
+ * Exported Binder entry point for the installed Termux process.
  *
- * The caller must be the installed Termux package. The service returns one end
- * of a local socket pair; the other end remains in this process. The socket is
- * deliberately transferred over Binder rather than relying on cross-UID
- * abstract/filesystem AF_UNIX connect permissions.
+ * Android's service manager authorizes access to this service; we additionally
+ * verify that the calling UID owns the real com.termux package. The service
+ * hands one connected socket FD to the client through Binder, avoiding a
+ * cross-UID AF_UNIX connect and avoiding a TCP listener.
  *
- * The stream is not a general-purpose unauthenticated endpoint: a caller must
- * identify as com.termux, and every opened session is single-client and bounded
- * by the TXWB framing implementation.
+ * This is the transport/session primitive only. TXWB frame parsing, Wayland
+ * frame production and input forwarding are separate layers.
  */
 class BridgeSessionService : Service() {
     private val lock = Any()
     private var activeSession: Session? = null
 
-    private data class Session(
-        val hostEnd: ParcelFileDescriptor,
-        val clientEnd: ParcelFileDescriptor,
-        val closed: AtomicBoolean = AtomicBoolean(false)
-    ) : Closeable {
+    private data class Session(val hostEnd: ParcelFileDescriptor) : Closeable {
+        private val closed = AtomicBoolean(false)
         override fun close() {
-            if (!closed.compareAndSet(false, true)) return
-            runCatching { hostEnd.close() }
-            runCatching { clientEnd.close() }
+            if (closed.compareAndSet(false, true)) runCatching { hostEnd.close() }
         }
     }
 
     private val binder = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-            if (code != TRANSACTION_OPEN_SESSION) {
-                return super.onTransact(code, data, reply, flags)
-            }
+            if (code != TRANSACTION_OPEN_SESSION) return super.onTransact(code, data, reply, flags)
             data.enforceInterface(DESCRIPTOR)
             enforceTermuxCaller()
-            val protocolVersion = data.readInt()
-            if (protocolVersion != PROTOCOL_VERSION) {
+            val version = data.readInt()
+            if (version != PROTOCOL_VERSION) {
                 reply?.writeException(IllegalArgumentException("Unsupported bridge protocol version"))
-                return true
-            }
-            val token = data.createByteArray()
-            if (token == null || token.size != TOKEN_BYTES) {
-                reply?.writeException(IllegalArgumentException("Session token must be 32 bytes"))
                 return true
             }
 
@@ -66,15 +51,27 @@ class BridgeSessionService : Service() {
                 reply?.writeException(error)
                 return true
             }
-            val next = Session(hostEnd = pair[0], clientEnd = pair[1])
+            val hostEnd = pair[0]
+            val clientEnd = pair[1]
             synchronized(lock) {
                 activeSession?.close()
-                activeSession = next
+                activeSession = Session(hostEnd)
             }
 
-            reply?.writeNoException()
-            reply?.writeParcelable(next.clientEnd, 0)
-            Log.i(TAG, "Binder session opened by Termux uid=${Binder.getCallingUid()}")
+            try {
+                reply?.writeNoException()
+                reply?.writeParcelable(clientEnd, 0)
+            } catch (error: RuntimeException) {
+                synchronized(lock) {
+                    activeSession?.close()
+                    activeSession = null
+                }
+                throw error
+            } finally {
+                // Binder Parcel has taken its own FD reference during writeParcelable.
+                runCatching { clientEnd.close() }
+            }
+            Log.i(TAG, "Authorized Termux Binder session opened")
             return true
         }
     }
@@ -92,14 +89,9 @@ class BridgeSessionService : Service() {
     private fun enforceTermuxCaller() {
         val callingUid = Binder.getCallingUid()
         val packages = packageManager.getPackagesForUid(callingUid).orEmpty()
-        if (callingUid == Process.myUid() || packages.none { it == TERMUX_PACKAGE }) {
+        if (callingUid == Process.myUid() || TERMUX_PACKAGE !in packages) {
             Log.w(TAG, "Rejected Binder caller uid=$callingUid packages=${packages.joinToString()}")
             throw SecurityException("Only the installed Termux package may open a bridge session")
-        }
-        try {
-            packageManager.getPackageInfo(TERMUX_PACKAGE, 0)
-        } catch (_: PackageManager.NameNotFoundException) {
-            throw SecurityException("Termux is not installed")
         }
     }
 
@@ -107,7 +99,6 @@ class BridgeSessionService : Service() {
         const val DESCRIPTOR = "org.techwithkaushik.termuxxwayland.IBridgeSession"
         const val TRANSACTION_OPEN_SESSION = IBinder.FIRST_CALL_TRANSACTION
         const val PROTOCOL_VERSION = 1
-        const val TOKEN_BYTES = 32
         const val TERMUX_PACKAGE = "com.termux"
         private const val TAG = "TermuxXWayland"
     }
