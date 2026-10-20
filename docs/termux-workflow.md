@@ -23,17 +23,7 @@ Implementation contract and acceptance tests: [Termux companion integration cont
 
 The initial Termux DEB package lives under `termux-package/`. Build it with `bash termux-package/build-deb.sh`, install the generated `.deb` inside Termux using `dpkg -i`, then run `termux-xwayland status` and `termux-xwayland start`. See [termux-deb-install.md](termux-deb-install.md). It currently detects/launches the Android host only; no real session streaming is implemented.
 
-The existing `:ipc-companion` APK remains only a same-certificate Binder feasibility test. It is not the Termux-side service, does not hand off file descriptors, and does not provide live frame/input transport.
-
-## Binder companion capability probe (experimental)
-
-Build both debug APKs with the same Gradle/JDK environment so Android signs them with the same debug certificate:
-
-    gradle --no-daemon :ipc-companion:assembleDebug :android-app:assembleDebug
-
-Install `ipc-companion/build/outputs/apk/debug/ipc-companion-debug.apk` first, then `android-app/build/outputs/apk/debug/android-app-debug.apk`. The companion declares a signature-level permission and the display host requests it. Open the display-host app and tap **Run Binder capability probe**. A pass requires a 16 KiB exact echo, a caller UID matching the host process, and a different service UID. If Android rejects the bind, check install order and signing certificate; do not weaken the permission to `normal` or `dangerous`.
-
-This probe verifies only display-host ↔ companion Binder IPC. It does **not** verify access from the existing Termux app, a long-lived bidirectional stream, file-descriptor passing, or frame performance. Those remain separate device acceptance tests. No network permission, TCP listener, root, or SELinux change is introduced.
+The earlier same-certificate Binder APK was only a feasibility experiment and is not part of the supported setup. Do not install or distribute a separate companion APK. The remaining design blocker is an explicitly authorized channel between the existing Termux environment and the Android host that supports descriptor handoff and a persistent bounded stream without RUN_COMMAND, TCP fallback, root, or SELinux changes.
 
 ## Probe Termux:X11 and XWayland sockets
 
@@ -60,12 +50,12 @@ Clone this repository and build the Rust diagnostic binary:
 
     git clone https://github.com/techwithkaushik/termux-xwayland.git
     cd termux-xwayland
-    git checkout feat/phase1-android-host
+    git checkout feat/rust-jni-socket-reader
     cd native/compositor
     cargo test
     cargo build --release
 
-Use `feat/phase1-android-host` until its PR is merged.
+Use `feat/rust-jni-socket-reader` for this work until PR #12 is merged.
 
 ## Run the diagnostic socket test (optional)
 
