@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set -x
 test -f settings.gradle.kts
 test -f build.gradle.kts
 test -f android-app/build.gradle.kts
