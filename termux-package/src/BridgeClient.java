@@ -1,17 +1,13 @@
 package org.techwithkaushik.termuxxwayland.client;
 
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Parcel;
 import android.os.ParcelFileDescriptor;
-import android.os.Handler;
-import android.util.Log;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -74,140 +70,67 @@ public final class BridgeClient {
 
         final Context context;
         try {
-            context = createTermuxContext();
+            context = createSystemContext();
         } catch (Exception error) {
-            System.err.println("BINDER_CLIENT_ERROR: cannot create Termux context");
-            Throwable cause = error;
-            int depth = 0;
-            while (cause != null && depth++ < 12) {
-                System.err.println("  cause[" + (depth - 1) + "]: "
-                    + cause.getClass().getName() + ": " + cause.getMessage());
-                cause = cause.getCause();
-            }
+            System.err.println("BINDER_CLIENT_ERROR: cannot create system context: " + error);
             error.printStackTrace(System.err);
-            System.err.flush();
             System.exit(2);
             return;
         }
 
-        final Handler mainHandler = new Handler(Looper.getMainLooper());
-        final AtomicBoolean finished = new AtomicBoolean(false);
         final String hostPackage = findHostPackage(context);
         if (hostPackage == null) {
             System.err.println("BINDER_CLIENT_ERROR: Termux-XWayland host APK is not installed.");
             System.exit(3);
             return;
         }
-
-        final ServiceConnection connection = new ServiceConnection() {
-            @Override
-            public void onServiceConnected(ComponentName name, IBinder binder) {
-                Thread worker = new Thread(() -> {
-                    try {
-                        runSession(binder);
-                    } catch (Exception error) {
-                        System.err.println("BINDER_SESSION_ERROR: " + error.getMessage());
-                    } finally {
-                        if (finished.compareAndSet(false, true)) {
-                            mainHandler.post(() -> {
-                                try { context.unbindService(this); } catch (Exception ignored) {}
-                                Looper.getMainLooper().quit();
-                            });
-                        }
-                    }
-                }, "termux-xwayland-binder");
-                worker.setDaemon(false);
-                worker.start();
-            }
-
-            @Override
-            public void onServiceDisconnected(ComponentName name) {
-                System.err.println("BINDER_SESSION_DISCONNECTED");
-                if (finished.compareAndSet(false, true)) Looper.getMainLooper().quit();
-            }
-        };
-
-        Intent intent = new Intent().setComponent(new ComponentName(hostPackage, SERVICE_CLASS));
-        boolean bound;
+        final int hostUid;
         try {
-            bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
-        } catch (Exception error) {
-            bound = false;
-            System.err.println("BINDER_CLIENT_ERROR: bindService failed: " + error);
+            hostUid = context.getPackageManager().getApplicationInfo(hostPackage, 0).uid;
+        } catch (PackageManager.NameNotFoundException error) {
+            System.err.println("BINDER_CLIENT_ERROR: host package disappeared: " + hostPackage);
+            System.exit(3);
+            return;
         }
-        if (!bound) {
-            System.err.println("BINDER_CLIENT_ERROR: Android rejected the Binder service bind.");
+
+        ClientEndpoint endpoint = new ClientEndpoint(hostUid);
+        android.os.Bundle bundle = new android.os.Bundle();
+        bundle.putBinder(EXTRA_CLIENT_BINDER, endpoint);
+        Intent intent = new Intent(ACTION_OPEN_SESSION)
+            .setPackage(hostPackage)
+            .putExtra(EXTRA_BUNDLE, bundle);
+        try {
+            context.sendBroadcast(intent);
+        } catch (RuntimeException error) {
+            System.err.println("BINDER_CLIENT_ERROR: session broadcast failed: " + error);
             System.exit(4);
             return;
         }
-        System.out.println("BINDER_CONNECTING host=" + hostPackage);
+        System.out.println("BINDER_CONNECTING host=" + hostPackage + " transport=upstream-broadcast-binder");
         System.out.flush();
         Looper.loop();
     }
 
-    private static Context createTermuxContext() throws Exception {
+    private static Context createSystemContext() throws Exception {
         /*
-         * Do not call ActivityThread.systemMain()/getSystemContext() here.
-         * MIUI Android 10 initializes ThemeCompatibilityLoader on that path and
-         * can throw when /data/system/theme_config/theme_compatibility.xml is
-         * absent. Build an app context directly from Termux's ApplicationInfo.
+         * Follow Termux:X11's app_process bootstrap: allocate ActivityThread without
+         * running its constructor and obtain the platform context. This context is
+         * used only to send a package-targeted broadcast carrying our Binder endpoint;
+         * we never bind an Android service from the synthetic app_process caller.
          */
-        Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-        Object activityThread = activityThreadClass.getDeclaredConstructor().newInstance();
-
-        Class<?> appGlobalsClass = Class.forName("android.app.AppGlobals");
-        Method getPackageManager = appGlobalsClass.getDeclaredMethod("getPackageManager");
-        getPackageManager.setAccessible(true);
-        Object packageManagerBinder = getPackageManager.invoke(null);
-        if (packageManagerBinder == null) {
-            throw new IllegalStateException("Android package manager is unavailable");
-        }
-
-        Class<?> iPackageManagerClass = Class.forName("android.content.pm.IPackageManager");
-        Method getApplicationInfo = null;
-        for (Method method : iPackageManagerClass.getMethods()) {
-            if ("getApplicationInfo".equals(method.getName())
-                    && method.getParameterTypes().length == 3
-                    && method.getParameterTypes()[0] == String.class) {
-                getApplicationInfo = method;
-                break;
-            }
-        }
-        if (getApplicationInfo == null) {
-            throw new NoSuchMethodException("IPackageManager.getApplicationInfo(String, int, int)");
-        }
-        Object appInfo = getApplicationInfo.invoke(
-            packageManagerBinder, TERMUX_PACKAGE, 0, android.os.Process.myUid() / 100000
-        );
-        if (appInfo == null) {
-            throw new PackageManager.NameNotFoundException(TERMUX_PACKAGE);
-        }
-
-        Class<?> compatibilityInfoClass = Class.forName("android.content.res.CompatibilityInfo");
-        Object compatibilityInfo = compatibilityInfoClass.getField("DEFAULT_COMPATIBILITY_INFO").get(null);
-        Method getPackageInfoNoCheck = activityThreadClass.getDeclaredMethod(
-            "getPackageInfoNoCheck",
-            Class.forName("android.content.pm.ApplicationInfo"),
-            compatibilityInfoClass
-        );
-        getPackageInfoNoCheck.setAccessible(true);
-        Object loadedApk = getPackageInfoNoCheck.invoke(activityThread, appInfo, compatibilityInfo);
-
-        Class<?> contextImplClass = Class.forName("android.app.ContextImpl");
-        Method createAppContext = contextImplClass.getDeclaredMethod(
-            "createAppContext", activityThreadClass, Class.forName("android.app.LoadedApk")
-        );
-        createAppContext.setAccessible(true);
-        Object value = createAppContext.invoke(null, activityThread, loadedApk);
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        java.lang.reflect.Field unsafeField = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Object unsafe = unsafeField.get(null);
+        Object activityThread = unsafeClass.getMethod("allocateInstance", Class.class)
+            .invoke(unsafe, Class.forName("android.app.ActivityThread"));
+        Method getSystemContext = activityThread.getClass().getDeclaredMethod("getSystemContext");
+        getSystemContext.setAccessible(true);
+        Object value = getSystemContext.invoke(activityThread);
         if (!(value instanceof Context)) {
-            throw new IllegalStateException("Android did not create a Termux application context");
+            throw new IllegalStateException("Android did not provide a system context");
         }
-        Context context = (Context) value;
-        if (!TERMUX_PACKAGE.equals(context.getPackageName())) {
-            throw new SecurityException("Android returned an unexpected package context: "
-                + context.getPackageName());
-        }
-        return context;
+        return (Context) value;
     }
 
     private static String findHostPackage(Context context) {
@@ -223,22 +146,78 @@ public final class BridgeClient {
         return null;
     }
 
-    private static void runSession(IBinder binder) throws Exception {
-        Parcel request = Parcel.obtain();
-        Parcel response = Parcel.obtain();
-        ParcelFileDescriptor descriptor = null;
-        try {
-            request.writeInterfaceToken(DESCRIPTOR);
-            request.writeInt(VERSION);
-            if (!binder.transact(OPEN_SESSION, request, response, 0)) {
-                throw new IOException("Host Binder service rejected OPEN_SESSION");
-            }
-            response.readException();
-            descriptor = response.readParcelable(BridgeClient.class.getClassLoader());
-        } finally {
-            request.recycle();
-            response.recycle();
+    private static final String ACTION_OPEN_SESSION =
+        "org.techwithkaushik.termuxxwayland.action.OPEN_TERMUX_SESSION";
+    private static final String EXTRA_BUNDLE = "termuxxwayland.session.bundle";
+    private static final String EXTRA_CLIENT_BINDER = "termuxxwayland.session.client_binder";
+
+    /**
+     * The host calls into this Binder after receiving it in a package-targeted
+     * broadcast. This reverses the old broken flow: app_process never calls
+     * Context.bindService(), so ActivityManager does not need to register it as
+     * an Android application process.
+     */
+    private static final class ClientEndpoint extends Binder {
+        private final int expectedHostUid;
+        private final AtomicBoolean opened = new AtomicBoolean(false);
+
+        ClientEndpoint(int expectedHostUid) {
+            this.expectedHostUid = expectedHostUid;
+            attachInterface(null, DESCRIPTOR);
         }
+
+        @Override
+        protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
+                throws android.os.RemoteException {
+            if (code != OPEN_SESSION) return super.onTransact(code, data, reply, flags);
+            data.enforceInterface(DESCRIPTOR);
+            if (Binder.getCallingUid() != expectedHostUid) {
+                throw new SecurityException("Only the installed Termux-XWayland host may open this session");
+            }
+            if (data.readInt() != VERSION) {
+                reply.writeException(new IllegalArgumentException("Unsupported bridge protocol version"));
+                return true;
+            }
+            if (!opened.compareAndSet(false, true)) {
+                reply.writeException(new IllegalStateException("A session is already open"));
+                return true;
+            }
+            ParcelFileDescriptor[] pair;
+            try {
+                pair = ParcelFileDescriptor.createSocketPair();
+            } catch (IOException error) {
+                opened.set(false);
+                reply.writeException(error);
+                return true;
+            }
+            try {
+                reply.writeNoException();
+                reply.writeParcelable(pair[1], 0);
+            } catch (RuntimeException error) {
+                opened.set(false);
+                try { pair[0].close(); } catch (IOException ignored) {}
+                throw error;
+            } finally {
+                try { pair[1].close(); } catch (IOException ignored) {}
+            }
+            Thread worker = new Thread(() -> {
+                try {
+                    runSession(pair[0]);
+                } catch (Exception error) {
+                    System.err.println("BINDER_SESSION_ERROR: " + error);
+                    System.err.flush();
+                } finally {
+                    opened.set(false);
+                    Looper.getMainLooper().quit();
+                }
+            }, "termux-xwayland-binder-session");
+            worker.setDaemon(false);
+            worker.start();
+            return true;
+        }
+    }
+
+    private static void runSession(ParcelFileDescriptor descriptor) throws Exception {
         if (descriptor == null) throw new IOException("Host returned no session FD");
 
         try (ParcelFileDescriptor ownedDescriptor = descriptor) {
