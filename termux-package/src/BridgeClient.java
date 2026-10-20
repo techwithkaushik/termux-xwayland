@@ -21,6 +21,8 @@ public final class BridgeClient {
     private static final int MAX_PAYLOAD = 16 * 1024 * 1024;
     private static final int WELCOME = 2, FRAME = 3, PING = 7, PONG = 8, CLOSE = 9;
     private static final int WIDTH = 640, HEIGHT = 360, FRAME_BYTES = WIDTH * HEIGHT * 4;
+    private static final long CONNECT_TIMEOUT_MS = 12_000L;
+    private static final long CONNECT_RETRY_MS = 500L;
     private static volatile Process activeCapture;
 
     private BridgeClient() {}
@@ -56,6 +58,9 @@ public final class BridgeClient {
                 if (response.kind != PONG || response.payload.length != 0) {
                     throw new IOException("Unexpected response to TXWB PING");
                 }
+                System.out.println("SESSION_HEALTHY epoch_seconds=" + (System.currentTimeMillis() / 1000L)
+                    + " transport=abstract-unix");
+                System.out.flush();
                 Thread.sleep(2000L);
             }
         } catch (InterruptedException e) {
@@ -73,15 +78,29 @@ public final class BridgeClient {
     }
 
     private static LocalSocket connect() throws IOException {
-        LocalSocket socket = new LocalSocket();
-        try {
-            socket.connect(new LocalSocketAddress(
-                SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT));
-            return socket;
-        } catch (IOException e) {
-            try { socket.close(); } catch (IOException ignored) {}
-            throw new IOException("Cannot connect to abstract socket @" + SOCKET_NAME, e);
+        long deadline = System.currentTimeMillis() + CONNECT_TIMEOUT_MS;
+        IOException lastError = null;
+        while (System.currentTimeMillis() < deadline) {
+            LocalSocket socket = new LocalSocket();
+            try {
+                socket.connect(new LocalSocketAddress(
+                    SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT));
+                return socket;
+            } catch (IOException e) {
+                lastError = e;
+                try { socket.close(); } catch (IOException ignored) {}
+                try {
+                    Thread.sleep(CONNECT_RETRY_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for abstract socket @" + SOCKET_NAME,
+                        interrupted);
+                }
+            }
         }
+        throw new IOException("Cannot connect to abstract socket @" + SOCKET_NAME
+            + " after " + (CONNECT_TIMEOUT_MS / 1000L) + " seconds; check that the Android host app is open"
+            + (lastError == null ? "" : ": " + lastError.getMessage()), lastError);
     }
 
     private static Message readMessage(DataInputStream in) throws IOException {
