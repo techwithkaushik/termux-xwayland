@@ -6,7 +6,6 @@ test -f android-app/build.gradle.kts
 test -f android-app/src/main/AndroidManifest.xml
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeProtocol.kt
-test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 test -f native/compositor/Cargo.toml
 test -f native/compositor/src/main.rs
 test -f native/compositor/src/protocol.rs
@@ -38,13 +37,14 @@ grep -q 'candidate.peerCredentials' android-app/src/main/java/org/techwithkaushi
 grep -q 'BridgeMessageKind.PING' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
-grep -q 'Only the installed Termux package may open a bridge session' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
-grep -q 'ParcelFileDescriptor.createSocketPair' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 ! grep -q 'ipc-companion' settings.gradle.kts
 ! grep -q 'ipc-companion' .github/workflows/ci.yml
 grep -q 'SESSION_HEALTHY epoch_seconds=' termux-package/src/BridgeClient.java
-grep -q 'updateBinderState("connected")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
-grep -q 'BridgeMessageKind.FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
+grep -q 'LocalServerSocket(socketName)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
+grep -q 'socket.peerCredentials.uid' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSocketServer.kt
+grep -q 'LocalSocketAddress.Namespace.ABSTRACT' termux-package/src/BridgeClient.java
+! grep -q 'bindService(' termux-package/src/BridgeClient.java
+! grep -q 'createTermuxContext' termux-package/src/BridgeClient.java
 grep -q 'startFrameForwarder' termux-package/src/BridgeClient.java
 grep -q 'XWayland frame capture: sending recent frames' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'termux-xwayland x11' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
