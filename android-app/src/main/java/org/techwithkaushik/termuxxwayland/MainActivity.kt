@@ -29,6 +29,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.util.Log
 import java.nio.ByteBuffer
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -61,8 +62,12 @@ class MainActivity : Activity() {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             val local = service as? BridgeSessionService.BridgeBinder ?: return
             localBridgeBinder = local
+            Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
             local.frameListener = { frame ->
+                if (binderFrameCount == 0L) {
+                    Log.i("TermuxXWayland", "event=first_frame_received width=${frame.width} height=${frame.height}")
+                }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || !::previewImage.isInitialized) return@runOnUiThread
                     previewImage.setFrame(
@@ -110,6 +115,7 @@ class MainActivity : Activity() {
         window.statusBarColor = ink
         window.navigationBarColor = ink
         setContentView(buildScreen())
+        Log.i("TermuxXWayland", "event=activity_created package=$packageName sdk=${android.os.Build.VERSION.SDK_INT}")
         handleTermuxIntent(intent)
         refreshTermuxControlStatus()
     }
@@ -141,6 +147,7 @@ class MainActivity : Activity() {
             runCatching { unbindService(binderServiceConnection) }
             binderServiceBound = false
         }
+        Log.i("TermuxXWayland", "event=activity_stopped binderFrames=$binderFrameCount")
         super.onStop()
     }
 
