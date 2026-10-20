@@ -20,8 +20,8 @@ With JDK 17, Gradle 8.9 and the Android SDK:
 
 ```bash
 gradle :android-app:testDebugUnitTest :android-app:assembleDebug
-bash tools/build-termux-binder-client.sh dist/termux-binder-client
-install -D -m 0644 dist/termux-binder-client/bridge-client.dex \
+bash tools/build-termux-binder-client.sh dist/termux-socket-client
+install -D -m 0644 dist/termux-socket-client/bridge-client.dex \
   termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
 bash tools/test-termux-package.sh
 bash termux-package/build-deb.sh dist
