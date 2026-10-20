@@ -333,12 +333,16 @@ public final class BridgeClient {
             return null;
         }
         try {
+            String termuxTmp = System.getenv("TMPDIR");
+            File logDirectory = new File(termuxTmp == null
+                ? "/data/data/com.termux/files/usr/tmp" : termuxTmp);
+            File ffmpegLog = new File(logDirectory, "termux-xwayland-ffmpeg.log");
             Process process = new ProcessBuilder(
                 ffmpeg, "-hide_banner", "-loglevel", "error",
                 "-f", "x11grab", "-framerate", "2", "-video_size", "640x360",
                 "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
                 "-f", "rawvideo", "pipe:1"
-            ).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+            ).redirectError(ProcessBuilder.Redirect.to(ffmpegLog)).start();
             System.out.println("FRAME_CAPTURE_STARTED display=" + display + " size=640x360 fps=2");
             System.out.flush();
             return process;
@@ -372,12 +376,28 @@ public final class BridgeClient {
             try (DataInputStream raw = new DataInputStream(capture.getInputStream())) {
                 while (!Thread.currentThread().isInterrupted()) {
                     raw.readFully(pixels);
+                    int sampled = 0;
+                    int nonBlack = 0;
+                    // Sample 1/64 pixels to detect black-root captures cheaply on ARM32.
+                    for (int offset = 0; offset < pixels.length; offset += 4 * 64) {
+                        sampled++;
+                        if ((pixels[offset] & 0xff) != 0
+                                || (pixels[offset + 1] & 0xff) != 0
+                                || (pixels[offset + 2] & 0xff) != 0) {
+                            nonBlack++;
+                        }
+                    }
                     System.arraycopy(pixels, 0, payload, 8, pixels.length);
                     writeFrame(output, FRAME, payload);
                     long now = System.currentTimeMillis();
                     if (lastLog == 0L || now - lastLog >= 5000L) {
                         lastLog = now;
-                        System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L) + " transport=binder-fd");
+                        int percent = sampled == 0 ? 0 : (nonBlack * 100 / sampled);
+                        System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L)
+                            + " transport=binder-fd sampled_nonblack_percent=" + percent);
+                        if (percent == 0) {
+                            System.out.println("FRAME_CONTENT_SUSPECT_BLACK reason=no_sampled_nonblack_pixels");
+                        }
                         System.out.flush();
                     }
                 }
