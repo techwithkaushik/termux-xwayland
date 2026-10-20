@@ -17,6 +17,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -48,6 +51,8 @@ public final class BridgeClient {
     private static final int FRAME_HEIGHT = 360;
     private static final int FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 4;
     private static volatile Process activeFrameCapture;
+    private static final Object LOG_LOCK = new Object();
+    private static final String LOG_PATH = System.getenv("TERMUX_XWAYLAND_LOG");
 
     private BridgeClient() {}
 
@@ -385,6 +390,28 @@ public final class BridgeClient {
         thread.start();
     }
 
+    private static void log(String level, String message) {
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US).format(new Date());
+        String line = timestamp + " " + level + " [" + Thread.currentThread().getName() + "] " + message;
+        synchronized (LOG_LOCK) {
+            System.out.println(line);
+            System.out.flush();
+            if (LOG_PATH != null && !LOG_PATH.isEmpty()) {
+                try (FileOutputStream file = new FileOutputStream(LOG_PATH, true)) {
+                    file.write((line + "\n").getBytes("UTF-8"));
+                } catch (IOException error) {
+                    System.err.println("LOGGER_WRITE_FAILED path=" + LOG_PATH + " error=" + error);
+                }
+            }
+        }
+    }
+
+    private static void logError(String message, Throwable error) {
+        log("ERROR", message + " type=" + error.getClass().getName() + " message=" + error.getMessage());
+        java.io.StringWriter buffer = new java.io.StringWriter();
+        error.printStackTrace(new java.io.PrintWriter(buffer));
+        for (String line : buffer.toString().split("\\r?\\n")) log("ERROR", line);
+    }
     private static Frame readFrame(DataInputStream input) throws IOException {
         byte[] header = new byte[12];
         input.readFully(header);
