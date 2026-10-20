@@ -1,107 +1,48 @@
-# Termux companion integration contract (design)
+# Termux-side integration contract
 
-## Goal
+## Components
 
-Provide a three-part integration without requiring the user to enable Termux's generic RUN_COMMAND API:
+1. **Existing Termux app** owns the shell, packages and Linux userspace.
+2. **Termux DEB/CLI** owns Weston/compositor lifecycle and launches a Java client through Android `app_process` while retaining the real Termux UID.
+3. **Existing Termux-XWayland Android host APK** owns the display UI and exposes `BridgeSessionService` for authorized Binder FD handoff.
 
-1. **Termux app** remains the existing Linux userspace, package manager and shell.
-2. **Termux-side companion package/CLI** is installed inside the Termux environment. The user starts a session by invoking its command from Termux. It manages session intent and starts/observes the Linux-side compositor process.
-3. **Termux-XWayland Android host** owns the display surface, Android input, session UI and Android lifecycle.
+There is no separate companion APK in the supported build/install flow.
 
-The companion package is not the same thing as the existing experimental `:ipc-companion` APK. That APK currently only tests same-certificate host-to-companion Binder calls.
+## Current implementation
 
-## Responsibilities
+- The Android service verifies that the actual Binder caller UID maps to package `com.termux`.
+- Binder creates a connected socket pair and transfers the client end in the transaction reply.
+- The Termux-side Java helper is compiled against Android SDK stubs and converted to DEX in CI; the DEX is included in the Termux DEB.
+- The client validates TXWB v1 framing, checks WELCOME, sends PING, verifies PONG and repeats until disconnect.
+- The service validates framing, responds to PING and handles CLOSE; descriptor shutdown is attempted during replacement and service destruction.
+- INPUT/RESIZE/CLIPBOARD are bounded protocol messages but are not routed yet.
+- The Weston server and read-only status monitor are lifecycle/control components; the monitor is not a frame/input transport.
 
-### Termux-side package
+## Build and run
 
-- Install a versioned command such as `termux-xwayland` into the Termux prefix.
-- Validate arguments and report actionable errors without logging session secrets.
-- Create a private runtime directory under the Termux user's runtime/temp area with restrictive permissions.
-- Start/stop the Linux session and compositor process; track PID and exit status.
-- Negotiate protocol version, session ID, dimensions and supported pixel formats.
-- Never use repeated shell commands, stdout scraping, or temporary frame files as the real-time transport.
+```bash
+bash tools/build-termux-binder-client.sh dist/termux-binder-client
+install -D -m 0644 dist/termux-binder-client/bridge-client.dex \
+  termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
+bash tools/test-termux-package.sh
+bash termux-package/build-deb.sh dist
+```
 
-### Android host
+CI stages the DEX automatically before building the DEB. Install the DEB inside Termux and use `termux-xwayland start` / `stop`.
 
-- Expose only the minimal explicit Android entry point required for starting a session.
-- Validate caller/package identity and session parameters; reject malformed or oversized input.
-- Own the visible display surface and map touch, keyboard, resize, focus and lifecycle events.
-- Close descriptors and stop sessions deterministically on user stop, process death or disconnect.
-- Display honest state: unavailable, starting, connected, disconnected, failed.
+## Required target-device acceptance
 
-### Session bridge
+On Android 10 / MIUI with the existing Termux install:
+- Verify the app_process helper creates a `com.termux` package context and binds successfully.
+- Verify the host rejects callers whose UID does not map to `com.termux`.
+- Verify Binder FD handoff and repeated bidirectional PING/PONG.
+- Stop the client and confirm the host ends the session and releases its descriptor.
+- Restart the session and verify reconnect without force-stopping either app.
+- Verify malformed/oversized frames are rejected and no fallback is opened.
+- Confirm no TCP frame/input listener, root, SELinux policy change, Termux replacement or `allow-external-apps=true` requirement.
 
-- Separate low-rate control messages (start, stop, status, resize) from the high-rate frame/input channel.
-- Prefer an Android-authorized Binder-mediated handoff for session setup and file descriptors; then use a persistent bounded channel for frames/input.
-- Keep protocol versioning, message limits, backpressure and disconnect handling explicit.
-- Do not assume the private Termux:X11 Binder interfaces are a public or stable API.
-- Do not assume a signature permission works across independently signed APKs. Validate the actual installation/signing model before choosing a permission strategy.
+CI compilation is not proof of Android authorization or device compatibility.
 
-## Message contract (initial proposal)
+## Not yet complete
 
-Control messages are versioned and bounded. Every request includes a protocol version, random session ID, message type and bounded payload.
-
-- `HELLO`: protocol min/max and client build.
-- `START_SESSION`: requested dimensions and supported formats; no shell command string supplied by an untrusted Android intent.
-- `SESSION_READY`: negotiated protocol, session ID and transport handles.
-- `STATUS`: state and bounded diagnostic code; no secret tokens.
-- `RESIZE`: positive width/height within configured caps.
-- `INPUT`: typed key/touch event with coordinate and payload validation.
-- `STOP_SESSION` / `CLOSE`: idempotent shutdown.
-
-Transport requirements:
-
-- Explicitly authorize the Android host and Termux-side initiator.
-- Bound control messages and frame dimensions/bytes before allocation.
-- Authenticate the session independently of a user-provided display name.
-- Handle duplicate start, stale session IDs, disconnect, process death, app background/foreground, and reconnect.
-- Pass file descriptors only through a documented Android IPC mechanism; validate descriptor ownership and close every duplicated descriptor.
-- No TCP/localhost listener, root requirement, SELinux weakening, or requirement to replace the user's existing Termux app.
-
-## Implementation sequence
-
-1. **Architecture/spec (this document):** agree on component boundaries and control contract.
-2. **Discovery/authorization spike:** verify an explicit entry point and bidirectional IPC on Android 10 with the actual Termux distribution. Record package name, signing assumptions, API level and results.
-3. **Termux package skeleton:** installable shell/launcher script and lifecycle/status commands; no fake claims of a display session.
-4. **Binder/FD proof:** pass one bounded test payload/descriptor and test close/error behavior.
-5. **Persistent stream proof:** bidirectional bounded frame/input messages and reconnect/backpressure tests.
-6. **Real compositor:** only after transport acceptance, render one real Wayland client and display its frames.
-7. **XWayland and desktop sessions:** add XWayland, then XFCE/LXQt after the native Wayland path is proven.
-
-## Acceptance criteria
-
-- Existing Termux remains installed and unmodified; no `allow-external-apps=true` requirement.
-- Android 10 / API 29 works on the target device with the real installation/signing arrangement.
-- Start/stop/status/reconnect work without force-stopping either app.
-- Unknown clients and malformed/oversized requests are rejected.
-- File descriptors close on all success/error paths.
-- No TCP, localhost port, root, SELinux policy change, or temporary-file frame streaming.
-- The app displays a real compositor frame before the project claims desktop support.
-
-## Binder file-descriptor probe implementation (2026-10-19)
-
-A new diagnostic transaction was added to the test companion. It receives two `ParcelFileDescriptor` handles through Binder: one pipe for a bounded request and one for the echoed response. The service checks the caller's signing certificate, caps payloads at 64 KiB, reads exactly the declared number of bytes, rejects trailing bytes, closes both received descriptors with auto-close streams, and zeroes its temporary payload buffer. The host uses worker threads so pipe reads/writes cannot block the UI thread, compares the exact returned bytes, and closes its pipe endpoints and Parcels in a `finally` block.
-
-This is an implementation spike only. It has **not** been built or device-tested yet. It proves neither Termux access nor sustained streaming, and should not be used as the production transport until the Android 10 test passes and lifecycle/error paths are exercised.
-
-## Low-bandwidth validation status (2026-10-19)
-
-The user verified these diagnostics on the target Android 10 device:
-- Binder host-to-test-companion: exact 16 KiB echo passed.
-- Temporary loopback TCP echo on port 38471: passed.
-- Temporary TXWB v1 PING/PONG on port 38472: 12-byte header and exact 27-byte payload passed.
-- Local Python negative tests for the diagnostic header validator: 9 tests passed.
-
-These results do not establish Termux-to-Binder integration, file-descriptor transfer, persistent full-duplex streaming, real compositor frames, or input forwarding. The TCP probes are temporary experiments only. The production acceptance criteria above still prohibit a permanent TCP listener/fallback.
-
-The next implementation milestone should be a small, bounded Binder file-descriptor handoff prototype between the host and the test companion, with explicit ownership/close semantics and a bidirectional echo test. Only after that should the project investigate how the existing Termux installation can safely participate without replacement or generic RUN_COMMAND authorization. Avoid requiring another APK download for documentation or Python-only changes; batch Android changes into a later build when a device test is needed.
-
-## Current status
-
-This is an architecture contract, not an implemented transport. The existing abstract AF_UNIX prototype is blocked by cross-UID `EACCES` on the target device. The current Binder probe is host-to-test-companion only. No FD handoff, Termux-side package, real compositor or real desktop frame path has been implemented or device-verified.
-
-## Authenticated control-plane IPC prototype (2026-10-19)
-
-The `feat/termux-authenticated-control-ipc` branch adds an exported Android `ContentProvider.call()` endpoint for low-rate control only. The provider checks the actual Binder caller UID against Android's package-manager mapping and accepts calls only from the installed `com.termux` package. The Termux CLI uses Android's `/system/bin/content` command to send a bounded protocol-v1 start/status/stop request; start carries a random 128-bit session identifier. The host UI reads the recorded state and explicitly labels it as a control handshake, not a live display stream.
-
-This is intentionally **not** the frame/input transport. It does not prove that Weston pixels reach Android, and it does not provide a persistent connection or file-descriptor transfer. The caller-UID check and `content call` behavior must be verified on the user's Android 10 / MIUI build. If the system command runs under the shell UID instead of the Termux app UID, the provider should reject it; do not weaken authorization to make the test pass. The next gate is device verification of this control handshake, then a documented authorized FD/stream channel before implementing live frames.
+The Binder heartbeat is not a desktop stream. A real compositor frame source, Android rendering, input/resize/clipboard routing, reconnect/backpressure policy and measured performance remain future work. Do not claim desktop support until a real Wayland client surface is visible on the device.
