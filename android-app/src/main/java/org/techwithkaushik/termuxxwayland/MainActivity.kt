@@ -122,9 +122,9 @@ class MainActivity : Activity() {
                         previewImage.setImageBitmap(bitmap)
                         previewImage.visibility = View.VISIBLE
                         statusTitle.text = "Desktop frame received"
-                        statusDescription.text = "Receiving XWayland frames over direct abstract AF_UNIX IPC."
+                        statusDescription.text = "Receiving XWayland frames over authenticated loopback TCP."
                         if (::binderStatusDescription.isInitialized) {
-                            binderStatusDescription.text = "Direct socket transport active; desktop frames received."
+                            binderStatusDescription.text = "Loopback TCP transport active; desktop frames received."
                         }
                     }
                 } },
@@ -139,7 +139,7 @@ class MainActivity : Activity() {
             bridge.start()
         } catch (error: Exception) {
             if (::binderStatusDescription.isInitialized) {
-                binderStatusDescription.text = "Direct socket unavailable: ${error.message ?: error.javaClass.simpleName}"
+                binderStatusDescription.text = "Loopback bridge unavailable: ${error.message ?: error.javaClass.simpleName}"
             }
         }
     }
@@ -220,11 +220,11 @@ class MainActivity : Activity() {
         when (prefs.getString("state", "disconnected")) {
             "request_received" -> {
                 statusTitle.text = "Termux launch request received"
-                statusDescription.text = "The launch request arrived. Checking Weston status separately from the direct socket stream."
+                statusDescription.text = "The launch request arrived. Checking Weston status separately from the loopback bridge stream."
             }
             "server_running" -> {
                 statusTitle.text = "Termux server confirmed"
-                statusDescription.text = "The status endpoint confirms Weston and its Wayland socket are running. The desktop stream is reported separately by the direct socket bridge."
+                statusDescription.text = "The status endpoint confirms Weston and its Wayland socket are running. The desktop stream is reported separately by the loopback bridge."
             }
             "server_stopped" -> {
                 statusTitle.text = "Termux server stopped"
@@ -321,7 +321,7 @@ class MainActivity : Activity() {
         }, margins(bottom = 8))
         content.addView(infoCard(
             "What this test proves",
-            "This legacy button exercises the historical abstract-socket smoke test only. The production session uses a session-authenticated abstract AF_UNIX socket and verifies the kernel-reported Termux UID. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
+            "This legacy button exercises the historical abstract-socket smoke test only. The production session uses session-authenticated TCP bound only to 127.0.0.1; it does not expose a LAN listener. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
         ), margins(top = 8, bottom = 16))
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
