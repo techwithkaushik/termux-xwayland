@@ -10,6 +10,39 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
+#include <stdarg.h>
+
+static FILE *txw_log_file;
+static unsigned long txw_log_sequence;
+
+static void txw_log_init(void) {
+    const char *path = getenv("TERMUX_XWAYLAND_LOG");
+    if (path && *path) {
+        txw_log_file = fopen(path, "a");
+        if (txw_log_file) setvbuf(txw_log_file, NULL, _IOLBF, 0);
+    }
+    if (!txw_log_file) txw_log_file = stderr;
+}
+
+static void txw_log(const char *level, const char *event, const char *format, ...) {
+    if (!txw_log_file) txw_log_init();
+    struct timespec now = {0};
+    clock_gettime(CLOCK_REALTIME, &now);
+    fprintf(txw_log_file, "TXWLOG ts=%lld.%03ld seq=%lu pid=%ld level=%s component=capture event=%s",
+            (long long)now.tv_sec, now.tv_nsec / 1000000L, ++txw_log_sequence,
+            (long)getpid(), level, event);
+    if (format && *format) {
+        fputc(' ', txw_log_file);
+        va_list args;
+        va_start(args, format);
+        vfprintf(txw_log_file, format, args);
+        va_end(args);
+    }
+    fputc('\n', txw_log_file);
+    fflush(txw_log_file);
+}
+
 #include <wayland-client.h>
 #include "weston-output-capture-client-protocol.h"
 
@@ -228,7 +261,9 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         return 4;
     }
     weston_capture_source_v1_add_listener(s->source, &source_listener, s);
+    txw_log("INFO", "source_handshake_begin", "timeout_ms=5000");
     int handshake = roundtrip_with_timeout(s->display, 5000);
+    txw_log(handshake == 0 ? "INFO" : "ERROR", "source_handshake_end", "result=%d errno=%d events=%d size=%d format=%d formats_done=%d", handshake, errno, s->source_events_seen, s->got_size, s->got_format, s->formats_done);
     if (handshake < 0) {
         const struct wl_interface *interface = NULL;
         uint32_t object_id = 0;
@@ -342,6 +377,8 @@ int main(int argc, char **argv) {
         default: fprintf(stderr, "Usage: %s [--display NAME] [--width N] [--height N] [--format rgba]\n", argv[0]); return 2;
         }
     }
+    txw_log_init();
+    txw_log("INFO", "process_start", "argc=%d", argc);
     struct capture_state s = {0};
     s.display = wl_display_connect(NULL);
     if (!s.display) { fprintf(stderr, "CAPTURE_ERROR: cannot connect to Wayland: %s\n", strerror(errno)); return 2; }
@@ -354,5 +391,8 @@ int main(int argc, char **argv) {
     if (s.shm) wl_shm_destroy(s.shm);
     if (registry) wl_registry_destroy(registry);
     wl_display_disconnect(s.display);
+    txw_log(result == 0 ? "INFO" : "ERROR", "process_exit", "exit_code=%d", result);
+    if (txw_log_file && txw_log_file != stderr) fclose(txw_log_file);
+    txw_log_file = NULL;
     return result;
 }
