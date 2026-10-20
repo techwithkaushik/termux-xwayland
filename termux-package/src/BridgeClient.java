@@ -15,6 +15,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -99,16 +101,50 @@ public final class BridgeClient {
         Intent intent = new Intent(ACTION_OPEN_SESSION)
             .setPackage(hostPackage)
             .putExtra(EXTRA_BUNDLE, bundle);
-        try {
-            context.sendBroadcast(intent);
-        } catch (RuntimeException error) {
-            System.err.println("BINDER_CLIENT_ERROR: session broadcast failed: " + error);
-            System.exit(4);
-            return;
-        }
+        sendSessionBroadcast(context, intent);
         System.out.println("BINDER_CONNECTING host=" + hostPackage + " transport=upstream-broadcast-binder");
         System.out.flush();
         Looper.loop();
+    }
+
+    private static void sendSessionBroadcast(Context context, Intent intent) {
+        try {
+            context.sendBroadcast(intent);
+            return;
+        } catch (RuntimeException firstError) {
+            System.err.println("BINDER_BROADCAST_CONTEXT_FALLBACK: " + firstError.getClass().getSimpleName());
+        }
+
+        /*
+         * Termux:X11 uses the ActivityManager broadcast path as a fallback when
+         * a system Context's package attribution is rejected. Invoke the public
+         * Binder interface reflectively so this client remains SDK-compilable.
+         */
+        try {
+            Class<?> activityManager = Class.forName("android.app.ActivityManager");
+            Object manager = activityManager.getMethod("getService").invoke(null);
+            Method broadcast = null;
+            for (Method method : manager.getClass().getMethods()) {
+                if ("broadcastIntent".equals(method.getName())
+                        && method.getParameterTypes().length == 13) {
+                    broadcast = method;
+                    break;
+                }
+            }
+            if (broadcast == null) throw new NoSuchMethodException("IActivityManager.broadcastIntent");
+            Object[] args = new Object[] {
+                null, intent, null, null, 0, null, null, null, -1, null, false, false, 0
+            };
+            Object result = broadcast.invoke(manager, args);
+            if (result instanceof Integer && ((Integer) result) < 0) {
+                throw new IOException("ActivityManager rejected the session broadcast: " + result);
+            }
+            return;
+        } catch (Exception fallbackError) {
+            System.err.println("BINDER_CLIENT_ERROR: session broadcast failed: " + fallbackError);
+            fallbackError.printStackTrace(System.err);
+            System.exit(4);
+        }
     }
 
     private static Context createSystemContext() throws Exception {
@@ -126,7 +162,17 @@ public final class BridgeClient {
             .invoke(unsafe, Class.forName("android.app.ActivityThread"));
         Method getSystemContext = activityThread.getClass().getDeclaredMethod("getSystemContext");
         getSystemContext.setAccessible(true);
-        Object value = getSystemContext.invoke(activityThread);
+        PrintStream originalErr = System.err;
+        Object value;
+        try {
+            // MIUI 12 can print a harmless missing theme-compatibility XML trace.
+            System.setErr(new PrintStream(new OutputStream() {
+                @Override public void write(int ignored) {}
+            }));
+            value = getSystemContext.invoke(activityThread);
+        } finally {
+            System.setErr(originalErr);
+        }
         if (!(value instanceof Context)) {
             throw new IllegalStateException("Android did not provide a system context");
         }
