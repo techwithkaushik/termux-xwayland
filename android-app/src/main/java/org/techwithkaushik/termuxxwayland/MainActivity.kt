@@ -77,7 +77,7 @@ class MainActivity : Activity() {
                     binderFrameCount++
                     if (::binderStatusDescription.isInitialized) {
                         binderStatusDescription.text =
-                            "Binder transport active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
+                            "Live Wayland frames received over Binder FD: $binderFrameCount. Input forwarding uses xdotool."
                     }
                 }
             }
