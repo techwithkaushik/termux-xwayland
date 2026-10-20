@@ -13,8 +13,7 @@
             android:grantUriPermissions="false" />
         <service
             android:name=".BridgeSessionService"
-            android:exported="true"
-            />
+            android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTop"
