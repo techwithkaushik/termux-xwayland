@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 test -f settings.gradle.kts
 test -f build.gradle.kts
 test -f android-app/build.gradle.kts
 test -f android-app/src/main/AndroidManifest.xml
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeProtocol.kt
-test -f ipc-companion/build.gradle.kts
-test -f ipc-companion/src/main/AndroidManifest.xml
-test -f ipc-companion/src/main/java/org/techwithkaushik/termuxxwayland/companion/IpcProbeService.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeBridge.kt
+test -f native/host-jni/Cargo.toml
+test -f native/host-jni/src/lib.rs
 test -f native/compositor/Cargo.toml
 test -f native/compositor/src/main.rs
 test -f native/compositor/src/protocol.rs
@@ -29,17 +30,14 @@ test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
 grep -q 'no real desktop rendering yet' README.md
 grep -q 'synthetic RGBA test frame' README.md
-grep -q 'Connect securely' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
-grep -q 'LocalSocketAddress.Namespace.ABSTRACT' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Cross-UID IPC passed' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'candidate.peerCredentials' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'BridgeMessageKind.PING' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Run Binder capability probe' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'protectionLevel="signature"' ipc-companion/src/main/AndroidManifest.xml
+grep -q 'Rust JNI socket reader' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'Run Rust JNI socket test' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'nativeReadSocket' android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeBridge.kt
+grep -q 'Java_org_techwithkaushik_termuxxwayland_NativeBridge_nativeReadSocket' native/host-jni/src/lib.rs
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
 grep -q 'MAX_PAYLOAD_LEN' native/compositor/src/protocol.rs
-echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
+echo "Bridge, JNI, socket-probe syntax, and scaffold structure checks passed."
 
 test -f termux-package/DEBIAN/control
 test -f termux-package/DEBIAN/postinst
