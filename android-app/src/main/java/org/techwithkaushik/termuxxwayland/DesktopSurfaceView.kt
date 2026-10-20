@@ -27,6 +27,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     @Volatile private var surfaceReady = false
     var inputEventListener: ((ByteArray) -> Unit)? = null
     private var lastMoveAt = 0L
+    private var pointerCaptured = false
 
     init {
         setBackgroundColor(Color.rgb(20, 29, 43))
@@ -79,11 +80,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         if (width <= 0 || height <= 0) return true
-        val now = android.os.SystemClock.uptimeMillis()
-        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE && now - lastMoveAt < 32L) return true
-        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE) lastMoveAt = now
-        val normalizedX = (event.x / width.toFloat()).coerceIn(0f, 1f)
-        val normalizedY = (event.y / height.toFloat()).coerceIn(0f, 1f)
+
         val action = when (event.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> "DOWN"
             android.view.MotionEvent.ACTION_MOVE -> "MOVE"
@@ -91,9 +88,45 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             android.view.MotionEvent.ACTION_CANCEL -> "CANCEL"
             else -> return true
         }
+        val bounds = contentBounds()
+        val insideContent = event.x >= bounds.left && event.x <= bounds.right &&
+            event.y >= bounds.top && event.y <= bounds.bottom
+
+        if (action == "DOWN") {
+            if (!insideContent) return true
+            pointerCaptured = true
+        } else if (!pointerCaptured) {
+            return true
+        }
+
+        val now = android.os.SystemClock.uptimeMillis()
+        if (action == "MOVE" && now - lastMoveAt < 32L) return true
+        if (action == "MOVE") lastMoveAt = now
+
+        // The image is letterboxed to preserve its aspect ratio. Map touches
+        // against the displayed image rectangle, not the full SurfaceView.
+        val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
+        val normalizedY = ((event.y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
         val payload = "$action ${normalizedX} ${normalizedY}".toByteArray(Charsets.US_ASCII)
         runCatching { inputEventListener?.invoke(payload) }
+        if (action == "UP" || action == "CANCEL") pointerCaptured = false
         return true
+    }
+
+    private fun contentBounds(): android.graphics.RectF {
+        val frameWidth: Int
+        val frameHeight: Int
+        synchronized(frameLock) {
+            val frame = latestFrame
+            frameWidth = if (frame != null && !frame.isRecycled) frame.width else 640
+            frameHeight = if (frame != null && !frame.isRecycled) frame.height else 360
+        }
+        val scale = min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+        val drawWidth = frameWidth * scale
+        val drawHeight = frameHeight * scale
+        val left = (width - drawWidth) / 2f
+        val top = (height - drawHeight) / 2f
+        return android.graphics.RectF(left, top, left + drawWidth, top + drawHeight)
     }
 
     private fun renderLatestFrame() {
