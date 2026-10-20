@@ -359,11 +359,13 @@ show_status() {
     printf 'Binder transport: not connected\n'
   fi
   if frame_capture_is_active; then
-    printf 'XWayland frame capture: sending recent frames to Android\n'
+    printf 'Native Wayland frame capture: sending recent frames to Android\n'
+  elif command -v termux-xwayland-capture >/dev/null 2>&1; then
+    printf 'Native Wayland frame capture: helper installed; stream not verified\n'
   else
-    printf 'XWayland frame capture: waiting (requires XWayland, ffmpeg and an X11 client)\n'
+    printf 'Native Wayland frame capture: unavailable (native helper not installed)\n'
   fi
-  printf 'Native Wayland frame stream: not integrated\n'
+  printf 'FFmpeg capture fallback: disabled\n'
   if [ "$host_found" -eq 1 ]; then return 0; fi
   return 1
 }
@@ -427,7 +429,7 @@ case "${1:-status}" in
   stop) stop_session ;;
   server-stop) stop_server ;;
   x11) launch_x11_client "$@" ;;
-  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; optional XWayland frame capture)\n' ;;
+  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; native frame capture pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
 Usage: termux-xwayland [status|check|logs [all|session|weston|monitor]|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
@@ -443,7 +445,7 @@ monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
 The control endpoint accepts calls only from the installed com.termux UID.
-XWayland frame capture is optional and requires ffmpeg; native Wayland capture and Android input routing are not integrated.
+Native Wayland frame capture requires the authorized capture helper, which is not yet packaged. FFmpeg capture fallback is disabled. Android input routing remains limited to xdotool.
 EOF
     ;;
   *) printf 'Unknown command: %s\nRun termux-xwayland --help\n' "$1" >&2; exit 64 ;;
