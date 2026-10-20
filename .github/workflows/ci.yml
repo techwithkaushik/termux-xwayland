@@ -92,13 +92,13 @@ jobs:
           set -euo pipefail
           gradle --no-daemon --no-build-cache clean
           gradle --no-daemon --no-build-cache :android-app:testDebugUnitTest :android-app:assembleDebug
-      - name: Build Termux app_process Binder client DEX
-        run: bash tools/build-termux-binder-client.sh dist/termux-binder-client
-      - name: Upload Termux Binder client DEX
+      - name: Build Termux app_process direct socket client DEX
+        run: bash tools/build-termux-socket-client.sh dist/termux-socket-client
+      - name: Upload Termux direct socket client DEX
         uses: actions/upload-artifact@v4
         with:
-          name: termux-xwayland-binder-client-dex
-          path: dist/termux-binder-client/bridge-client.dex
+          name: termux-xwayland-socket-client-dex
+          path: dist/termux-socket-client/bridge-client.dex
           if-no-files-found: error
       - name: Upload display host APK
         uses: actions/upload-artifact@v4
@@ -114,12 +114,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: termux-xwayland-binder-client-dex
-          path: dist/termux-binder-client
-      - name: Stage Binder client into the Termux DEB tree
+          name: termux-xwayland-socket-client-dex
+          path: dist/termux-socket-client
+      - name: Stage direct socket client into the Termux DEB tree
         run: |
           set -euo pipefail
-          install -D -m 0644 dist/termux-binder-client/bridge-client.dex termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
+          install -D -m 0644 dist/termux-socket-client/bridge-client.dex termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
       - name: Check repository structure
         run: bash tools/check-scaffold.sh
       - name: Python diagnostic syntax and protocol validation tests
