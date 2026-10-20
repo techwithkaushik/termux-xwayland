@@ -8,21 +8,14 @@ The Termux-side client does **not** call `Context.bindService()`. A synthetic `A
 
 Instead, the client follows the Termux:X11 `CmdEntryPoint` pattern:
 1. Build a platform context in the `app_process` process.
-2. Send a package-targeted broadcast to the installed host APK with a Binder endpoint in the extras.
-3. The host receiver validates the broadcast sender UID maps to `com.termux`, then starts the in-app session service.
-4. The host service calls the client Binder endpoint, which transfers a connected socket FD over Binder.
-5. TXWB v1 runs over that FD. The client endpoint only accepts Binder calls from the installed host APK UID.
+2. Send a package-targeted broadcast to the existing host APK with a Binder endpoint in a nested Bundle.
+3. The host receiver checks the Binder descriptor and forwards the Binder to the in-app session service.
+4. The host service calls the client Binder endpoint, which checks the calling UID against the installed host APK UID and transfers one end of a connected socket pair through Binder.
+5. TXWB v1 runs over that FD.
 
-The host service is not exported. Only the dedicated receiver is exported, and it checks the actual broadcast sender UID before accepting the Binder object. No TCP listener, root, SELinux change, or Termux `RUN_COMMAND` permission is used.
+Android 10's public `BroadcastReceiver` API does not expose the sender UID, so the receiver does not claim to authenticate the broadcast sender. It validates the Binder descriptor as a sanity check, and the host service refuses to replace an active session. The Termux-side Binder endpoint authenticates the host UID before transferring an FD. A malicious app can at most attempt to trigger a new session/denial of service; it cannot impersonate the Termux-side endpoint's Binder implementation. Keep payload bounds and do not treat the broadcast alone as authentication.
 
-## Security and session
-
-- The host receiver validates the sender UID against Android's package-manager mapping for `com.termux`.
-- The client Binder endpoint validates the caller UID against the installed host APK UID.
-- Binder transfers a connected socket FD; no cross-UID AF_UNIX connect is required.
-- No TCP listener carries frames or input. The loopback status monitor remains separate control-plane polling.
-- TXWB v1 framing enforces known message kinds, reserved-bit validation and a 16 MiB payload ceiling.
-- The client reports connected only after a valid PING/PONG and logs a timestamped heartbeat every five seconds.
+The host session service is not exported. No TCP listener, root, SELinux change, or Termux `RUN_COMMAND` permission is used.
 
 ## XWayland frame path
 
