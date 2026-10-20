@@ -405,6 +405,15 @@ public final class BridgeClient {
         }
     }
 
+    /**
+     * Start the native Wayland capture helper.
+     *
+     * Do not fall back to FFmpeg/X11 root capture: rootless XWayland windows are
+     * composed by Weston and an X11 root grab can return a black frame. The helper
+     * must use an explicitly authorized Weston capture path and emit fixed-size
+     * RGBA frames to stdout. Until the helper is installed, fail closed and report
+     * a clear diagnostic rather than sending misleading black frames.
+     */
     private static Process startFrameCapture() {
         String display = System.getenv("DISPLAY");
         if (display == null || display.trim().isEmpty()) {
@@ -412,52 +421,29 @@ public final class BridgeClient {
             System.out.flush();
             return null;
         }
-        String ffmpeg = findExecutable("ffmpeg");
-        if (ffmpeg == null) {
-            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=ffmpeg_not_installed");
+        String capture = findExecutable("termux-xwayland-capture");
+        if (capture == null) {
+            System.out.println("FRAME_CAPTURE_UNAVAILABLE reason=native_wayland_capture_helper_not_installed");
             System.out.flush();
             return null;
         }
         try {
             Process process = new ProcessBuilder(
-                ffmpeg, "-hide_banner", "-loglevel", "warning",
-                "-f", "x11grab", "-framerate", "2", "-video_size", "640x360",
-                "-i", display, "-vf", "scale=640:360", "-pix_fmt", "rgba",
-                "-f", "rawvideo", "pipe:1"
-            ).redirectError(ProcessBuilder.Redirect.PIPE).start();
-            System.out.println("FRAME_CAPTURE_STARTED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " display=" + display + " size=640x360 fps=2 pid=" + "unavailable");
+                capture, "--display", display,
+                "--width", Integer.toString(FRAME_WIDTH),
+                "--height", Integer.toString(FRAME_HEIGHT),
+                "--format", "rgba"
+            ).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+            System.out.println("FRAME_CAPTURE_STARTED epoch_seconds="
+                + (System.currentTimeMillis() / 1000L)
+                + " backend=native-wayland display=" + display
+                + " size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT);
             System.out.flush();
-            Thread stderrReader = new Thread(() -> {
-                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        System.err.println("FFMPEG: " + line);
-                        System.err.flush();
-                    }
-                } catch (IOException readError) {
-                    System.err.println("FRAME_CAPTURE_STDERR_READ_FAILED: " + readError);
-                }
-            }, "termux-xwayland-ffmpeg-stderr");
-            stderrReader.setDaemon(true);
-            stderrReader.start();
-            Thread exitWatcher = new Thread(() -> {
-                try {
-                    int exitCode = process.waitFor();
-                    System.err.println("FRAME_CAPTURE_EXITED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " exit_code=" + exitCode);
-                    System.err.flush();
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    System.err.println("FRAME_CAPTURE_EXIT_WATCH_INTERRUPTED: " + interrupted);
-                }
-            }, "termux-xwayland-ffmpeg-exit");
-            exitWatcher.setDaemon(true);
-            exitWatcher.start();
             return process;
         } catch (IOException error) {
-            System.err.println("FRAME_CAPTURE_START_FAILED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " reason=process_start_failed error=" + error.getClass().getName() + " message=" + String.valueOf(error.getMessage()));
-            error.printStackTrace(System.err);
-            System.out.flush();
+            System.err.println("FRAME_CAPTURE_START_FAILED backend=native-wayland error="
+                + error.getClass().getName() + " message=" + String.valueOf(error.getMessage()));
+            System.err.flush();
             return null;
         }
     }
