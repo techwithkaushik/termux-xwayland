@@ -397,6 +397,7 @@ static int run_capture(struct capture_state *s, int requested_width, int request
     if (!rgba) { wl_buffer_destroy(buffer); munmap(pixels, bytes); return 12; }
     fprintf(stderr, "CAPTURE_READY: source=framebuffer size=%dx%d shm_format=%s; streaming RGBA frames to stdout\n",
             s->width, s->height, s->format == WL_SHM_FORMAT_ARGB8888 ? "ARGB8888" : "XRGB8888");
+    unsigned long frame_number = 0;
     for (;;) {
         s->completed = 0;
         s->failed = 0;
@@ -412,6 +413,28 @@ static int run_capture(struct capture_state *s, int requested_width, int request
             rgba[i + 1] = src[i + 1];
             rgba[i + 2] = src[i];
             rgba[i + 3] = s->format == WL_SHM_FORMAT_ARGB8888 ? src[i + 3] : 255;
+        }
+        /*
+         * Log aggregate pixel health, not pixel contents. This distinguishes a
+         * working Binder transport carrying a genuinely black Weston buffer
+         * from a frame-forwarding failure without dumping desktop data to logs.
+         */
+        frame_number++;
+        if (frame_number == 1 || frame_number % 50 == 0) {
+            size_t non_black = 0;
+            unsigned int max_channel = 0;
+            for (size_t i = 0; i < bytes; i += 4) {
+                unsigned int r = rgba[i];
+                unsigned int g = rgba[i + 1];
+                unsigned int b = rgba[i + 2];
+                if (r || g || b) non_black++;
+                if (r > max_channel) max_channel = r;
+                if (g > max_channel) max_channel = g;
+                if (b > max_channel) max_channel = b;
+            }
+            txw_log(non_black ? "INFO" : "WARN", "frame_pixel_health",
+                    "frame=%lu non_black_pixels=%zu total_pixels=%zu max_channel=%u",
+                    frame_number, non_black, bytes / 4, max_channel);
         }
         size_t written = 0;
         while (written < bytes) {
