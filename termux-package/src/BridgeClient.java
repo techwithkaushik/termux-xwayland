@@ -20,6 +20,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -60,8 +61,22 @@ public final class BridgeClient {
     private static final ExecutorService INPUT_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "termux-xwayland-input");
         thread.setDaemon(true);
+        thread.setPriority(Thread.NORM_PRIORITY);
         return thread;
     });
+    // Pointer motion is high-frequency and replaceable. Keep its queue bounded by
+    // accumulating relative deltas and submitting only one drain task at a time.
+    // Key/button/text events remain ordered on INPUT_EXECUTOR and never get dropped.
+    private static final ExecutorService POINTER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "termux-xwayland-pointer");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.NORM_PRIORITY);
+        return thread;
+    });
+    private static final Object RELATIVE_MOTION_LOCK = new Object();
+    private static int pendingRelativeX = 0;
+    private static int pendingRelativeY = 0;
+    private static boolean relativeMotionDrainQueued = false;
 
     private static int envDimension(String name, int fallback) {
         String value = System.getenv(name);
@@ -346,7 +361,9 @@ public final class BridgeClient {
                         }
                         if (message.kind == INPUT) {
                             final byte[] inputPayload = message.payload;
-                            INPUT_EXECUTOR.execute(() -> handleInput(inputPayload));
+                            if (!queueRelativeMotion(inputPayload)) {
+                                INPUT_EXECUTOR.execute(() -> handleInput(inputPayload));
+                            }
                             continue;
                         }
                         if (message.kind == CLOSE) return;
@@ -425,6 +442,56 @@ public final class BridgeClient {
     }
 
     /** Decode bounded normalized touch events and route them to the active XWayland display. */
+    /**
+     * Returns true when a relative-motion packet was consumed by the coalescer.
+     * Many tiny xdotool processes were previously started for every finger move;
+     * on Android this let a motion backlog form faster than it could be drained.
+     */
+    private static boolean queueRelativeMotion(byte[] payload) {
+        if (payload.length == 0 || payload.length > 128) return false;
+        String raw = new String(payload, StandardCharsets.US_ASCII).trim();
+        if (!raw.startsWith("REL ")) return false;
+        String[] fields = raw.split("\\s+");
+        if (fields.length != 3) return false;
+        final int dx;
+        final int dy;
+        try {
+            dx = Integer.parseInt(fields[1]);
+            dy = Integer.parseInt(fields[2]);
+        } catch (NumberFormatException invalid) {
+            return false;
+        }
+        if (Math.abs((long) dx) > 4096L || Math.abs((long) dy) > 4096L) return true;
+        synchronized (RELATIVE_MOTION_LOCK) {
+            pendingRelativeX = clampMotion((long) pendingRelativeX + dx);
+            pendingRelativeY = clampMotion((long) pendingRelativeY + dy);
+            if (relativeMotionDrainQueued) return true;
+            relativeMotionDrainQueued = true;
+        }
+        POINTER_EXECUTOR.execute(() -> {
+            while (true) {
+                final int moveX;
+                final int moveY;
+                synchronized (RELATIVE_MOTION_LOCK) {
+                    moveX = pendingRelativeX;
+                    moveY = pendingRelativeY;
+                    pendingRelativeX = 0;
+                    pendingRelativeY = 0;
+                    if (moveX == 0 && moveY == 0) {
+                        relativeMotionDrainQueued = false;
+                        return;
+                    }
+                }
+                handleInput(("REL " + moveX + " " + moveY).getBytes(StandardCharsets.US_ASCII));
+            }
+        });
+        return true;
+    }
+
+    private static int clampMotion(long value) {
+        return (int) Math.max(-8192L, Math.min(8192L, value));
+    }
+
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
         String rawEvent = new String(payload, StandardCharsets.UTF_8);
