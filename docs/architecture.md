@@ -7,7 +7,7 @@ Run graphical sessions from Termux and show them in the standalone Android app. 
 ## Components
 
 1. **Android host:** Kotlin Activity plus a `SurfaceView` or equivalent surface renderer. Validate frame dimensions, format and payload bounds before updating the surface.
-2. **Wayland compositor:** native Rust compositor (Smithay is a candidate, not yet integrated). Own Wayland surfaces, damage tracking, composition and output lifecycle.
+2. **Wayland compositor:** current session bootstrap launches the installed Weston binary with the headless/Pixman backend and asks it to start XWayland. A project-native Rust compositor (Smithay or equivalent) is not integrated yet. The current headless output is not an Android display backend.
 3. **Frame export:** export the compositor's rendered output buffer at the compositor boundary. Prefer a supported shared-buffer path when available; otherwise use bounded RGBA frames over the authenticated bridge as the first correct implementation. Do not capture the screen by running an external desktop recorder.
 4. **Three-part integration:** the existing Termux app provides the Linux userspace; a Termux-side companion package/CLI starts and manages sessions; the Termux-XWayland Android host owns display and input. The companion contract is in [termux-companion-contract.md](termux-companion-contract.md). Control-plane launch and persistent frame/input transport are separate responsibilities. Direct abstract AF_UNIX connections across app UIDs can be denied by Android SELinux; test on Android 10. No TCP/localhost fallback.
 5. **Input:** Android touch/key events mapped into compositor input events with coordinate scaling, focus and key-state cleanup.
@@ -22,12 +22,13 @@ The initial frame transport may copy pixels to a bounded protocol message. Optim
 ## Milestones
 
 1. Android host and bounded protocol smoke test. **Implemented; still only a synthetic frame.**
-2. Native compositor dependency and Android 10/ARM32 build feasibility. **Not yet verified.**
-3. One native Wayland surface rendered by the compositor and exported through the bridge.
-4. Android displays changing compositor frames with lifecycle-safe start/stop.
-5. Touch/keyboard input and resize handling.
-6. XWayland integration and a known X11 test client.
-7. XFCE session, ARM32/ARM64 validation, memory/performance checks and release packaging.
+2. Weston headless/XWayland session lifecycle through the Termux CLI. **Implemented as a bootstrap; lifecycle is CI-tested, target-device regression still needed.**
+3. Native compositor dependency and Android 10/ARM32 build feasibility. **Not yet verified.**
+4. One native Wayland surface rendered by the compositor and exported through the bridge.
+5. Android displays changing compositor frames with lifecycle-safe start/stop.
+6. Touch/keyboard input and resize handling.
+7. XWayland integration and a known X11 test client.
+8. XFCE session, ARM32/ARM64 validation, memory/performance checks and release packaging.
 
 ## Constraints and security
 
