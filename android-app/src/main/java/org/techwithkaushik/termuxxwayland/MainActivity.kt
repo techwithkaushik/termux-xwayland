@@ -275,7 +275,7 @@ class MainActivity : Activity() {
                 if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
                     val frame = pendingDesktopFrame.getAndSet(null)
                     if (frame != null) {
-                        previewImage.setFrame(frame.pixels, frame.width, frame.height)
+                        previewImage.setFrame(frame.pixels, frame.width, frame.height, frame.pixelOffset)
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
                         binderFrameCount++
