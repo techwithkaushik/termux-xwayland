@@ -382,7 +382,9 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                if (pointerCaptured) sendPointer("CANCEL", event.x, event.y, allowOutsideCapture = true)
+                if (pointerCaptured && touchMode == 2) {
+                    sendPointer("CANCEL", event.x, event.y, allowOutsideCapture = true)
+                }
                 pointerCaptured = false
                 activePointerId = MotionEvent.INVALID_POINTER_ID
                 return true
