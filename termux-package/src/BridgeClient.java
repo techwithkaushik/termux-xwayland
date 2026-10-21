@@ -359,8 +359,28 @@ public final class BridgeClient {
     /** Decode bounded normalized touch events and route them to the active XWayland display. */
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
-        String event = new String(payload, StandardCharsets.US_ASCII);
-        String[] fields = event.trim().split("\\s+");
+        String event = new String(payload, StandardCharsets.US_ASCII).trim();
+        String[] fields = event.split("\\s+");
+        String xdotool = findExecutable("xdotool");
+        if (xdotool == null) {
+            System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
+            return;
+        }
+
+        // Keyboard packets use: KEY <xdotool-key-name> DOWN|UP.
+        if (fields.length == 3 && "KEY".equals(fields[0])) {
+            if (!fields[2].equals("DOWN") && !fields[2].equals("UP")) {
+                System.err.println("INPUT_REJECTED reason=invalid_key_action");
+                return;
+            }
+            if (!fields[1].matches("[A-Za-z0-9_+.-]{1,32}")) {
+                System.err.println("INPUT_REJECTED reason=invalid_key_name");
+                return;
+            }
+            runInputCommand(new ProcessBuilder(xdotool, fields[2].equals("DOWN") ? "keydown" : "keyup", fields[1]));
+            return;
+        }
+
         if (fields.length != 3) {
             System.err.println("INPUT_REJECTED reason=invalid_fields");
             return;
@@ -379,25 +399,24 @@ public final class BridgeClient {
             System.err.println("INPUT_REJECTED reason=coordinates_out_of_range");
             return;
         }
-        String xdotool = findExecutable("xdotool");
-        if (xdotool == null) {
-            System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
-            return;
-        }
         int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (FRAME_WIDTH - 1)));
         int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (FRAME_HEIGHT - 1)));
+        ProcessBuilder command = new ProcessBuilder(xdotool, "mousemove", Integer.toString(x), Integer.toString(y));
+        if ("DOWN".equals(action)) {
+            command.command().add("mousedown");
+            command.command().add("1");
+        } else if ("UP".equals(action) || "CANCEL".equals(action)) {
+            command.command().add("mouseup");
+            command.command().add("1");
+        } else if (!"MOVE".equals(action)) {
+            System.err.println("INPUT_REJECTED reason=unknown_action");
+            return;
+        }
+        runInputCommand(command);
+    }
+
+    private static void runInputCommand(ProcessBuilder command) {
         try {
-            ProcessBuilder command = new ProcessBuilder(xdotool, "mousemove", Integer.toString(x), Integer.toString(y));
-            if ("DOWN".equals(action)) {
-                command.command().add("mousedown");
-                command.command().add("1");
-            } else if ("UP".equals(action) || "CANCEL".equals(action)) {
-                command.command().add("mouseup");
-                command.command().add("1");
-            } else if (!"MOVE".equals(action)) {
-                System.err.println("INPUT_REJECTED reason=unknown_action");
-                return;
-            }
             Process process = command.redirectErrorStream(true).start();
             if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly();
         } catch (Exception error) {
