@@ -202,15 +202,25 @@ class BridgeSessionService : Service() {
                 }
             )
         }
-        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val exitIntent = Intent(this, ExitSessionReceiver::class.java)
+            .setAction(ExitSessionReceiver.ACTION_EXIT)
+        val exitPendingIntent = android.app.PendingIntent.getBroadcast(
+            this, 73013, exitIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_IMMUTABLE else 0)
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, channelId)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-        }.setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("Termux XWayland session")
-            .setContentText("Desktop bridge is running; return to the host to view the session.")
+        }
+        val notification = builder
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("Termux XWayland connected")
+            .setContentText("Desktop bridge is active. Tap Exit to close the Android bridge session.")
             .setOngoing(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitPendingIntent)
             .build()
         startForeground(73012, notification)
     }
