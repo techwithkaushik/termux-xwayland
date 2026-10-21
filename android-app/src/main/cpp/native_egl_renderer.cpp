@@ -25,6 +25,7 @@ struct Renderer {
     GLint sampler = -1;
     int lastWidth = 0;
     int lastHeight = 0;
+    uint64_t renderedFrames = 0;
 };
 
 const char* kVertexShader =
@@ -207,6 +208,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     eglQuerySurface(r->display, r->surface, EGL_WIDTH, &surfaceWidth);
     eglQuerySurface(r->display, r->surface, EGL_HEIGHT, &surfaceHeight);
     if (surfaceWidth <= 0 || surfaceHeight <= 0) {
+        env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(rgba), JNI_ABORT);
         LOGE("eglQuerySurface returned invalid size %dx%d", surfaceWidth, surfaceHeight);
         return JNI_FALSE;
     }
@@ -248,11 +250,16 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
-    const GLenum glError = glGetError();
-    if (glError != GL_NO_ERROR) {
-        LOGE("OpenGL draw/upload failed: 0x%x frame=%dx%d surface=%dx%d",
-             glError, width, height, surfaceWidth, surfaceHeight);
-        return JNI_FALSE;
+    // glGetError may synchronize with the driver. Sample periodically rather
+    // than forcing a potential GPU/CPU stall on every high-resolution frame.
+    ++r->renderedFrames;
+    if (r->renderedFrames == 1 || r->renderedFrames % 120 == 0) {
+        const GLenum glError = glGetError();
+        if (glError != GL_NO_ERROR) {
+            LOGE("OpenGL draw/upload failed: 0x%x frame=%dx%d surface=%dx%d",
+                 glError, width, height, surfaceWidth, surfaceHeight);
+            return JNI_FALSE;
+        }
     }
     if (eglSwapBuffers(r->display, r->surface) != EGL_TRUE) {
         LOGE("eglSwapBuffers failed: 0x%x", eglGetError());
