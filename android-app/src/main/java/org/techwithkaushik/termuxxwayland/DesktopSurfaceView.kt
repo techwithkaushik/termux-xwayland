@@ -305,7 +305,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_POINTER_UP -> {
                 if (event.getPointerId(event.actionIndex) == activePointerId) {
-                    sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex))
+                    sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex), allowOutsideCapture = true)
                     pointerCaptured = false
                     activePointerId = MotionEvent.INVALID_POINTER_ID
                 }
@@ -316,14 +316,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                     val index = event.findPointerIndex(activePointerId).let {
                         if (it >= 0) it else event.actionIndex
                     }
-                    sendPointer("UP", event.getX(index), event.getY(index))
+                    sendPointer("UP", event.getX(index), event.getY(index), allowOutsideCapture = true)
                 }
                 pointerCaptured = false
                 activePointerId = MotionEvent.INVALID_POINTER_ID
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                if (pointerCaptured) sendPointer("CANCEL", event.x, event.y)
+                if (pointerCaptured) sendPointer("CANCEL", event.x, event.y, allowOutsideCapture = true)
                 pointerCaptured = false
                 activePointerId = MotionEvent.INVALID_POINTER_ID
                 return true
@@ -343,10 +343,15 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
                 val down = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS
                 val state = event.buttonState
-                val button = when {
-                    state and MotionEvent.BUTTON_SECONDARY != 0 -> 3
-                    state and MotionEvent.BUTTON_TERTIARY != 0 -> 2
-                    else -> 1
+                val button = when (event.actionButton) {
+                    MotionEvent.BUTTON_SECONDARY -> 3
+                    MotionEvent.BUTTON_TERTIARY -> 2
+                    MotionEvent.BUTTON_PRIMARY -> 1
+                    else -> when {
+                        state and MotionEvent.BUTTON_SECONDARY != 0 -> 3
+                        state and MotionEvent.BUTTON_TERTIARY != 0 -> 2
+                        else -> 1
+                    }
                 }
                 sendInput("BUTTON $button ${if (down) "DOWN" else "UP"}")
                 return true
