@@ -419,6 +419,14 @@ start_session() {
     stop_server >/dev/null 2>&1 || true
     fail "Termux Binder session could not connect; inspect $SESSION_LOG_FILE"
   fi
+  # Open the installed host with the current session monitor details. The host
+  # can then bind to the persistent service and poll the loopback monitor.
+  if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"; then
+    stop_binder_session
+    stop_monitor
+    stop_server >/dev/null 2>&1 || true
+    fail "could not open Android host; check termux-open and the installed host app"
+  fi
   notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
   printf 'Wayland server started; Android host launch request sent.\n'
   printf 'Binder transport: connected (PING/PONG verified).\n'
