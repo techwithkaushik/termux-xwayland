@@ -376,14 +376,12 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         return 3;
     }
     /*
-     * Capture the compositor's blending space, not the post-composition
-     * framebuffer. Weston may keep the native XWayland cursor as a separate
-     * cursor surface/plane; framebuffer capture can omit it. The blending
-     * source preserves the compositor-rendered cursor without drawing a
-     * synthetic Android-side pointer.
+     * Capture the base output, then composite the real XWayland cursor obtained
+     * from XFixes. This avoids relying on Weston capture backends to include a
+     * separately composed cursor plane and does not invent an Android cursor.
      */
-    fprintf(stderr, "CAPTURE_SOURCE_CREATE: output=%s source=blending\n", s->output ? "present" : "missing");
-    s->source = weston_capture_v1_create(s->factory, s->output, WESTON_CAPTURE_V1_SOURCE_BLENDING);
+    fprintf(stderr, "CAPTURE_SOURCE_CREATE: output=%s source=framebuffer\n", s->output ? "present" : "missing");
+    s->source = weston_capture_v1_create(s->factory, s->output, WESTON_CAPTURE_V1_SOURCE_FRAMEBUFFER);
     if (!s->source) {
         fprintf(stderr, "CAPTURE_ERROR: could not create Weston capture source\n");
         return 4;
