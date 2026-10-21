@@ -153,18 +153,17 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                     }
 
                     try {
-                        synchronized(frameLock) {
-                            if (surfaceReady && nativeHandle != 0L) {
-                                if (NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.width, frame.height)) {
-                                    renderedVersion = version
-                                    if (!firstFrameDrawnLogged) {
-                                        firstFrameDrawnLogged = true
-                                        Log.i(TAG, "event=first_frame_drawn renderer=EGL_GLES2 pixels=${frame.width}x${frame.height}")
-                                    }
-                                } else {
-                                    Log.w(TAG, "event=native_egl_render_failed")
-                                }
+                        // Do not hold frameLock while JNI/GPU work runs: the incoming
+                        // frame callback must be able to replace stale frames immediately.
+                        if (surfaceReady && nativeHandle != 0L &&
+                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.width, frame.height)) {
+                            synchronized(frameLock) { renderedVersion = version }
+                            if (!firstFrameDrawnLogged) {
+                                firstFrameDrawnLogged = true
+                                Log.i(TAG, "event=first_frame_drawn renderer=EGL_GLES2 pixels=${frame.width}x${frame.height}")
                             }
+                        } else {
+                            Log.w(TAG, "event=native_egl_render_failed")
                         }
                     } catch (e: Exception) {
                         val now = android.os.SystemClock.uptimeMillis()
