@@ -144,6 +144,26 @@ server_is_running() {
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null
 }
+build_input_helper_if_possible() {
+  local prefix="${PREFIX:-/data/data/com.termux/files/usr}"
+  local helper="$prefix/bin/termux-xwayland-input"
+  local builder="$prefix/share/termux-xwayland/tools/build-native-input.sh"
+  local source="$prefix/share/termux-xwayland/native/input/termux-xwayland-input.c"
+  if [[ -x "$helper" && -r "$source" && ! "$source" -nt "$helper" ]]; then
+    printf 'Native pointer input: helper is up to date (%s)\n' "$helper"
+    return 0
+  fi
+  if [[ -r "$builder" ]]; then
+    printf '%s\n' 'Native pointer input: attempting persistent XTest helper build.'
+    if bash "$builder" "$helper"; then
+      printf '%s\n' 'Native pointer input: helper build succeeded; pointer events avoid per-event xdotool process startup.'
+      return 0
+    fi
+    printf '%s\n' 'Native pointer input: optional build unavailable; xdotool fallback remains enabled.' >&2
+  fi
+  return 0
+}
+
 build_capture_helper_if_possible() {
   local prefix="${PREFIX:-/data/data/com.termux/files/usr}"
   local helper="$prefix/bin/termux-xwayland-capture"
@@ -172,6 +192,7 @@ build_capture_helper_if_possible() {
 start_server() {
   prepare_runtime_dir
   build_capture_helper_if_possible
+  build_input_helper_if_possible
   if server_is_running; then
     if [ ! -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
       fail "Weston PID $(cat "$PID_FILE") exists but Wayland socket is missing; inspect $LOG_FILE or run termux-xwayland stop"
