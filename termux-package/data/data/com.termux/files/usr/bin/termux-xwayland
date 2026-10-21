@@ -432,7 +432,7 @@ start_session() {
     stop_server >/dev/null 2>&1 || true
     fail "could not open Android host; check termux-open and the installed host app"
   fi
-  notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
+  notify_user "Termux-XWayland" "Host ready for input and applications. No desktop or GUI app was auto-started."
   printf 'Wayland server started; Android host launch request sent.\n'
   printf 'Binder transport: connected (PING/PONG verified).\n'
   printf 'Wayland frame stream: capture helper availability and live frame delivery are reported in session logs.\n'
@@ -461,19 +461,19 @@ case "${1:-status}" in
   server-start) start_server ;;
   stop) stop_session ;;
   server-stop) stop_server ;;
-  x11) launch_x11_client "$@" ;;
+  x11|app|desktop) launch_x11_client "$@" ;;
   --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; native Wayland capture helper supported)\n' ;;
   --help|-h|help)
     cat <<'EOF'
-Usage: termux-xwayland [status|check|logs [all|session|weston|monitor]|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
+Usage: termux-xwayland [status|check|logs [all|session|weston|monitor]|start|server-start|stop|server-stop|monitor-stop|app COMMAND|desktop COMMAND|x11 COMMAND|--version|--help]
 
 status/check  Show Android host, control IPC and Wayland server status.
 logs          Show recent session, Weston and monitor logs with error details.
-start         Start Weston, then send the Android host a validated launch request.
+start         Start host services and open the Android host; does not launch a desktop/app.
 server-start Start Weston without opening the Android host.
 stop          Stop the Binder session, monitor and Weston process.
 server-stop   Stop only the Weston process.
-x11 COMMAND   Launch an X11 app with DISPLAY set to the managed XWayland server.
+app COMMAND   Launch one X11 application after host/server startup.\ndesktop COMMAND Launch a desktop session explicitly (for example: startxfce4).\nx11 COMMAND   Alias for app; DISPLAY is set to managed XWayland.
 monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
