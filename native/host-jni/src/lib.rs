@@ -196,7 +196,6 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
     errno
 }
 
-
 /// Validate the bounded RGBA8888 wire payload without allocating a second pixel buffer.
 fn validate_rgba_payload(payload: &[u8]) -> Result<(usize, usize, &[u8]), libc::c_int> {
     if payload.len() < 8 {
