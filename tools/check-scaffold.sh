@@ -5,6 +5,9 @@ test -f build.gradle.kts
 test -f android-app/build.gradle.kts
 test -f android-app/src/main/AndroidManifest.xml
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/CursorOverlayView.kt
+grep -q 'frameHasVisiblePixels' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'cursorPositionListener' android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurfaceView.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeProtocol.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
