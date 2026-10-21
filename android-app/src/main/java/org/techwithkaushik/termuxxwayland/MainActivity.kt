@@ -427,11 +427,11 @@ class MainActivity : Activity() {
         previewImage = DesktopSurfaceView(this).apply {
             visibility = View.VISIBLE
             contentDescription = "Live Linux desktop"
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Color.TRANSPARENT)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
         }
         desktopRoot = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Color.TRANSPARENT)
             fitsSystemWindows = false
             addView(previewImage, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
