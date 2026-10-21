@@ -20,6 +20,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Runs inside the existing Termux UID via app_process. No companion APK,
@@ -52,6 +54,14 @@ public final class BridgeClient {
     private static final int FRAME_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
     private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
     private static volatile Process activeFrameCapture;
+    // Keep slow xdotool process launches off the Binder protocol/heartbeat loop.
+    // A single worker preserves key/button event ordering while the reader can
+    // continue answering PINGs and accepting frames during input bursts.
+    private static final ExecutorService INPUT_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "termux-xwayland-input");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private static int envDimension(String name, int fallback) {
         String value = System.getenv(name);
@@ -335,7 +345,8 @@ public final class BridgeClient {
                             break;
                         }
                         if (message.kind == INPUT) {
-                            handleInput(message.payload);
+                            final byte[] inputPayload = message.payload;
+                            INPUT_EXECUTOR.execute(() -> handleInput(inputPayload));
                             continue;
                         }
                         if (message.kind == CLOSE) return;
