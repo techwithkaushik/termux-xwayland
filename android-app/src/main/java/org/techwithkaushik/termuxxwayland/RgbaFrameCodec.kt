@@ -14,7 +14,7 @@ internal object RgbaFrameCodec {
         val width = ((payload[0].toInt() and 0xff) shl 8) or (payload[1].toInt() and 0xff)
         val height = ((payload[2].toInt() and 0xff) shl 8) or (payload[3].toInt() and 0xff)
         val format = payload[4].toInt() and 0xff
-        if (width !in 1..640 || height !in 1..360 || format != RGBA8888 ||
+        if (width !in 1..4096 || height !in 1..4096 || format != RGBA8888 ||
             payload[5] != 0.toByte() || payload[6] != 0.toByte() || payload[7] != 0.toByte()
         ) throw IOException("Unsupported or invalid frame metadata")
 
