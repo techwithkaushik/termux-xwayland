@@ -2,7 +2,7 @@
 
 Termux XWayland pairs the existing Android display-host APK with a Termux-installed CLI/DEB. The supported flow does **not** require a second companion APK. The goal is a Termux:X11-like Android display experience built around **Weston/Wayland + XWayland**, not a standalone Xorg/X-server stack.
 
-> **Current milestone:** the runtime bridge uses Termux-authorized Binder IPC and a socket file descriptor transferred between the Termux client and Android host. It does not require a TCP listener, a separate companion APK, root, or SELinux changes. CI and on-device verification are still required.
+> **Current integration mode:** the launcher temporarily starts Weston with `--debug` to unblock privileged output-capture testing. This is intentionally a broad, development-only authorization mode; do not use it for multi-user/public sessions. Remove it after the host is verified and a narrow compositor-side authority is implemented. Binder IPC still uses a transferred socket FD and requires no companion APK, root, or SELinux changes.
 
 ## Current implementation
 
@@ -12,7 +12,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 - **Packaging:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
 - **Transport security:** no production TCP listener is used. Binder caller UID checks and the session FD handoff are required.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
-- **Capture blocker:** Weston’s `weston_capture_v1` protocol is privileged and capture requests are denied unless a compositor-side authority explicitly authorizes them. A Wayland client alone cannot safely enable this. The native capture helper and a narrowly scoped authorization mechanism still need implementation.
+- **Capture blocker:** Weston’s `weston_capture_v1` protocol is privileged and capture requests are denied unless a compositor-side authority explicitly authorizes them. A Wayland client alone cannot safely enable this. The native capture helper is now included as source plus an on-device build recipe; the current debug mode is temporary and broad, and must be replaced with narrowly scoped compositor authorization before production.
 - **Remaining:** on-device verification of Binder session and actual frames, authorized native Wayland capture, Android touch/keyboard forwarding, resize/clipboard routing and reconnect handling.
 
 ## Build and run
