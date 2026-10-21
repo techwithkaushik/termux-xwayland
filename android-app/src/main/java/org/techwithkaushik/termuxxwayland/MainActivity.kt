@@ -152,15 +152,13 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // Back toggles the software keyboard; it must never finish the desktop host.
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        // isAcceptingText reports editor focus, not whether the IME is currently
+        // visible. It therefore caused Back to keep hiding an already-hidden IME.
+        // toggleSoftInput tracks the actual IME visibility and works on every press.
         if (!::previewImage.isInitialized) return
-        if (imm.isAcceptingText) {
-            imm.hideSoftInputFromWindow(previewImage.windowToken, 0)
-        } else {
-            previewImage.requestFocus()
-            imm.showSoftInput(previewImage, InputMethodManager.SHOW_IMPLICIT)
-        }
+        previewImage.requestFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
