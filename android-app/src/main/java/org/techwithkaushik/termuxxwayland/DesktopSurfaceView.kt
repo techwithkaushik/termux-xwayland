@@ -114,7 +114,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             while (surfaceReady && !Thread.currentThread().isInterrupted) {
                 val frame: Bitmap?
                 val version: Long
-                val shouldStop = synchronized(frameLock) {
+                val snapshot = synchronized(frameLock) {
                     while (surfaceReady && frameVersion == renderedVersion &&
                         !Thread.currentThread().isInterrupted) {
                         try {
@@ -125,14 +125,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         }
                     }
                     if (!surfaceReady || Thread.currentThread().isInterrupted) {
-                        true
+                        null
                     } else {
-                        frame = latestFrame
-                        version = frameVersion
-                        false
+                        Pair(latestFrame, frameVersion)
                     }
                 }
-                if (shouldStop) break
+                if (snapshot == null) break
+                frame = snapshot.first
+                version = snapshot.second
 
                 if (frame == null || frame.isRecycled || !holder.surface.isValid) {
                     synchronized(frameLock) { renderedVersion = version }
