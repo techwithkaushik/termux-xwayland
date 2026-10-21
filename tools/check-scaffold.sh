@@ -15,7 +15,7 @@ test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessi
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/RgbaFrameCodec.kt
 test -f android-app/src/main/cpp/native_egl_renderer.cpp
 grep -q 'eglSwapBuffers' android-app/src/main/cpp/native_egl_renderer.cpp
-grep -q 'pendingDesktopFrame = null' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'pendingDesktopFrame.set(null)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 
 # Native Wayland capture helper and protocol.
 test -f native/capture/termux-xwayland-capture.c
