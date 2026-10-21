@@ -5,37 +5,36 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.View
 import kotlin.math.min
 
 /**
- * Surface-backed desktop frame renderer.
+ * Canvas-backed desktop frame renderer.
  *
- * Frames are copied to the Surface on a worker thread instead of allocating an
- * ImageView bitmap update for every packet. The current transport may still feed
- * this view encoded RGBA frames; native compositor capture is a separate stage.
+ * Use the Activity's normal View rendering path rather than a separate
+ * SurfaceView/BufferQueue layer. This avoids SurfaceView z-order/composition
+ * problems on older Android/MIUI builds while keeping the incoming RGBA frame
+ * format and pointer coordinate mapping unchanged.
  */
 internal class DesktopSurfaceView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
-) : SurfaceView(context, attrs), SurfaceHolder.Callback {
+) : View(context, attrs) {
     private val frameLock = Any()
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private var latestFrame: Bitmap? = null
-    @Volatile private var surfaceReady = false
-    @Volatile private var firstFrameDrawnLogged = false
-    @Volatile private var renderFailureLogged = false
+    private var firstFrameDrawnLogged = false
     var inputEventListener: ((ByteArray) -> Unit)? = null
     private var lastMoveAt = 0L
     private var pointerCaptured = false
 
     init {
         setBackgroundColor(Color.rgb(20, 29, 43))
-        holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
+        setWillNotDraw(false)
     }
 
     fun setFrame(frame: Bitmap) {
@@ -46,7 +45,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 previous.recycle()
             }
         }
-        renderLatestFrame()
+        postInvalidateOnAnimation()
     }
 
     fun clearFrame() {
@@ -54,31 +53,43 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             latestFrame?.let { if (!it.isRecycled) it.recycle() }
             latestFrame = null
         }
-        if (surfaceReady) {
-            runCatching {
-                holder.lockCanvas()?.let { canvas ->
-                    try {
-                        canvas.drawColor(Color.rgb(20, 29, 43))
-                    } finally {
-                        holder.unlockCanvasAndPost(canvas)
-                    }
+        postInvalidateOnAnimation()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        canvas.drawColor(Color.rgb(20, 29, 43))
+        synchronized(frameLock) {
+            val bitmap = latestFrame
+            if (bitmap != null && !bitmap.isRecycled && width > 0 && height > 0) {
+                val scale = min(
+                    width.toFloat() / bitmap.width,
+                    height.toFloat() / bitmap.height
+                )
+                val drawWidth = bitmap.width * scale
+                val drawHeight = bitmap.height * scale
+                val left = (width - drawWidth) / 2f
+                val top = (height - drawHeight) / 2f
+                canvas.drawBitmap(
+                    bitmap,
+                    null,
+                    RectF(left, top, left + drawWidth, top + drawHeight),
+                    paint
+                )
+                if (!firstFrameDrawnLogged) {
+                    firstFrameDrawnLogged = true
+                    android.util.Log.i(
+                        TAG,
+                        "event=first_frame_drawn renderer=View bitmap=${bitmap.width}x${bitmap.height} canvas=${canvas.width}x${canvas.height}"
+                    )
                 }
             }
         }
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        surfaceReady = true
-        android.util.Log.i(TAG, "event=surface_created width=" + width + " height=" + height)
-        renderLatestFrame()
-    }
-
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        renderLatestFrame()
-    }
-
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        surfaceReady = false
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        android.util.Log.i(TAG, "event=view_size_changed width=$w height=$h")
     }
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
@@ -106,17 +117,15 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         if (action == "MOVE" && now - lastMoveAt < 32L) return true
         if (action == "MOVE") lastMoveAt = now
 
-        // The image is letterboxed to preserve its aspect ratio. Map touches
-        // against the displayed image rectangle, not the full SurfaceView.
         val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
         val normalizedY = ((event.y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
-        val payload = "$action ${normalizedX} ${normalizedY}".toByteArray(Charsets.US_ASCII)
+        val payload = "$action $normalizedX $normalizedY".toByteArray(Charsets.US_ASCII)
         runCatching { inputEventListener?.invoke(payload) }
         if (action == "UP" || action == "CANCEL") pointerCaptured = false
         return true
     }
 
-    private fun contentBounds(): android.graphics.RectF {
+    private fun contentBounds(): RectF {
         val frameWidth: Int
         val frameHeight: Int
         synchronized(frameLock) {
@@ -129,49 +138,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         val drawHeight = frameHeight * scale
         val left = (width - drawWidth) / 2f
         val top = (height - drawHeight) / 2f
-        return android.graphics.RectF(left, top, left + drawWidth, top + drawHeight)
-    }
-
-    private fun renderLatestFrame() {
-        if (!surfaceReady || width <= 0 || height <= 0) return
-        val canvas = try {
-            holder.lockCanvas()
-        } catch (error: Exception) {
-            if (!renderFailureLogged) {
-                renderFailureLogged = true
-                android.util.Log.w(TAG, "event=surface_lock_failed width=" + width + " height=" + height, error)
-            }
-            null
-        } ?: return
-
-        try {
-            canvas.drawColor(Color.rgb(20, 29, 43))
-            synchronized(frameLock) {
-                val bitmap = latestFrame
-                if (bitmap != null && !bitmap.isRecycled) {
-                    val scale = min(
-                        canvas.width.toFloat() / bitmap.width,
-                        canvas.height.toFloat() / bitmap.height
-                    )
-                    val drawWidth = bitmap.width * scale
-                    val drawHeight = bitmap.height * scale
-                    val left = (canvas.width - drawWidth) / 2f
-                    val top = (canvas.height - drawHeight) / 2f
-                    canvas.drawBitmap(
-                        bitmap,
-                        null,
-                        android.graphics.RectF(left, top, left + drawWidth, top + drawHeight),
-                        paint
-                    )
-                    if (!firstFrameDrawnLogged) {
-                        firstFrameDrawnLogged = true
-                        android.util.Log.i(TAG, "event=first_frame_drawn bitmap=" + bitmap.width + "x" + bitmap.height + " canvas=" + canvas.width + "x" + canvas.height)
-                    }
-                }
-            }
-        } finally {
-            holder.unlockCanvasAndPost(canvas)
-        }
+        return RectF(left, top, left + drawWidth, top + drawHeight)
     }
 
     private companion object {
