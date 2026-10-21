@@ -63,21 +63,26 @@ int main(int argc, char **argv) {
         }
         char op[12] = {0}, action[8] = {0};
         int a = 0, b = 0;
-        if (sscanf(line, "%11s %d %d %7s", op, &a, &b, action) < 1) continue;
+        if (sscanf(line, "%11s", op) != 1) continue;
         if (!strcmp(op, "REL")) {
+            if (sscanf(line, "%*s %d %d", &a, &b) != 2) continue;
             if (a < -8192 || a > 8192 || b < -8192 || b > 8192) continue;
             XTestFakeRelativeMotionEvent(dpy, a, b, CurrentTime);
         } else if (!strcmp(op, "MOVE")) {
+            if (sscanf(line, "%*s %d %d", &a, &b) != 2) continue;
             if (a < 0 || a >= width || b < 0 || b >= height) continue;
             XTestFakeMotionEvent(dpy, DefaultScreen(dpy), a, b, CurrentTime);
         } else if (!strcmp(op, "BUTTON")) {
+            if (sscanf(line, "%*s %d %7s", &a, action) != 2) continue;
             if (a < 1 || a > 3 || (strcmp(action, "DOWN") && strcmp(action, "UP"))) continue;
             button(dpy, a, !strcmp(action, "DOWN"));
         } else if (!strcmp(op, "DOWN") || !strcmp(op, "UP") || !strcmp(op, "CANCEL")) {
+            if (sscanf(line, "%*s %d %d", &a, &b) != 2) continue;
             if (a < 0 || a >= width || b < 0 || b >= height) continue;
             XTestFakeMotionEvent(dpy, DefaultScreen(dpy), a, b, CurrentTime);
             button(dpy, 1, !strcmp(op, "DOWN"));
         } else if (!strcmp(op, "CLICK")) {
+            if (sscanf(line, "%*s %d", &a) != 1) continue;
             if (a < 1 || a > 3) continue;
             button(dpy, a, 1);
             button(dpy, a, 0);
