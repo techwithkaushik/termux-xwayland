@@ -13,6 +13,11 @@
 #include <time.h>
 #include <stdarg.h>
 
+#ifdef TXW_HAVE_XFIXES
+#include <X11/Xlib.h>
+#include <X11/extensions/Xfixes.h>
+#endif
+
 static FILE *txw_log_file;
 static unsigned long txw_log_sequence;
 
@@ -320,6 +325,47 @@ static int roundtrip_with_timeout(struct wl_display *display, int timeout_ms) {
     return 0;
 }
 
+
+#ifdef TXW_HAVE_XFIXES
+/*
+ * Read the real XWayland cursor image/position from XFixes. Weston headless
+ * output capture does not reliably include the compositor cursor, so compose
+ * the server-provided cursor into the captured frame instead of drawing a
+ * synthetic Android-side cursor.
+ */
+static void composite_x11_cursor(Display *xdisplay, uint8_t *rgba,
+                                 int frame_width, int frame_height) {
+    if (!xdisplay || !rgba || frame_width <= 0 || frame_height <= 0) return;
+    XFixesCursorImage *cursor = XFixesGetCursorImage(xdisplay);
+    if (!cursor) return;
+
+    int left = (int)cursor->x - (int)cursor->xhot;
+    int top = (int)cursor->y - (int)cursor->yhot;
+    for (unsigned int cy = 0; cy < cursor->height; cy++) {
+        int y = top + (int)cy;
+        if (y < 0 || y >= frame_height) continue;
+        for (unsigned int cx = 0; cx < cursor->width; cx++) {
+            int x = left + (int)cx;
+            if (x < 0 || x >= frame_width) continue;
+            uint32_t argb = (uint32_t)cursor->pixels[(size_t)cy * cursor->width + cx];
+            unsigned int alpha = (argb >> 24) & 0xffu;
+            if (!alpha) continue;
+            unsigned int red = (argb >> 16) & 0xffu;
+            unsigned int green = (argb >> 8) & 0xffu;
+            unsigned int blue = argb & 0xffu;
+            size_t offset = ((size_t)y * (size_t)frame_width + (size_t)x) * 4;
+            unsigned int inverse = 255u - alpha;
+            /* XFixes cursor pixels are premultiplied ARGB. */
+            rgba[offset] = (uint8_t)(red + ((unsigned int)rgba[offset] * inverse + 127u) / 255u);
+            rgba[offset + 1] = (uint8_t)(green + ((unsigned int)rgba[offset + 1] * inverse + 127u) / 255u);
+            rgba[offset + 2] = (uint8_t)(blue + ((unsigned int)rgba[offset + 2] * inverse + 127u) / 255u);
+            rgba[offset + 3] = 255;
+        }
+    }
+    XFree(cursor);
+}
+#endif
+
 static int run_capture(struct capture_state *s, int requested_width, int requested_height) {
     if (wl_display_roundtrip(s->display) < 0) {
         fprintf(stderr, "CAPTURE_ERROR: initial Wayland roundtrip failed\n");
@@ -447,6 +493,9 @@ static int run_capture(struct capture_state *s, int requested_width, int request
          * working Binder transport carrying a genuinely black Weston buffer
          * from a frame-forwarding failure without dumping desktop data to logs.
          */
+#ifdef TXW_HAVE_XFIXES
+        composite_x11_cursor(xdisplay, rgba, requested_width, requested_height);
+#endif
         frame_number++;
         if (frame_number == 1 || frame_number % 50 == 0) {
             size_t non_black = 0;
@@ -506,6 +555,20 @@ int main(int argc, char **argv) {
     }
     txw_log_init();
     txw_log("INFO", "process_start", "argc=%d", argc);
+#ifdef TXW_HAVE_XFIXES
+    Display *xdisplay = NULL;
+    const char *xdisplay_name = getenv("DISPLAY");
+    if (xdisplay_name && *xdisplay_name) {
+        xdisplay = XOpenDisplay(xdisplay_name);
+        if (xdisplay) {
+            txw_log("INFO", "xfixes_cursor_enabled", "display=%s", xdisplay_name);
+        } else {
+            txw_log("WARN", "xfixes_cursor_unavailable", "display=%s", xdisplay_name);
+        }
+    } else {
+        txw_log("WARN", "xfixes_cursor_unavailable", "reason=DISPLAY_not_set");
+    }
+#endif
     struct capture_state s = {0};
     s.display = wl_display_connect(NULL);
     if (!s.display) { fprintf(stderr, "CAPTURE_ERROR: cannot connect to Wayland: %s\n", strerror(errno)); return 2; }
@@ -521,6 +584,9 @@ int main(int argc, char **argv) {
     if (s.shm) wl_shm_destroy(s.shm);
     if (registry) wl_registry_destroy(registry);
     wl_display_disconnect(s.display);
+#ifdef TXW_HAVE_XFIXES
+    if (xdisplay) XCloseDisplay(xdisplay);
+#endif
     txw_log(result == 0 ? "INFO" : "ERROR", "process_exit", "exit_code=%d", result);
     if (txw_log_file && txw_log_file != stderr) fclose(txw_log_file);
     txw_log_file = NULL;
