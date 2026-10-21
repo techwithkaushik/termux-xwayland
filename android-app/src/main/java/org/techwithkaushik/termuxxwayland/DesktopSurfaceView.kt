@@ -9,6 +9,7 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
+import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import kotlin.math.min
@@ -186,6 +187,43 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
     }
 
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val name = xdotoolKeyName(keyCode) ?: return super.onKeyDown(keyCode, event)
+        inputEventListener?.invoke("KEY $name DOWN".toByteArray(Charsets.US_ASCII))
+        return true
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        val name = xdotoolKeyName(keyCode) ?: return super.onKeyUp(keyCode, event)
+        inputEventListener?.invoke("KEY $name UP".toByteArray(Charsets.US_ASCII))
+        return true
+    }
+
+    private fun xdotoolKeyName(keyCode: Int): String? = when (keyCode) {
+        KeyEvent.KEYCODE_ENTER -> "Return"
+        KeyEvent.KEYCODE_DEL -> "BackSpace"
+        KeyEvent.KEYCODE_TAB -> "Tab"
+        KeyEvent.KEYCODE_ESCAPE -> "Escape"
+        KeyEvent.KEYCODE_SPACE -> "space"
+        KeyEvent.KEYCODE_DPAD_UP -> "Up"
+        KeyEvent.KEYCODE_DPAD_DOWN -> "Down"
+        KeyEvent.KEYCODE_DPAD_LEFT -> "Left"
+        KeyEvent.KEYCODE_DPAD_RIGHT -> "Right"
+        KeyEvent.KEYCODE_HOME -> "Home"
+        KeyEvent.KEYCODE_MOVE_END -> "End"
+        KeyEvent.KEYCODE_PAGE_UP -> "Page_Up"
+        KeyEvent.KEYCODE_PAGE_DOWN -> "Page_Down"
+        KeyEvent.KEYCODE_FORWARD_DEL -> "Delete"
+        KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> "Shift_L"
+        KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> "Control_L"
+        KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> "Alt_L"
+        KeyEvent.KEYCODE_META_LEFT, KeyEvent.KEYCODE_META_RIGHT -> "Super_L"
+        in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> ('a' + keyCode - KeyEvent.KEYCODE_A).toString()
+        in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> ('0' + keyCode - KeyEvent.KEYCODE_0).toString()
+        else -> null
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (width <= 0 || height <= 0) return true
         val action = when (event.actionMasked) {
@@ -201,6 +239,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         if (action == "DOWN") {
             if (!insideContent) return true
             pointerCaptured = true
+            requestFocus()
         } else if (!pointerCaptured) {
             return true
         }
