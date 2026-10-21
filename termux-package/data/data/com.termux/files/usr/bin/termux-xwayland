@@ -430,7 +430,7 @@ start_session() {
   notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
   printf 'Wayland server started; Android host launch request sent.\n'
   printf 'Binder transport: connected (PING/PONG verified).\n'
-  printf 'Wayland frame stream: not connected (real compositor frames are not integrated yet).\n'
+  printf 'Wayland frame stream: capture helper availability and live frame delivery are reported in session logs.\n'
 }
 stop_session() {
   stop_binder_session
@@ -457,7 +457,7 @@ case "${1:-status}" in
   stop) stop_session ;;
   server-stop) stop_server ;;
   x11) launch_x11_client "$@" ;;
-  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; native frame capture pending)\n' ;;
+  --version|-V) printf 'termux-xwayland DEB 0.3.0 (Binder session; native Wayland capture helper supported)\n' ;;
   --help|-h|help)
     cat <<'EOF'
 Usage: termux-xwayland [status|check|logs [all|session|weston|monitor]|start|server-start|stop|server-stop|monitor-stop|x11 COMMAND|--version|--help]
@@ -473,7 +473,7 @@ monitor-stop  Stop the loopback status monitor.
 --version     Print version and current implementation status.
 
 The control endpoint accepts calls only from the installed com.termux UID.
-Native Wayland frame capture requires the authorized capture helper, which is not yet packaged. FFmpeg capture fallback is disabled. Android input routing remains limited to xdotool.
+Native Wayland frame capture source and on-device build recipe are included in this package; the helper is built on-device when the required Termux development packages and Weston protocol XML are available. Live pixel delivery depends on Weston capture authorization/backend support. FFmpeg capture fallback is disabled. Android input routing remains limited to xdotool.
 EOF
     ;;
   *) printf 'Unknown command: %s\nRun termux-xwayland --help\n' "$1" >&2; exit 64 ;;
