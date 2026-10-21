@@ -538,8 +538,8 @@ public final class BridgeClient {
             } else if ("MOVE".equals(op) && fields.length == 3) {
                 float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
                 if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;
-                int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
-                int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
+                int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+                int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
                 command = "MOVE " + x + " " + y;
             } else if ("BUTTON".equals(op) && fields.length == 3 &&
                     ("DOWN".equals(fields[2]) || "UP".equals(fields[2]))) {
