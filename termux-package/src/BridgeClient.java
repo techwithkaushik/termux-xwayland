@@ -405,7 +405,7 @@ public final class BridgeClient {
     /** Decode bounded normalized touch events and route them to the active XWayland display. */
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
-        String event = new String(payload, StandardCharsets.US_ASCII).trim();
+        String event = new String(payload, StandardCharsets.UTF_8).trim();
         String[] fields = event.split("\\s+");
         String xdotool = findExecutable("xdotool");
         if (xdotool == null) {
