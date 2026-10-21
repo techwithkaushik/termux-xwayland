@@ -5,6 +5,7 @@ Maintainer: Termux-XWayland contributors
 Section: x11
 Priority: optional
 Depends: bash, coreutils, socat, xdotool
+Suggests: clang, pkg-config, wayland
 Description: Termux-side direct socket client for Termux-XWayland
  A small Termux package that manages Weston lifecycle and starts an app_process
- Binder FD client under the existing Termux UID. XWayland touch input is routed through xdotool when installed. Native Wayland frame capture remains pending and does not depend on FFmpeg.
+ Binder FD client under the existing Termux UID. XWayland touch input is routed through xdotool when installed. Native Wayland frame capture remains optional until its on-device build dependencies are installed.

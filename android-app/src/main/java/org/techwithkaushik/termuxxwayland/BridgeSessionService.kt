@@ -47,26 +47,48 @@ class BridgeSessionService : Service() {
         @Volatile
         internal var frameListener: ((RgbaFrameCodec.Frame) -> Unit)? = null
         private var receivedFrameCount = 0L
+        // Never let pixel decoding block the Binder socket reader. Keep only the
+        // newest encoded frame, since presenting stale desktop frames adds latency.
+        private val pendingFramePayload = java.util.concurrent.atomic.AtomicReference<ByteArray?>(null)
+        private val frameDecodeScheduled = AtomicBoolean(false)
 
         internal fun dispatchFrame(payload: ByteArray) {
             val count = synchronized(this) { ++receivedFrameCount }
             if (count == 1L || count % 100L == 0L) {
                 Log.i(TAG, "event=frame_packet_received count=$count payload_bytes=${payload.size} listener_attached=${frameListener != null}")
             }
-            // Keep transport alive, but skip expensive pixel decoding while the Activity is detached.
-            val listener = frameListener ?: return
-            try {
-                val frame = RgbaFrameCodec.decode(payload)
-                if (count == 1L || count % 100L == 0L) {
-                    Log.i(TAG, "event=frame_packet_decoded count=$count width=${frame.width} height=${frame.height}")
+            if (frameListener == null) return
+            pendingFramePayload.set(payload)
+            scheduleFrameDecode()
+        }
+
+        private fun scheduleFrameDecode() {
+            if (!frameDecodeScheduled.compareAndSet(false, true)) return
+            Thread({
+                try {
+                    while (true) {
+                        val payload = pendingFramePayload.getAndSet(null) ?: break
+                        val listener = frameListener ?: continue
+                        try {
+                            val frame = RgbaFrameCodec.decode(payload)
+                            if (frame.width <= 0 || frame.height <= 0) continue
+                            listener(frame)
+                        } catch (error: IOException) {
+                            Log.e(TAG, "event=frame_packet_decode_failed payload_bytes=${payload.size}", error)
+                        } catch (error: RuntimeException) {
+                            Log.e(TAG, "event=frame_listener_failed", error)
+                        }
+                    }
+                } finally {
+                    frameDecodeScheduled.set(false)
+                    // Close the race where a new frame arrives between the empty
+                    // check and clearing the scheduled flag.
+                    if (pendingFramePayload.get() != null) scheduleFrameDecode()
                 }
-                listener(frame)
-            } catch (error: IOException) {
-                Log.e(TAG, "event=frame_packet_decode_failed count=$count payload_bytes=${payload.size}", error)
-                throw error
-            } catch (error: RuntimeException) {
-                Log.e(TAG, "event=frame_listener_failed count=$count", error)
-                throw error
+            }, "txw-frame-decode").apply {
+                isDaemon = true
+                priority = Thread.NORM_PRIORITY
+                start()
             }
         }
 
@@ -202,15 +224,25 @@ class BridgeSessionService : Service() {
                 }
             )
         }
-        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val exitIntent = Intent(this, ExitSessionReceiver::class.java)
+            .setAction(ExitSessionReceiver.ACTION_EXIT)
+        val exitPendingIntent = android.app.PendingIntent.getBroadcast(
+            this, 73013, exitIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_IMMUTABLE else 0)
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, channelId)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-        }.setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("Termux XWayland session")
-            .setContentText("Desktop bridge is running; return to the host to view the session.")
+        }
+        val notification = builder
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("Termux XWayland connected")
+            .setContentText("Desktop bridge is active. Tap Exit to close the Android bridge session.")
             .setOngoing(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitPendingIntent)
             .build()
         startForeground(73012, notification)
     }

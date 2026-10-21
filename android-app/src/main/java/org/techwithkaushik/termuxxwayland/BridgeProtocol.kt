@@ -26,7 +26,7 @@ internal object BridgeProtocol {
     private val magic = byteArrayOf('T'.code.toByte(), 'X'.code.toByte(), 'W'.code.toByte(), 'B'.code.toByte())
     private const val VERSION = 1
     private const val HEADER_SIZE = 12
-    private const val MAX_PAYLOAD_SIZE = 16 * 1024 * 1024
+    private const val MAX_PAYLOAD_SIZE = 32 * 1024 * 1024
 
     fun parseToken(hex: String): ByteArray {
         if (hex.length != 64 || hex.any { it.digitToIntOrNull(16) == null }) {

@@ -2,17 +2,17 @@ package org.techwithkaushik.termuxxwayland
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.PixelFormat
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.InputConnection
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import kotlin.math.min
 
 /**
  * SurfaceView renderer for the streamed X11 desktop.
@@ -26,28 +26,39 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
     private val frameLock = Object()
-    private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-    private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.FILL
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
-    }
     @Volatile private var surfaceReady = false
     @Volatile private var renderThread: Thread? = null
-    private var latestFrame: Bitmap? = null
+    private data class PixelFrame(val pixels: ByteArray, val width: Int, val height: Int, val pixelOffset: Int)
+    private var latestFrame: PixelFrame? = null
     private var frameVersion = 0L
     private var renderedVersion = -1L
     private var firstFrameDrawnLogged = false
     var inputEventListener: ((ByteArray) -> Unit)? = null
+    var cursorPositionListener: ((Float, Float) -> Unit)? = null
     private var lastMoveAt = 0L
     private var pointerCaptured = false
-    @Volatile private var cursorX = 0.5f
-    @Volatile private var cursorY = 0.5f
-    @Volatile private var desktopFrameAvailable = false
-    @Volatile private var cursorVisible = true
+    private var touchStartX = 0f
+    private var touchStartY = 0f
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
+    private var touchMoved = false
+    private var lastCentroidX = 0f
+    private var lastCentroidY = 0f
+    private var lastTapAt = 0L
+    private var tapCount = 0
+    private val pointerPrefs by lazy {
+        context.getSharedPreferences("termux_xwayland_preferences", Context.MODE_PRIVATE)
+    }
+    private val touchMode: Int
+        get() = pointerPrefs.getInt("touch_mode", 0).coerceIn(0, 2)
+    private val pointerSpeed: Float
+        get() = pointerPrefs.getInt("pointer_speed", 100).coerceIn(1, 300) / 100f
 
     init {
-        setBackgroundColor(Color.BLACK)
+        // Match Termux:X11's transparent view background. Configure alpha before
+        // the Surface is created so EGL can composite letterbox areas correctly.
+        setBackgroundColor(Color.TRANSPARENT)
+        holder.setFormat(PixelFormat.TRANSLUCENT)
         isFocusable = true
         isFocusableInTouchMode = true
         holder.addCallback(this)
@@ -63,10 +74,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         synchronized(frameLock) {
+            // Re-present the most recent frame after a size/format change.
             renderedVersion = -1L
             frameLock.notifyAll()
         }
-        Log.i(TAG, "event=surface_changed width=$width height=$height format=$format")
+        Log.i(TAG, "event=surface_changed width=$width height=$height format=$format valid=${holder.surface.isValid}")
+        // surfaceChanged can arrive after a fast EGL initialization failure. Make
+        // sure a dead renderer is restarted instead of leaving a permanently black view.
+        if (holder.surface.isValid && renderThread?.isAlive != true) startRenderThread()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -85,22 +100,18 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         Log.i(TAG, "event=surface_destroyed")
     }
 
-    fun setFrame(frame: Bitmap) {
+    fun setFrame(pixels: ByteArray, width: Int, height: Int, pixelOffset: Int = 0) {
+        if (width <= 0 || height <= 0 || pixelOffset < 0 || pixelOffset.toLong() + width.toLong() * height * 4L > pixels.size) return
         synchronized(frameLock) {
-            val previous = latestFrame
-            latestFrame = frame
+            // Keep only the newest decoded frame; avoid allocating/copying a Bitmap per frame.
+            latestFrame = PixelFrame(pixels, width, height, pixelOffset)
             frameVersion++
-            desktopFrameAvailable = true
-            if (previous != null && previous !== frame && !previous.isRecycled) {
-                previous.recycle()
-            }
             frameLock.notifyAll()
         }
     }
 
     fun clearFrame() {
         synchronized(frameLock) {
-            latestFrame?.let { if (!it.isRecycled) it.recycle() }
             latestFrame = null
             frameVersion++
             frameLock.notifyAll()
@@ -109,89 +120,151 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     private fun startRenderThread() {
         if (renderThread?.isAlive == true) return
-        renderThread = Thread({
+        val thread = Thread({
+            var nativeHandle = 0L
             var lastLoggedErrorAt = 0L
-            while (surfaceReady && !Thread.currentThread().isInterrupted) {
-                val frame: Bitmap?
-                val version: Long
-                val snapshot = synchronized(frameLock) {
-                    while (surfaceReady && frameVersion == renderedVersion &&
-                        !Thread.currentThread().isInterrupted) {
-                        try {
-                            frameLock.wait()
-                        } catch (_: InterruptedException) {
+            try {
+                // Some Android devices deliver surfaceCreated before the window is
+                // fully EGL-ready. Retry initialization while this same surface lives
+                // instead of exiting permanently on the first transient failure.
+                while (surfaceReady && !Thread.currentThread().isInterrupted &&
+                    nativeHandle == 0L) {
+                    if (!holder.surface.isValid) {
+                        try { Thread.sleep(100L) } catch (_: InterruptedException) {
                             Thread.currentThread().interrupt()
-                            break
+                        }
+                        continue
+                    }
+                    nativeHandle = NativeEglRenderer.nativeInitialize(holder.surface)
+                    if (nativeHandle == 0L && surfaceReady &&
+                        !Thread.currentThread().isInterrupted) {
+                        Log.e(TAG, "event=native_egl_init_failed retry_ms=500")
+                        try { Thread.sleep(500L) } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
                         }
                     }
-                    if (!surfaceReady || Thread.currentThread().isInterrupted) {
-                        null
-                    } else {
-                        Pair(latestFrame, frameVersion)
-                    }
                 }
-                if (snapshot == null) break
-                frame = snapshot.first
-                version = snapshot.second
-
-                if (frame == null || frame.isRecycled || !holder.surface.isValid) {
-                    synchronized(frameLock) { renderedVersion = version }
-                    continue
-                }
-
-                var canvas: Canvas? = null
-                try {
-                    canvas = holder.lockCanvas()
-                    if (canvas != null) {
-                        synchronized(frameLock) {
-                            if (surfaceReady && !frame.isRecycled) {
-                                drawFrame(canvas, frame)
-                                renderedVersion = version
-                                if (!firstFrameDrawnLogged) {
-                                    firstFrameDrawnLogged = true
-                                    Log.i(TAG, "event=first_frame_drawn renderer=SurfaceView bitmap=${frame.width}x${frame.height} canvas=${canvas.width}x${canvas.height}")
-                                }
+                if (nativeHandle == 0L) return@Thread
+                Log.i(TAG, "event=native_egl_initialized renderer=EGL_GLES2")
+                while (surfaceReady && !Thread.currentThread().isInterrupted) {
+                    val snapshot = synchronized(frameLock) {
+                        while (surfaceReady && frameVersion == renderedVersion &&
+                            !Thread.currentThread().isInterrupted) {
+                            try {
+                                frameLock.wait()
+                            } catch (_: InterruptedException) {
+                                Thread.currentThread().interrupt()
+                                break
                             }
                         }
+                        if (!surfaceReady || Thread.currentThread().isInterrupted) null
+                        else Pair(latestFrame, frameVersion)
+                    } ?: break
+
+                    val frame = snapshot.first
+                    val version = snapshot.second
+                    if (frame == null || !holder.surface.isValid) {
+                        synchronized(frameLock) { renderedVersion = version }
+                        continue
                     }
-                } catch (e: Exception) {
-                    val now = android.os.SystemClock.uptimeMillis()
-                    if (now - lastLoggedErrorAt > 5000L) {
-                        Log.w(TAG, "event=surface_render_failed message=${e.message}", e)
-                        lastLoggedErrorAt = now
+
+                    try {
+                        // Do not hold frameLock while JNI/GPU work runs: the incoming
+                        // frame callback must be able to replace stale frames immediately.
+                        if (surfaceReady && nativeHandle != 0L &&
+                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height)) {
+                            synchronized(frameLock) { renderedVersion = version }
+                            if (!firstFrameDrawnLogged) {
+                                firstFrameDrawnLogged = true
+                                Log.i(TAG, "event=first_frame_drawn renderer=EGL_GLES2 pixels=${frame.width}x${frame.height}")
+                            }
+                        } else {
+                            // A failed GPU/surface operation must consume this frame version.
+                            // Otherwise the render loop immediately retries the same frame
+                            // without waiting for a new one, pegging a CPU core and worsening
+                            // EGL_BAD_SURFACE/context-loss crashes.
+                            synchronized(frameLock) {
+                                renderedVersion = maxOf(renderedVersion, version)
+                            }
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastLoggedErrorAt > 5000L) {
+                                Log.w(TAG, "event=native_egl_render_failed frame=${frame.width}x${frame.height}")
+                                lastLoggedErrorAt = now
+                            }
+                        }
+                    } catch (e: Exception) {
+                        val now = android.os.SystemClock.uptimeMillis()
+                        if (now - lastLoggedErrorAt > 5000L) {
+                            Log.w(TAG, "event=native_egl_render_exception message=${e.message}", e)
+                            lastLoggedErrorAt = now
+                        }
                     }
-                } finally {
-                    if (canvas != null) {
-                        try {
-                            holder.unlockCanvasAndPost(canvas)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "event=surface_post_failed message=${e.message}")
+                }
+            } finally {
+                if (nativeHandle != 0L) {
+                    runCatching { NativeEglRenderer.nativeRelease(nativeHandle) }
+                        .onFailure { Log.w(TAG, "event=native_egl_release_failed", it) }
+                }
+                // Clear only our own thread reference. A new Surface may already
+                // have installed a replacement renderer thread.
+                if (renderThread === Thread.currentThread()) renderThread = null
+                Log.i(TAG, "event=native_egl_thread_stopped surfaceReady=${surfaceReady}")
+                // Covers the race where surfaceCreated arrives while the previous
+                // thread is still exiting and startRenderThread therefore cannot start.
+                if (surfaceReady && !Thread.currentThread().isInterrupted) {
+                    post {
+                        if (surfaceReady && holder.surface.isValid && renderThread?.isAlive != true) {
+                            startRenderThread()
                         }
                     }
                 }
             }
-        }, "XWaylandSurfaceRenderer").apply {
+        }, "XWaylandNativeEglRenderer").apply {
             priority = Thread.NORM_PRIORITY
-            start()
         }
+        // Publish the reference before starting: a very fast thread exit must be
+        // able to clear its own reference in finally without racing this assignment.
+        renderThread = thread
+        thread.start()
     }
 
-    private fun drawFrame(canvas: Canvas, bitmap: Bitmap) {
-        canvas.drawColor(Color.BLACK)
-        if (width <= 0 || height <= 0) return
-        val scale = min(canvas.width.toFloat() / bitmap.width, canvas.height.toFloat() / bitmap.height)
-        val drawWidth = bitmap.width * scale
-        val drawHeight = bitmap.height * scale
-        val left = (canvas.width - drawWidth) / 2f
-        val top = (canvas.height - drawHeight) / 2f
-        canvas.drawBitmap(bitmap, null, RectF(left, top, left + drawWidth, top + drawHeight), paint)
-        if (cursorVisible) {
-            val cursorLeft = left + cursorX * drawWidth
-            val cursorTop = top + cursorY * drawHeight
-            drawCursor(canvas, cursorLeft, cursorTop, min(canvas.width, canvas.height) / 42f)
+
+    override fun onCheckIsTextEditor(): Boolean = true
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT or
+            android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        return object : BaseInputConnection(this, true) {
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                val value = text?.toString().orEmpty()
+                if (value.isEmpty()) return true
+                // Keep the bridge packet bounded and reject control characters.
+                val safe = value.filter { it == '\n' || it == '\t' || it >= ' ' && it != '\u007f' }
+                if (safe.isNotEmpty() && safe.toByteArray(Charsets.UTF_8).size <= 100) {
+                    inputEventListener?.invoke(("TEXT " + safe).toByteArray(Charsets.UTF_8))
+                }
+                return true
+            }
+
+            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                repeat(beforeLength.coerceIn(0, 20)) {
+                    inputEventListener?.invoke("KEY BackSpace DOWN".toByteArray(Charsets.US_ASCII))
+                    inputEventListener?.invoke("KEY BackSpace UP".toByteArray(Charsets.US_ASCII))
+                }
+                return true
+            }
+
+            override fun sendKeyEvent(event: KeyEvent): Boolean {
+                val name = xdotoolKeyName(event.keyCode) ?: return false
+                inputEventListener?.invoke(
+                    "KEY $name ${if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"}"
+                        .toByteArray(Charsets.US_ASCII)
+                )
+                return true
+            }
         }
     }
-
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val name = xdotoolKeyName(keyCode) ?: return super.onKeyDown(keyCode, event)
@@ -229,83 +302,206 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         else -> null
     }
 
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (width <= 0 || height <= 0) return true
-        val action = when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> "DOWN"
-            MotionEvent.ACTION_MOVE -> "MOVE"
-            MotionEvent.ACTION_UP -> "UP"
-            MotionEvent.ACTION_CANCEL -> "CANCEL"
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val index = event.actionIndex
+                val x = event.getX(index)
+                val y = event.getY(index)
+                activePointerId = event.getPointerId(index)
+                pointerCaptured = true
+                touchStartX = x
+                touchStartY = y
+                lastTouchX = x
+                lastTouchY = y
+                lastCentroidX = x
+                lastCentroidY = y
+                touchMoved = false
+                when (touchMode) {
+                    0 -> Unit // Trackpad: relative motion and tap-to-click.
+                    1 -> sendPointer("MOVE", x, y) // Simulated touchscreen: absolute pointer, tap-to-click.
+                    else -> sendPointer("DOWN", x, y) // Direct touch: hold left button while in contact.
+                }
+                requestFocus()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Keep the original finger as the primary pointer; a second finger
+                // must not accidentally release or re-press the desktop mouse button.
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!pointerCaptured) return true
+                val index = event.findPointerIndex(activePointerId)
+                if (index < 0) return true
+                val x = event.getX(index)
+                val y = event.getY(index)
+                val now = android.os.SystemClock.uptimeMillis()
+                if (kotlin.math.abs(x - touchStartX) > 7f || kotlin.math.abs(y - touchStartY) > 7f) touchMoved = true
+                // Match Termux:X11's trackpad semantics: one finger moves the pointer
+                // relatively, while two fingers scroll instead of moving the pointer.
+                if (touchMode == 0 && event.pointerCount >= 2) {
+                    var cx = 0f
+                    var cy = 0f
+                    for (i in 0 until event.pointerCount) {
+                        cx += event.getX(i)
+                        cy += event.getY(i)
+                    }
+                    cx /= event.pointerCount
+                    cy /= event.pointerCount
+                    val scrollX = (cx - lastCentroidX) / resources.displayMetrics.density
+                    val scrollY = (cy - lastCentroidY) / resources.displayMetrics.density
+                    if (now - lastMoveAt >= 16L && (kotlin.math.abs(scrollX) >= 1f || kotlin.math.abs(scrollY) >= 1f)) {
+                        sendInput("SCROLL ${-scrollY / 3f} ${-scrollX / 3f}")
+                        lastMoveAt = now
+                    }
+                    lastCentroidX = cx
+                    lastCentroidY = cy
+                    return true
+                }
+                val dx = x - lastTouchX
+                val dy = y - lastTouchY
+                if (now - lastMoveAt < 16L) return true
+                lastMoveAt = now
+                when (touchMode) {
+                    0 -> {
+                        if (touchMoved && (dx != 0f || dy != 0f)) {
+                            val bounds = contentBounds()
+                            val scaleX = if (bounds.width() > 0f) (frameWidthForInput() / bounds.width()) else 1f
+                            val scaleY = if (bounds.height() > 0f) (frameHeightForInput() / bounds.height()) else 1f
+                            sendInput("REL ${kotlin.math.round(dx * scaleX * pointerSpeed).toInt()} ${kotlin.math.round(dy * scaleY * pointerSpeed).toInt()}")
+                        }
+                    }
+                    else -> sendPointer("MOVE", x, y)
+                }
+                lastTouchX = x
+                lastTouchY = y
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (event.getPointerId(event.actionIndex) == activePointerId) {
+                    if (touchMode == 2) sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex), allowOutsideCapture = true)
+                    pointerCaptured = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (pointerCaptured) {
+                    val index = event.findPointerIndex(activePointerId).let {
+                        if (it >= 0) it else event.actionIndex
+                    }
+                    val x = event.getX(index)
+                    val y = event.getY(index)
+                    when (touchMode) {
+                        0 -> if (!touchMoved) {
+                            val now = android.os.SystemClock.uptimeMillis()
+                            tapCount = if (now - lastTapAt <= android.view.ViewConfiguration.getDoubleTapTimeout()) tapCount + 1 else 1
+                            lastTapAt = now
+                            sendInput("CLICK ${if (tapCount >= 2) 1 else 1}")
+                            if (tapCount >= 2) tapCount = 0
+                        }
+                        1 -> if (!touchMoved) {
+                            sendPointer("MOVE", x, y, allowOutsideCapture = true)
+                            sendInput("CLICK 1")
+                        }
+                        else -> sendPointer("UP", x, y, allowOutsideCapture = true)
+                    }
+                }
+                pointerCaptured = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (pointerCaptured && touchMode == 2) {
+                    sendPointer("CANCEL", event.x, event.y, allowOutsideCapture = true)
+                }
+                pointerCaptured = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                return true
+            }
+            MotionEvent.ACTION_HOVER_MOVE -> {
+                sendPointer("MOVE", event.x, event.y, allowOutsideCapture = true)
+                return true
+            }
+            MotionEvent.ACTION_SCROLL -> {
+                val vertical = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                val horizontal = event.getAxisValue(MotionEvent.AXIS_HSCROLL)
+                if (vertical != 0f || horizontal != 0f) {
+                    sendInput("SCROLL $vertical $horizontal")
+                }
+                return true
+            }
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                val down = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS
+                val state = event.buttonState
+                val button = when (event.actionButton) {
+                    MotionEvent.BUTTON_SECONDARY -> 3
+                    MotionEvent.BUTTON_TERTIARY -> 2
+                    MotionEvent.BUTTON_PRIMARY -> 1
+                    else -> when {
+                        state and MotionEvent.BUTTON_SECONDARY != 0 -> 3
+                        state and MotionEvent.BUTTON_TERTIARY != 0 -> 2
+                        else -> 1
+                    }
+                }
+                sendInput("BUTTON $button ${if (down) "DOWN" else "UP"}")
+                return true
+            }
             else -> return true
         }
-        val bounds = contentBounds()
-        val insideContent = event.x >= bounds.left && event.x <= bounds.right &&
-            event.y >= bounds.top && event.y <= bounds.bottom
-        if (action == "DOWN") {
-            if (!insideContent) return true
-            pointerCaptured = true
-            requestFocus()
-        } else if (!pointerCaptured) {
-            return true
-        }
+    }
 
-        val now = android.os.SystemClock.uptimeMillis()
-        if (action == "MOVE" && now - lastMoveAt < 16L) return true
-        if (action == "MOVE") lastMoveAt = now
-        val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
-        val normalizedY = ((event.y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
-        cursorX = normalizedX
-        cursorY = normalizedY
-        cursorVisible = true
-        synchronized(frameLock) {
-            frameVersion++
-            frameLock.notifyAll()
-        }
-        runCatching {
-            inputEventListener?.invoke("$action $normalizedX $normalizedY".toByteArray(Charsets.US_ASCII))
-        }
-        if (action == "UP" || action == "CANCEL") pointerCaptured = false
+    private fun sendPointer(
+        action: String,
+        x: Float,
+        y: Float,
+        allowOutsideCapture: Boolean = false
+    ): Boolean {
+        val bounds = contentBounds()
+        val insideContent = x >= bounds.left && x <= bounds.right &&
+            y >= bounds.top && y <= bounds.bottom
+        if (!insideContent && !allowOutsideCapture) return false
+        if (bounds.width() <= 0f || bounds.height() <= 0f) return false
+
+        cursorPositionListener?.invoke(x, y)
+        val normalizedX = ((x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
+        val normalizedY = ((y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
+        sendInput("$action $normalizedX $normalizedY")
         return true
     }
 
-    private fun drawCursor(canvas: Canvas, x: Float, y: Float, scale: Float) {
-        // Startup marker until the first real desktop frame arrives; then show a desktop arrow.
-        if (!desktopFrameAvailable) {
-            val arm = 10f * scale
-            cursorPaint.style = Paint.Style.STROKE
-            cursorPaint.strokeWidth = 3f * scale
-            canvas.drawLine(x - arm, y - arm, x + arm, y + arm, cursorPaint)
-            canvas.drawLine(x + arm, y - arm, x - arm, y + arm, cursorPaint)
-            cursorPaint.style = Paint.Style.FILL
-            return
+    private fun sendInput(value: String) {
+        runCatching {
+            inputEventListener?.invoke(value.toByteArray(Charsets.US_ASCII))
         }
-        val path = android.graphics.Path().apply {
-            moveTo(x, y)
-            lineTo(x, y + 20f * scale)
-            lineTo(x + 5f * scale, y + 15f * scale)
-            lineTo(x + 9f * scale, y + 25f * scale)
-            lineTo(x + 13f * scale, y + 23f * scale)
-            lineTo(x + 9f * scale, y + 13f * scale)
-            lineTo(x + 16f * scale, y + 13f * scale)
-            close()
-        }
-        canvas.drawPath(path, cursorPaint)
     }
 
-    private fun contentBounds(): RectF {
+    private fun frameWidthForInput(): Float = synchronized(frameLock) {
+        (latestFrame?.width ?: 640).toFloat()
+    }
+
+    private fun frameHeightForInput(): Float = synchronized(frameLock) {
+        (latestFrame?.height ?: 360).toFloat()
+    }
+
+    private fun contentBounds(): android.graphics.RectF {
         val frameWidth: Int
         val frameHeight: Int
         synchronized(frameLock) {
             val frame = latestFrame
-            frameWidth = if (frame != null && !frame.isRecycled) frame.width else 640
-            frameHeight = if (frame != null && !frame.isRecycled) frame.height else 360
+            frameWidth = frame?.width ?: 640
+            frameHeight = frame?.height ?: 360
         }
-        val scale = min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+        val scale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
         val drawWidth = frameWidth * scale
         val drawHeight = frameHeight * scale
         val left = (width - drawWidth) / 2f
         val top = (height - drawHeight) / 2f
-        return RectF(left, top, left + drawWidth, top + drawHeight)
+        return android.graphics.RectF(left, top, left + drawWidth, top + drawHeight)
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 package org.techwithkaushik.termuxxwayland
 
+
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.ClipData
@@ -47,6 +48,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
+private fun RgbaFrameCodec.Frame.toArgbPixels(): IntArray {
+    val result = IntArray(width * height)
+    var source = 0
+    for (index in result.indices) {
+        val red = pixels[source++].toInt() and 0xff
+        val green = pixels[source++].toInt() and 0xff
+        val blue = pixels[source++].toInt() and 0xff
+        val alpha = pixels[source++].toInt() and 0xff
+        result[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+    }
+    return result
+}
+
 class MainActivity : Activity() {
     private val ink = Color.rgb(22, 32, 48)
     private val muted = Color.rgb(99, 113, 132)
@@ -82,7 +96,14 @@ class MainActivity : Activity() {
             statusTitle.text = "Session connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
+            previewImage.visibility = View.VISIBLE
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
+            // Never retain pixels from an earlier Binder session. Until the new
+            // server sends a frame, the desktop surface stays empty/black.
+            pendingDesktopFrame.set(null)
+            previewImage.clearFrame()
+            binderFrameCount = 0L
+            if (::connectionPanel.isInitialized) connectionPanel.visibility = View.VISIBLE
             local.frameListener = { frame ->
                 if (binderFrameCount == 0L) {
                     Log.i("TermuxXWayland", "event=first_frame_received width=${frame.width} height=${frame.height}")
@@ -95,10 +116,11 @@ class MainActivity : Activity() {
 
         override fun onServiceDisconnected(name: ComponentName) {
             localBridgeBinder?.frameListener = null
+            pendingDesktopFrame.set(null)
             if (::previewImage.isInitialized) {
                 previewImage.inputEventListener = null
                 previewImage.clearFrame()
-                previewImage.visibility = View.GONE
+                previewImage.visibility = View.VISIBLE
             }
             if (::desktopProofDescription.isInitialized) {
                 desktopProofDescription.text =
@@ -144,22 +166,13 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        // isAcceptingText reports editor focus, not whether the IME is currently
+        // visible. It therefore caused Back to keep hiding an already-hidden IME.
+        // toggleSoftInput tracks the actual IME visibility and works on every press.
+        if (!::previewImage.isInitialized) return
+        previewImage.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        if (::tokenInput.isInitialized && tokenInput.hasFocus()) {
-            if (imm.isAcceptingText) {
-                imm.hideSoftInputFromWindow(window.decorView.windowToken, 0)
-                tokenInput.clearFocus()
-            } else {
-                imm.showSoftInput(tokenInput, InputMethodManager.SHOW_IMPLICIT)
-            }
-            return
-        }
-        if (::tokenInput.isInitialized) {
-            tokenInput.requestFocus()
-            imm.showSoftInput(tokenInput, InputMethodManager.SHOW_IMPLICIT)
-        } else {
-            super.onBackPressed()
-        }
+        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -262,22 +275,21 @@ class MainActivity : Activity() {
                 if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
                     val frame = pendingDesktopFrame.getAndSet(null)
                     if (frame != null) {
-                        previewImage.setFrame(
-                            Bitmap.createBitmap(
-                                frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888
-                            )
-                        )
+                        previewImage.setFrame(frame.pixels, frame.width, frame.height, frame.pixelOffset)
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
                         binderFrameCount++
-                        if (::binderStatusDescription.isInitialized) {
-                            binderStatusDescription.text =
-                                "Binder FD: authenticated • rendered frames: $binderFrameCount"
-                        }
-                        if (::desktopProofDescription.isInitialized) {
-                            desktopProofDescription.text =
-                                "FRAME STREAM ACTIVE • received pixel frames over Binder; desktop content is not yet verified. Rendered frames: $binderFrameCount."
-                            desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
+                        // Avoid forcing extra TextView layout work on every desktop frame.
+                        if (binderFrameCount == 1L || binderFrameCount % 60L == 0L) {
+                            if (::binderStatusDescription.isInitialized) {
+                                binderStatusDescription.text =
+                                    "Binder FD: authenticated • rendered frames: $binderFrameCount"
+                            }
+                            if (::desktopProofDescription.isInitialized) {
+                                desktopProofDescription.text =
+                                    "FRAME STREAM ACTIVE • received pixel frames over Binder; desktop content is not yet verified. Rendered frames: $binderFrameCount."
+                                desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
+                            }
                         }
                     }
                 }
@@ -297,7 +309,7 @@ class MainActivity : Activity() {
         val serverState = uri.getQueryParameter("server").orEmpty()
         val port = uri.getQueryParameter("port")?.toIntOrNull() ?: -1
         if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
-            serverState != "running" ||
+            serverState !in setOf("running", "starting") ||
             port !in 30000..49999) {
             getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
                 .clear()
@@ -329,7 +341,13 @@ class MainActivity : Activity() {
                     socket.soTimeout = 1500
                     socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
                     val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.US_ASCII)
-                    writer.write("STATUS $sessionId\n")
+                    // Display.getRealMetrics reports actual pixels rather than dp; Termux's
+                    // shell user cannot reliably query this on Android 10/MIUI.
+                    @Suppress("DEPRECATION")
+                    val metrics = android.util.DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay.getRealMetrics(metrics)
+                    writer.write("STATUS $sessionId ${metrics.widthPixels} ${metrics.heightPixels}\n")
                     writer.flush()
                     response = BufferedReader(
                         InputStreamReader(socket.getInputStream(), Charsets.US_ASCII)
@@ -419,11 +437,11 @@ class MainActivity : Activity() {
         previewImage = DesktopSurfaceView(this).apply {
             visibility = View.VISIBLE
             contentDescription = "Live Linux desktop"
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Color.TRANSPARENT)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
         }
         desktopRoot = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Color.TRANSPARENT)
             fitsSystemWindows = false
             addView(previewImage, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -449,12 +467,7 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
             }
             actions.addView(actionButton("⚙  Settings") {
-                runCatching {
-                    startActivity(Intent(
-                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:$packageName")
-                    ))
-                }.onFailure { Log.w("TermuxXWayland", "Could not open app settings", it) }
+                startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 rightMargin = dp(8)
             })
@@ -562,7 +575,7 @@ class MainActivity : Activity() {
                         "Connected (same UID)"
                     }
                     previewImage.clearFrame()
-                    previewImage.visibility = View.GONE
+                    previewImage.visibility = View.VISIBLE
                     desktopProofDescription.text =
                         "NO LIVE DESKTOP FRAME • Legacy socket test passed, but its synthetic test image is deliberately not rendered as a desktop."
                     desktopProofDescription.setTextColor(Color.rgb(185, 28, 28))
@@ -629,7 +642,7 @@ class MainActivity : Activity() {
         }
         connectButton.text = "Run legacy socket diagnostic"
         previewImage.clearFrame()
-        previewImage.visibility = View.GONE
+        previewImage.visibility = View.VISIBLE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
     }
@@ -714,7 +727,7 @@ class MainActivity : Activity() {
 
     private fun decodeTestFrame(payload: ByteArray): Bitmap {
         val frame = RgbaFrameCodec.decode(payload)
-        return Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(frame.toArgbPixels(), frame.width, frame.height, Bitmap.Config.ARGB_8888)
     }
 
     private fun showError(message: String) {

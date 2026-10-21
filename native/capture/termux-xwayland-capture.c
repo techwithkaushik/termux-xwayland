@@ -13,6 +13,11 @@
 #include <time.h>
 #include <stdarg.h>
 
+#ifdef TXW_HAVE_XFIXES
+#include <X11/Xlib.h>
+#include <X11/extensions/Xfixes.h>
+#endif
+
 static FILE *txw_log_file;
 static unsigned long txw_log_sequence;
 
@@ -320,6 +325,61 @@ static int roundtrip_with_timeout(struct wl_display *display, int timeout_ms) {
     return 0;
 }
 
+
+#ifdef TXW_HAVE_XFIXES
+/*
+ * Read the real XWayland cursor image/position from XFixes. Weston headless
+ * output capture does not reliably include the compositor cursor, so compose
+ * the server-provided cursor into the captured frame instead of drawing a
+ * synthetic Android-side cursor.
+ */
+static void composite_x11_cursor(Display *xdisplay, uint8_t *rgba,
+                                 int frame_width, int frame_height) {
+    if (!xdisplay || !rgba || frame_width <= 0 || frame_height <= 0) return;
+    XFixesCursorImage *cursor = XFixesGetCursorImage(xdisplay);
+    if (!cursor) return;
+
+    int left = (int)cursor->x - (int)cursor->xhot;
+    int top = (int)cursor->y - (int)cursor->yhot;
+    for (unsigned int cy = 0; cy < cursor->height; cy++) {
+        int y = top + (int)cy;
+        if (y < 0 || y >= frame_height) continue;
+        for (unsigned int cx = 0; cx < cursor->width; cx++) {
+            int x = left + (int)cx;
+            if (x < 0 || x >= frame_width) continue;
+            uint32_t argb = (uint32_t)cursor->pixels[(size_t)cy * cursor->width + cx];
+            unsigned int alpha = (argb >> 24) & 0xffu;
+            if (!alpha) continue;
+            unsigned int red = (argb >> 16) & 0xffu;
+            unsigned int green = (argb >> 8) & 0xffu;
+            unsigned int blue = argb & 0xffu;
+            size_t offset = ((size_t)y * (size_t)frame_width + (size_t)x) * 4;
+            unsigned int inverse = 255u - alpha;
+            /* XFixes cursor pixels are premultiplied ARGB. */
+            rgba[offset] = (uint8_t)(red + ((unsigned int)rgba[offset] * inverse + 127u) / 255u);
+            rgba[offset + 1] = (uint8_t)(green + ((unsigned int)rgba[offset + 1] * inverse + 127u) / 255u);
+            rgba[offset + 2] = (uint8_t)(blue + ((unsigned int)rgba[offset + 2] * inverse + 127u) / 255u);
+            rgba[offset + 3] = 255;
+        }
+    }
+    XFree(cursor);
+}
+#endif
+
+#ifdef TXW_HAVE_XFIXES
+static Display *open_cursor_display(void) {
+    const char *name = getenv("DISPLAY");
+    if (!name || !*name) {
+        txw_log("WARN", "xfixes_cursor_unavailable", "reason=DISPLAY_not_set");
+        return NULL;
+    }
+    Display *display = XOpenDisplay(name);
+    if (display) txw_log("INFO", "xfixes_cursor_enabled", "display=%s", name);
+    else txw_log("WARN", "xfixes_cursor_unavailable", "display=%s", name);
+    return display;
+}
+#endif
+
 static int run_capture(struct capture_state *s, int requested_width, int requested_height) {
     if (wl_display_roundtrip(s->display) < 0) {
         fprintf(stderr, "CAPTURE_ERROR: initial Wayland roundtrip failed\n");
@@ -329,7 +389,11 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         fprintf(stderr, "CAPTURE_UNAVAILABLE: missing wl_output, wl_shm, or weston_capture_v1 global\n");
         return 3;
     }
-    /* Source 1 is Weston framebuffer capture. Weston still enforces its policy. */
+    /*
+     * Capture the base output, then composite the real XWayland cursor obtained
+     * from XFixes. This avoids relying on Weston capture backends to include a
+     * separately composed cursor plane and does not invent an Android cursor.
+     */
     fprintf(stderr, "CAPTURE_SOURCE_CREATE: output=%s source=framebuffer\n", s->output ? "present" : "missing");
     s->source = weston_capture_v1_create(s->factory, s->output, WESTON_CAPTURE_V1_SOURCE_FRAMEBUFFER);
     if (!s->source) {
@@ -363,17 +427,21 @@ static int run_capture(struct capture_state *s, int requested_width, int request
                 s->got_size, s->got_format, s->formats_done, s->source_events_seen);
         return 5;
     }
-    if (s->width != requested_width || s->height != requested_height) {
-        fprintf(stderr, "CAPTURE_SIZE_MISMATCH: requested=%dx%d compositor=%dx%d\n",
-                requested_width, requested_height, s->width, s->height);
-        return 6;
-    }
-    if (s->width > INT32_MAX / 4 || (size_t)s->height > SIZE_MAX / ((size_t)s->width * 4)) {
+    /*
+     * Weston capture buffers must use the compositor's native output size.
+     * The Android TXWB stream has a fixed size, so scale after capture rather
+     * than rejecting perfectly valid outputs whose dimensions differ.
+     */
+    if (s->width > INT32_MAX / 4 ||
+        (size_t)s->height > SIZE_MAX / ((size_t)s->width * 4) ||
+        requested_width > INT32_MAX / 4 ||
+        (size_t)requested_height > SIZE_MAX / ((size_t)requested_width * 4)) {
         fprintf(stderr, "CAPTURE_ERROR: frame dimensions overflow\n");
         return 7;
     }
     int stride = s->width * 4;
     size_t bytes = (size_t)stride * (size_t)s->height;
+    size_t output_bytes = (size_t)requested_width * (size_t)requested_height * 4;
     int fd = make_buffer_file(bytes);
     if (fd < 0) {
         fprintf(stderr, "CAPTURE_ERROR: cannot allocate shared frame: %s\n", strerror(errno));
@@ -393,10 +461,17 @@ static int run_capture(struct capture_state *s, int requested_width, int request
     wl_shm_pool_destroy(pool);
     if (!buffer) { munmap(pixels, bytes); fprintf(stderr, "CAPTURE_ERROR: wl_shm buffer creation failed\n"); return 11; }
 
-    uint8_t *rgba = malloc(bytes);
+#ifdef TXW_HAVE_XFIXES
+    Display *xdisplay = open_cursor_display();
+#endif
+    uint8_t *rgba = malloc(output_bytes);
     if (!rgba) { wl_buffer_destroy(buffer); munmap(pixels, bytes); return 12; }
-    fprintf(stderr, "CAPTURE_READY: source=framebuffer size=%dx%d shm_format=%s; streaming RGBA frames to stdout\n",
-            s->width, s->height, s->format == WL_SHM_FORMAT_ARGB8888 ? "ARGB8888" : "XRGB8888");
+    fprintf(stderr, "CAPTURE_READY: source=framebuffer source_size=%dx%d stream_size=%dx%d shm_format=%s; streaming RGBA frames to stdout\n",
+            s->width, s->height, requested_width, requested_height,
+            s->format == WL_SHM_FORMAT_ARGB8888 ? "ARGB8888" : "XRGB8888");
+    txw_log("INFO", "capture_dimensions",
+            "source_width=%d source_height=%d stream_width=%d stream_height=%d",
+            s->width, s->height, requested_width, requested_height);
     unsigned long frame_number = 0;
     for (;;) {
         s->completed = 0;
@@ -408,22 +483,39 @@ static int run_capture(struct capture_state *s, int requested_width, int request
             free(rgba); wl_buffer_destroy(buffer); munmap(pixels, bytes); return 13;
         }
         const uint8_t *src = pixels;
-        for (size_t i = 0; i < bytes; i += 4) {
-            rgba[i] = src[i + 2];
-            rgba[i + 1] = src[i + 1];
-            rgba[i + 2] = src[i];
-            rgba[i + 3] = s->format == WL_SHM_FORMAT_ARGB8888 ? src[i + 3] : 255;
+        /*
+         * Nearest-neighbour scaling keeps the helper dependency-free and
+         * guarantees exactly requested_width * requested_height RGBA bytes
+         * per frame, which is the contract consumed by BridgeClient.
+         */
+        for (int y = 0; y < requested_height; y++) {
+            int source_y = (int)(((int64_t)y * s->height) / requested_height);
+            for (int x = 0; x < requested_width; x++) {
+                int source_x = (int)(((int64_t)x * s->width) / requested_width);
+                size_t source_offset = ((size_t)source_y * (size_t)s->width +
+                                        (size_t)source_x) * 4;
+                size_t target_offset = ((size_t)y * (size_t)requested_width +
+                                        (size_t)x) * 4;
+                rgba[target_offset] = src[source_offset + 2];
+                rgba[target_offset + 1] = src[source_offset + 1];
+                rgba[target_offset + 2] = src[source_offset];
+                rgba[target_offset + 3] =
+                    s->format == WL_SHM_FORMAT_ARGB8888 ? src[source_offset + 3] : 255;
+            }
         }
         /*
          * Log aggregate pixel health, not pixel contents. This distinguishes a
          * working Binder transport carrying a genuinely black Weston buffer
          * from a frame-forwarding failure without dumping desktop data to logs.
          */
+#ifdef TXW_HAVE_XFIXES
+        composite_x11_cursor(xdisplay, rgba, requested_width, requested_height);
+#endif
         frame_number++;
         if (frame_number == 1 || frame_number % 50 == 0) {
             size_t non_black = 0;
             unsigned int max_channel = 0;
-            for (size_t i = 0; i < bytes; i += 4) {
+            for (size_t i = 0; i < output_bytes; i += 4) {
                 unsigned int r = rgba[i];
                 unsigned int g = rgba[i + 1];
                 unsigned int b = rgba[i + 2];
@@ -434,11 +526,11 @@ static int run_capture(struct capture_state *s, int requested_width, int request
             }
             txw_log(non_black ? "INFO" : "WARN", "frame_pixel_health",
                     "frame=%lu non_black_pixels=%zu total_pixels=%zu max_channel=%u",
-                    frame_number, non_black, bytes / 4, max_channel);
+                    frame_number, non_black, output_bytes / 4, max_channel);
         }
         size_t written = 0;
-        while (written < bytes) {
-            ssize_t n = write(STDOUT_FILENO, rgba + written, bytes - written);
+        while (written < output_bytes) {
+            ssize_t n = write(STDOUT_FILENO, rgba + written, output_bytes - written);
             if (n < 0 && errno == EINTR) continue;
             if (n <= 0) {
                 fprintf(stderr, "CAPTURE_STOPPED: output pipe closed\n");
@@ -478,6 +570,7 @@ int main(int argc, char **argv) {
     }
     txw_log_init();
     txw_log("INFO", "process_start", "argc=%d", argc);
+
     struct capture_state s = {0};
     s.display = wl_display_connect(NULL);
     if (!s.display) { fprintf(stderr, "CAPTURE_ERROR: cannot connect to Wayland: %s\n", strerror(errno)); return 2; }

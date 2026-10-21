@@ -39,15 +39,22 @@ fi
 check_grep 'Package: termux-xwayland-bridge' "$pkg/DEBIAN/control" "package name metadata"
 check_grep 'Version: 0.3.0' "$pkg/DEBIAN/control" "package version metadata"
 check_grep 'Depends: bash, coreutils, socat' "$pkg/DEBIAN/control" "loopback status monitor dependency"
+check_grep 'Suggests: clang, pkg-config, wayland' "$pkg/DEBIAN/control" "optional native capture build dependencies"
+if grep -Fq 'wayland' <(sed -n 's/^Depends: //p' "$pkg/DEBIAN/control"); then
+  echo "FAIL: optional Wayland capture toolchain must not block bridge package configuration." >&2
+  exit 1
+fi
+check_file "$root/native/capture/weston-output-capture.xml"
+check_grep 'bundled_xml="$root/native/capture/weston-output-capture.xml"' "$root/tools/build-native-capture.sh" "bundled capture protocol fallback"
 check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metadata"
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
-check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=starting&port=$port"' "$script" "Android host receives server monitor details"
 check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
 check_grep 'resolve_xwayland_display()' "$script" "XWayland display is detected from the Weston log"
-check_grep 'Host READY: Wayland/XWayland services' "$script" "host startup stays ready without launching a desktop"
+check_grep 'Host ready for input and applications. No desktop or GUI app was auto-started.' "$script" "host startup stays ready without launching a desktop"
 check_grep 'x11|app|desktop) launch_x11_client' "$script" "apps and desktops launch only on explicit request"
 check_grep 'weston_args+=(--use-pixman)' "$script" "headless Weston uses a renderer capable of producing capturable pixels"
 check_grep 'WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR"' "$script" "Binder client receives the managed Wayland socket and runtime directory"
@@ -180,7 +187,7 @@ grep -Fq 'Native Wayland frame capture: helper not built yet' <<<"$status_output
 launch_uri="$(cat "$open_log")"
 grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock Binder client did not connect" >&2; exit 1; }
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
-   "$launch_uri" == *"&server=running&port="* &&
+   "$launch_uri" == *"&server=starting&port="* &&
    "$launch_uri" != *"&token="* ]] || {
   echo "FAIL: start must send session ID and monitor port (got: $launch_uri)" >&2; exit 1;
 }

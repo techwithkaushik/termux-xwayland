@@ -8,6 +8,17 @@ test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivit
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeProtocol.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionService.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurfaceView.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/ExitSessionReceiver.kt
+test -f android-app/src/main/cpp/CMakeLists.txt
+test -f android-app/src/main/cpp/native_egl_renderer.cpp
+grep -q 'eglSwapBuffers' android-app/src/main/cpp/native_egl_renderer.cpp
+grep -q 'externalNativeBuild' android-app/build.gradle.kts
+grep -q 'nativeRender' android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
+grep -q 'pendingDesktopFrame.set(null)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'termux_xwayland_preferences' android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
 test -f native/compositor/Cargo.toml
 test -f native/compositor/src/main.rs
 test -f native/compositor/src/protocol.rs
@@ -39,7 +50,7 @@ bash -n tools/probe-weston-headless.sh
 test -f tools/probe-weston-x11-client.sh
 test -f docs/weston-xwayland-client-probe.md
 bash -n tools/probe-weston-x11-client.sh
-test -x tools/capture-x11-frame.sh
+test -f tools/capture-x11-frame.sh
 test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
 grep -q 'native Wayland capture' README.md

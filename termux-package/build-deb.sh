@@ -33,8 +33,9 @@ cp -R "$pkg/data/." "$stage/data/"
 capture_root="$stage/data/data/com.termux/files/usr/share/termux-xwayland"
 mkdir -p "$capture_root/native/capture" "$capture_root/tools"
 cp "$root/native/capture/termux-xwayland-capture.c" "$capture_root/native/capture/"
+cp "$root/native/capture/weston-output-capture.xml" "$capture_root/native/capture/"
 cp "$root/tools/build-native-capture.sh" "$capture_root/tools/"
-chmod 0644 "$capture_root/native/capture/termux-xwayland-capture.c"
+chmod 0644 "$capture_root/native/capture/termux-xwayland-capture.c" "$capture_root/native/capture/weston-output-capture.xml"
 chmod 0755 "$capture_root/tools/build-native-capture.sh"
 
 find "$stage" -type d -exec chmod 0755 {} +

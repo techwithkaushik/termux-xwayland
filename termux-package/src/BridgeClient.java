@@ -20,6 +20,9 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Runs inside the existing Termux UID via app_process. No companion APK,
@@ -38,7 +41,7 @@ public final class BridgeClient {
         "org.techwithkaushik.termuxxwayland.IBridgeSession";
     private static final int OPEN_SESSION = IBinder.FIRST_CALL_TRANSACTION;
     private static final int VERSION = 1;
-    private static final int MAX_PAYLOAD = 16 * 1024 * 1024;
+    private static final int MAX_PAYLOAD = 32 * 1024 * 1024;
     private static final byte[] MAGIC = new byte[] { 0x54, 0x58, 0x57, 0x42 };
     private static final int WELCOME = 2;
     private static final int PING = 7;
@@ -48,10 +51,43 @@ public final class BridgeClient {
     private static final int INPUT = 4;
     private static final int RESIZE = 5;
     private static final int CLIPBOARD = 6;
-    private static final int FRAME_WIDTH = 640;
-    private static final int FRAME_HEIGHT = 360;
-    private static final int FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 4;
+    private static final int FRAME_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
+    private static final int FRAME_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
+    private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
     private static volatile Process activeFrameCapture;
+    // Keep slow xdotool process launches off the Binder protocol/heartbeat loop.
+    // A single worker preserves key/button event ordering while the reader can
+    // continue answering PINGs and accepting frames during input bursts.
+    private static final ExecutorService INPUT_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "termux-xwayland-input");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.NORM_PRIORITY);
+        return thread;
+    });
+    // Pointer motion is high-frequency and replaceable. Keep its queue bounded by
+    // accumulating relative deltas and submitting only one drain task at a time.
+    // Key/button/text events remain ordered on INPUT_EXECUTOR and never get dropped.
+    private static final ExecutorService POINTER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "termux-xwayland-pointer");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.NORM_PRIORITY);
+        return thread;
+    });
+    private static final Object RELATIVE_MOTION_LOCK = new Object();
+    private static int pendingRelativeX = 0;
+    private static int pendingRelativeY = 0;
+    private static boolean relativeMotionDrainQueued = false;
+
+    private static int envDimension(String name, int fallback) {
+        String value = System.getenv(name);
+        if (value == null) return fallback;
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 320 && parsed <= 4096 ? parsed : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
 
     private BridgeClient() {}
 
@@ -258,7 +294,11 @@ public final class BridgeClient {
                     System.err.flush();
                 } finally {
                     opened.set(false);
-                    Looper.getMainLooper().quit();
+                    // app_process prepared the main looper for Android framework
+                    // initialization. Android forbids quitting that looper from a
+                    // Binder worker; terminate this dedicated client process when its
+                    // single Binder session ends instead.
+                    System.exit(0);
                 }
             }, "termux-xwayland-binder-session");
             worker.setDaemon(false);
@@ -320,7 +360,10 @@ public final class BridgeClient {
                             break;
                         }
                         if (message.kind == INPUT) {
-                            handleInput(message.payload);
+                            final byte[] inputPayload = message.payload;
+                            if (!queueRelativeMotion(inputPayload)) {
+                                INPUT_EXECUTOR.execute(() -> handleInput(inputPayload));
+                            }
                             continue;
                         }
                         if (message.kind == CLOSE) return;
@@ -335,10 +378,52 @@ public final class BridgeClient {
                         connected = true;
                         System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
                         System.out.flush();
+                        /*
+                         * Capture is an optional native child process and may exit when
+                         * Weston denies capture, its socket is recreated, or the helper
+                         * encounters a transient Wayland failure. Do not leave a healthy
+                         * Binder session permanently black after that first failure.
+                         * Retry with bounded backoff; diagnostics from each attempt remain
+                         * visible in the session log.
+                         */
                         Thread captureStarter = new Thread(() -> {
-                            Process capture = startFrameCapture();
-                            activeFrameCapture = capture;
-                            if (capture != null) startFrameForwarder(capture, output);
+                            long retryDelayMs = 1000L;
+                            while (!Thread.currentThread().isInterrupted()) {
+                                Process capture = startFrameCapture();
+                                if (capture == null) {
+                                    sleepBeforeCaptureRetry(retryDelayMs);
+                                    retryDelayMs = Math.min(retryDelayMs * 2L, 10000L);
+                                    continue;
+                                }
+                                activeFrameCapture = capture;
+                                Thread forwarder = startFrameForwarder(capture, output);
+                                try {
+                                    while (!Thread.currentThread().isInterrupted()) {
+                                        if (capture.waitFor(1000L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                                            break;
+                                        }
+                                        if (!forwarder.isAlive()) {
+                                            System.err.println("FRAME_CAPTURE_RESTART reason=frame_forwarder_stopped");
+                                            capture.destroy();
+                                            break;
+                                        }
+                                    }
+                                    if (Thread.currentThread().isInterrupted()) capture.destroy();
+                                    int exitCode = capture.isAlive() ? -1 : capture.exitValue();
+                                    System.out.println("FRAME_CAPTURE_EXIT exit_code=" + exitCode
+                                        + " retry_delay_ms=" + retryDelayMs);
+                                    System.out.flush();
+                                    forwarder.join(1000L);
+                                } catch (InterruptedException interrupted) {
+                                    Thread.currentThread().interrupt();
+                                    capture.destroy();
+                                } finally {
+                                    if (activeFrameCapture == capture) activeFrameCapture = null;
+                                }
+                                if (Thread.currentThread().isInterrupted()) break;
+                                sleepBeforeCaptureRetry(retryDelayMs);
+                                retryDelayMs = Math.min(retryDelayMs * 2L, 10000L);
+                            }
                         }, "termux-xwayland-frame-capture-start");
                         captureStarter.setDaemon(true);
                         captureStarter.start();
@@ -357,15 +442,80 @@ public final class BridgeClient {
     }
 
     /** Decode bounded normalized touch events and route them to the active XWayland display. */
+    /**
+     * Returns true when a relative-motion packet was consumed by the coalescer.
+     * Many tiny xdotool processes were previously started for every finger move;
+     * on Android this let a motion backlog form faster than it could be drained.
+     */
+    private static boolean queueRelativeMotion(byte[] payload) {
+        if (payload.length == 0 || payload.length > 128) return false;
+        String raw = new String(payload, StandardCharsets.US_ASCII).trim();
+        if (!raw.startsWith("REL ")) return false;
+        String[] fields = raw.split("\\s+");
+        if (fields.length != 3) return false;
+        final int dx;
+        final int dy;
+        try {
+            dx = Integer.parseInt(fields[1]);
+            dy = Integer.parseInt(fields[2]);
+        } catch (NumberFormatException invalid) {
+            return false;
+        }
+        if (Math.abs((long) dx) > 4096L || Math.abs((long) dy) > 4096L) return true;
+        synchronized (RELATIVE_MOTION_LOCK) {
+            pendingRelativeX = clampMotion((long) pendingRelativeX + dx);
+            pendingRelativeY = clampMotion((long) pendingRelativeY + dy);
+            if (relativeMotionDrainQueued) return true;
+            relativeMotionDrainQueued = true;
+        }
+        POINTER_EXECUTOR.execute(() -> {
+            while (true) {
+                final int moveX;
+                final int moveY;
+                synchronized (RELATIVE_MOTION_LOCK) {
+                    moveX = pendingRelativeX;
+                    moveY = pendingRelativeY;
+                    pendingRelativeX = 0;
+                    pendingRelativeY = 0;
+                    if (moveX == 0 && moveY == 0) {
+                        relativeMotionDrainQueued = false;
+                        return;
+                    }
+                }
+                handleInput(("REL " + moveX + " " + moveY).getBytes(StandardCharsets.US_ASCII));
+            }
+        });
+        return true;
+    }
+
+    private static int clampMotion(long value) {
+        return (int) Math.max(-8192L, Math.min(8192L, value));
+    }
+
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
-        String event = new String(payload, StandardCharsets.US_ASCII).trim();
-        String[] fields = event.split("\\s+");
+        String rawEvent = new String(payload, StandardCharsets.UTF_8);
         String xdotool = findExecutable("xdotool");
         if (xdotool == null) {
             System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
             return;
         }
+
+        // Preserve leading/trailing spaces in committed IME text.
+        if (rawEvent.startsWith("TEXT ")) {
+            String text = rawEvent.substring(5);
+            if (text.isEmpty() || text.getBytes(StandardCharsets.UTF_8).length > 100
+                    || text.codePoints().anyMatch(cp -> Character.isISOControl(cp) && cp != '\n' && cp != '\t')) {
+                System.err.println("INPUT_REJECTED reason=invalid_text");
+                return;
+            }
+            String typeText = text.replace("\n", "\r").replace("\t", "\t");
+            runInputCommand(new ProcessBuilder(xdotool, "type", "--clearmodifiers", "--delay", "0", "--", typeText));
+            return;
+        }
+
+        String event = rawEvent.trim();
+        String[] fields = event.split("\\s+");
 
         // Keyboard packets use: KEY <xdotool-key-name> DOWN|UP.
         if (fields.length == 3 && "KEY".equals(fields[0])) {
@@ -378,6 +528,101 @@ public final class BridgeClient {
                 return;
             }
             runInputCommand(new ProcessBuilder(xdotool, fields[2].equals("DOWN") ? "keydown" : "keyup", fields[1]));
+            return;
+        }
+
+        // Physical mouse buttons are forwarded separately from pointer motion.
+        if (fields.length == 3 && "BUTTON".equals(fields[0])) {
+            if (!fields[2].equals("DOWN") && !fields[2].equals("UP")) {
+                System.err.println("INPUT_REJECTED reason=invalid_button_action");
+                return;
+            }
+            final int button;
+            try {
+                button = Integer.parseInt(fields[1]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_button");
+                return;
+            }
+            if (button < 1 || button > 3) {
+                System.err.println("INPUT_REJECTED reason=invalid_button");
+                return;
+            }
+            runInputCommand(new ProcessBuilder(xdotool,
+                fields[2].equals("DOWN") ? "mousedown" : "mouseup",
+                Integer.toString(button)));
+            return;
+        }
+
+        // Trackpad motion is relative to the current X11 pointer, not the
+        // absolute location of the finger on the Android view.
+        if (fields.length == 3 && "REL".equals(fields[0])) {
+            final int dx;
+            final int dy;
+            try {
+                dx = Integer.parseInt(fields[1]);
+                dy = Integer.parseInt(fields[2]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_relative_coordinates");
+                return;
+            }
+            if (Math.abs((long) dx) > 4096L || Math.abs((long) dy) > 4096L) {
+                System.err.println("INPUT_REJECTED reason=relative_coordinates_out_of_range");
+                return;
+            }
+            if (dx != 0 || dy != 0) {
+                runInputCommand(new ProcessBuilder(xdotool, "mousemove_relative", "--",
+                    Integer.toString(dx), Integer.toString(dy)));
+            }
+            return;
+        }
+
+        // A trackpad tap generates a click without holding the button during motion.
+        if (fields.length == 2 && "CLICK".equals(fields[0])) {
+            final int button;
+            try {
+                button = Integer.parseInt(fields[1]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_click_button");
+                return;
+            }
+            if (button < 1 || button > 3) {
+                System.err.println("INPUT_REJECTED reason=invalid_click_button");
+                return;
+            }
+            runInputCommand(new ProcessBuilder(xdotool, "click", "--delay", "0",
+                Integer.toString(button)));
+            return;
+        }
+
+        // Convert Android wheel axes to X11 wheel-button clicks.
+        if (fields.length == 3 && "SCROLL".equals(fields[0])) {
+            final float vertical;
+            final float horizontal;
+            try {
+                vertical = Float.parseFloat(fields[1]);
+                horizontal = Float.parseFloat(fields[2]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_scroll");
+                return;
+            }
+            if (!Float.isFinite(vertical) || !Float.isFinite(horizontal)
+                    || Math.abs(vertical) > 100f || Math.abs(horizontal) > 100f) {
+                System.err.println("INPUT_REJECTED reason=scroll_out_of_range");
+                return;
+            }
+            int verticalTicks = Math.min(20, Math.round(Math.abs(vertical)));
+            int horizontalTicks = Math.min(20, Math.round(Math.abs(horizontal)));
+            if (verticalTicks > 0) {
+                runInputCommand(new ProcessBuilder(xdotool, "click", "--repeat",
+                    Integer.toString(verticalTicks), "--delay", "0",
+                    vertical > 0 ? "4" : "5"));
+            }
+            if (horizontalTicks > 0) {
+                runInputCommand(new ProcessBuilder(xdotool, "click", "--repeat",
+                    Integer.toString(horizontalTicks), "--delay", "0",
+                    horizontal > 0 ? "7" : "6"));
+            }
             return;
         }
 
@@ -418,7 +663,7 @@ public final class BridgeClient {
     private static void runInputCommand(ProcessBuilder command) {
         try {
             Process process = command.redirectErrorStream(true).start();
-            if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly();
+            if (!process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) process.destroyForcibly();
         } catch (Exception error) {
             System.err.println("INPUT_DISPATCH_FAILED: " + error.getClass().getSimpleName());
         }
@@ -479,7 +724,7 @@ public final class BridgeClient {
         return null;
     }
 
-    private static void startFrameForwarder(Process capture, DataOutputStream output) {
+    private static Thread startFrameForwarder(Process capture, DataOutputStream output) {
         Thread thread = new Thread(() -> {
             byte[] pixels = new byte[FRAME_BYTES];
             byte[] payload = new byte[8 + FRAME_BYTES];
@@ -529,6 +774,17 @@ public final class BridgeClient {
         }, "termux-xwayland-frame-forwarder");
         thread.setDaemon(true);
         thread.start();
+        return thread;
+    }
+
+    private static void sleepBeforeCaptureRetry(long delayMs) {
+        try {
+            System.out.println("FRAME_CAPTURE_RETRY scheduled_delay_ms=" + delayMs);
+            System.out.flush();
+            Thread.sleep(delayMs);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static Frame readFrame(DataInputStream input) throws IOException {
