@@ -1,6 +1,7 @@
 package org.techwithkaushik.termuxxwayland
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -21,6 +22,7 @@ import android.os.Process
 import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
+import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -134,6 +136,24 @@ class MainActivity : Activity() {
         setIntent(intent)
         handleTermuxIntent(intent)
         refreshTermuxControlStatus()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // On Android 10, enter PiP when the user leaves the host while frames are arriving.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            !isFinishing && binderFrameCount > 0L && ::previewImage.isInitialized &&
+            previewImage.visibility == View.VISIBLE) {
+            runCatching {
+                val bounds = android.graphics.Rect()
+                previewImage.getGlobalVisibleRect(bounds)
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .setSourceRectHint(bounds)
+                    .build()
+                enterPictureInPictureMode(params)
+            }.onFailure { Log.w("TermuxXWayland", "Could not enter picture-in-picture", it) }
+        }
     }
 
     override fun onStart() {
@@ -315,133 +335,53 @@ class MainActivity : Activity() {
     }
 
     private fun buildScreen(): View {
-        val scroll = ScrollView(this).apply { setBackgroundColor(page) }
-        val content = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(28))
+            setBackgroundColor(page)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
         }
-        scroll.addView(content)
-        content.addView(label("TERMUX • WAYLAND", 12, blue, true))
-        content.addView(label("Your Linux desktop,\non Android", 29, ink, true).apply {
-            setPadding(0, dp(8), 0, dp(8))
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(4), dp(4), dp(8))
+        }
+        heading.addView(label("TERMUX • WAYLAND", 12, blue, true))
+        heading.addView(label("Linux desktop", 22, ink, true).apply {
+            setPadding(0, dp(4), 0, dp(2))
         })
-        content.addView(label(
-            "Connect this Android display host to a Termux bridge running on the same device.",
-            15, muted, false
+        statusTitle = label("Waiting for Termux session", 15, ink, true)
+        statusDescription = label("Start the session from Termux. This host will stay closed until you open it.", 12, muted, false)
+        heading.addView(statusTitle)
+        heading.addView(statusDescription)
+        root.addView(heading, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
-        val status = card()
-        status.addView(label("BRIDGE STATUS", 11, muted, true))
-        statusTitle = label("Not connected", 21, ink, true).apply {
-            setPadding(0, dp(6), 0, dp(4))
+        binderStatusDescription = label("Bridge: waiting for authenticated session", 12, muted, false).apply {
+            setPadding(dp(4), dp(4), dp(4), dp(8))
         }
-        statusDescription = label(
-            "Server status, Binder connectivity and desktop pixels are verified separately. A running Weston process alone does not mean the screen is streaming.",
-            13, muted, false
-        )
-        status.addView(statusTitle)
-        status.addView(statusDescription)
-        binderStatusDescription = label(
-            "Binder transport: disconnected; no active authenticated Binder heartbeat.",
-            13, muted, false
-        ).apply { setPadding(0, dp(8), 0, 0) }
-        status.addView(binderStatusDescription)
+        root.addView(binderStatusDescription, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
         previewImage = DesktopSurfaceView(this).apply {
-            visibility = View.GONE
-            contentDescription = "Termux XWayland desktop frame"
+            visibility = View.VISIBLE
+            contentDescription = "Live Termux XWayland desktop; Picture-in-Picture available while frames are active"
+            setBackgroundColor(Color.BLACK)
         }
-        status.addView(previewImage, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
-        ).apply { topMargin = dp(12) })
+        root.addView(previewImage, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ).apply {
+            topMargin = dp(4)
+            bottomMargin = dp(4)
+        })
         desktopProofDescription = label(
-            "DESKTOP CONTENT NOT VERIFIED • Waiting for pixel frames. Binder PING/PONG and frame delivery alone do not prove that the current desktop is visible or updating.",
-            13, Color.rgb(185, 28, 28), true
-        ).apply { setPadding(0, dp(10), 0, dp(2)) }
-        status.addView(desktopProofDescription)
-        content.addView(status, margins(top = 22, bottom = 16))
-
-        content.addView(label("Legacy AF_UNIX diagnostic", 20, ink, true).apply {
-            setPadding(0, dp(6), 0, dp(8))
-        })
-        content.addView(infoCard(
-            "Historical abstract-socket test",
-            "This legacy test is not used by the production Binder session. Cross-UID AF_UNIX connect returned EACCES on the target Android 10 device."
-        ), margins(bottom = 10))
-        tokenInput = field("Session token (64 hex characters)", "", secret = true)
-        content.addView(tokenInput, margins(bottom = 8))
-        connectButton = actionButton("Run legacy socket diagnostic") { connectOrDisconnect() }
-        content.addView(connectButton, margins(top = 4, bottom = 8))
-
-        val commands = "pkg update\npkg install weston socat\ntermux-xwayland start\ntermux-xwayland status"
-        content.addView(label("Prepare Termux", 18, ink, true).apply {
-            setPadding(0, dp(12), 0, dp(8))
-        })
-        content.addView(label(
-            "Install the Termux-XWayland DEB and the existing Android host APK. Start the session from Termux; the Binder heartbeat is shown above separately from Weston status.",
-            14, muted, false
+            "Waiting for live desktop frames. Leave this screen while frames are active to enter PiP.",
+            12, muted, false
+        ).apply { setPadding(dp(4), dp(6), dp(4), dp(4)) }
+        root.addView(desktopProofDescription, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
-        content.addView(codeCard(commands), margins(top = 12, bottom = 8))
-        content.addView(actionButton("Copy environment commands") {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("Termux commands", commands))
-            Toast.makeText(this, "Commands copied", Toast.LENGTH_SHORT).show()
-        }, margins(bottom = 8))
-        content.addView(infoCard(
-            "Current implementation status",
-            "The Binder FD frame transport is connected, but the black preview shows that usable desktop rendering is not complete. Frame delivery is not treated as proof of visible desktop content. Input forwarding, desktop-content validation and full interactive desktop behavior still need implementation and device verification."
-        ), margins(top = 8, bottom = 16))
-        content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
-            setPadding(0, dp(8), 0, dp(8))
-        })
-        content.addView(infoCard(
-            "Diagnostic only • 127.0.0.1:38471",
-            "Checks whether this Android app can reach a one-shot TCP echo server running inside Termux on the same phone. This is not enabled as a bridge fallback and does not send desktop frames."
-        ), margins(bottom = 10))
-        tcpProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        tcpProbeDescription = label(
-            "Start the repository's TCP probe server in Termux, then tap the button below.",
-            13, muted, false
-        )
-        content.addView(tcpProbeTitle)
-        content.addView(tcpProbeDescription, margins(bottom = 8))
-        tcpProbeButton = actionButton("Test Termux TCP connection") { runTcpProbe() }
-        content.addView(tcpProbeButton, margins(bottom = 10))
-        content.addView(infoCard(
-            "TXWB v1 framing diagnostic • 127.0.0.1:38472",
-            "Uses the existing 12-byte TXWB header and checks magic, version, reserved bits, message type, payload length and exact PING/PONG payload. One-shot test only; not a production transport."
-        ), margins(bottom = 10))
-        framedProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        framedProbeDescription = label(
-            "Checks the existing TXWB v1 12-byte frame header, PING/PONG message types, payload length, and exact payload echo. Diagnostic only.",
-            13, muted, false
-        )
-        content.addView(framedProbeTitle)
-        content.addView(framedProbeDescription, margins(bottom = 8))
-        framedProbeButton = actionButton("Test framed TXWB protocol") { runFramedProbe() }
-        content.addView(framedProbeButton, margins(bottom = 16))
-
-        content.addView(label("Planned capabilities", 18, ink, true).apply {
-            setPadding(0, dp(8), 0, dp(8))
-        })
-        content.addView(label(
-            "• Termux-managed sessions\n• Native Wayland applications\n• XFCE through XWayland\n• LXQt session option\n• ARM32 and ARM64 builds\n• Android 10+ compatibility target",
-            14, muted, false
-        ))
-        content.addView(actionButton("Termux:X11 source reference") {
-            openUrl("https://github.com/termux/termux-x11")
-        }, margins(top = 18, bottom = 8))
-        content.addView(actionButton("Wayland prototype reference") {
-            openUrl("https://github.com/J-x-Z/termux-wayland")
-        }, margins(bottom = 8))
-        content.addView(label("Development build • 0.1.0-alpha02", 12, muted, false).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(18), 0, 0)
-        })
-        return scroll
+        return root
     }
 
     private fun connectOrDisconnect() {
