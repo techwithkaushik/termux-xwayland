@@ -37,6 +37,18 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     var cursorPositionListener: ((Float, Float) -> Unit)? = null
     private var lastMoveAt = 0L
     private var pointerCaptured = false
+    private var touchStartX = 0f
+    private var touchStartY = 0f
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
+    private var touchMoved = false
+    private val pointerPrefs by lazy {
+        context.getSharedPreferences("termux_xwayland_preferences", Context.MODE_PRIVATE)
+    }
+    private val touchMode: Int
+        get() = pointerPrefs.getInt("touch_mode", 0).coerceIn(0, 2)
+    private val pointerSpeed: Float
+        get() = pointerPrefs.getInt("pointer_speed", 100).coerceIn(1, 300) / 100f
 
     init {
         // Match Termux:X11's transparent view background. Configure alpha before
@@ -293,9 +305,20 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val index = event.actionIndex
-                if (!sendPointer("DOWN", event.getX(index), event.getY(index))) return true
+                val x = event.getX(index)
+                val y = event.getY(index)
                 activePointerId = event.getPointerId(index)
                 pointerCaptured = true
+                touchStartX = x
+                touchStartY = y
+                lastTouchX = x
+                lastTouchY = y
+                touchMoved = false
+                when (touchMode) {
+                    0 -> Unit // Trackpad: relative motion and tap-to-click.
+                    1 -> sendPointer("MOVE", x, y) // Simulated touchscreen: absolute pointer, tap-to-click.
+                    else -> sendPointer("DOWN", x, y) // Direct touch: hold left button while in contact.
+                }
                 requestFocus()
                 return true
             }
@@ -308,15 +331,31 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 if (!pointerCaptured) return true
                 val index = event.findPointerIndex(activePointerId)
                 if (index < 0) return true
+                val x = event.getX(index)
+                val y = event.getY(index)
+                val dx = x - lastTouchX
+                val dy = y - lastTouchY
+                if (kotlin.math.abs(x - touchStartX) > 7f || kotlin.math.abs(y - touchStartY) > 7f) {
+                    touchMoved = true
+                }
                 val now = android.os.SystemClock.uptimeMillis()
-                if (now - lastMoveAt < 16L) return true
+                if (now - lastMoveAt < 8L) return true
                 lastMoveAt = now
-                sendPointer("MOVE", event.getX(index), event.getY(index))
+                when (touchMode) {
+                    0 -> {
+                        if (touchMoved && (dx != 0f || dy != 0f)) {
+                            sendInput("REL ${kotlin.math.round(dx * pointerSpeed).toInt()} ${kotlin.math.round(dy * pointerSpeed).toInt()}")
+                        }
+                    }
+                    else -> sendPointer("MOVE", x, y)
+                }
+                lastTouchX = x
+                lastTouchY = y
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
                 if (event.getPointerId(event.actionIndex) == activePointerId) {
-                    sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex), allowOutsideCapture = true)
+                    if (touchMode == 2) sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex), allowOutsideCapture = true)
                     pointerCaptured = false
                     activePointerId = MotionEvent.INVALID_POINTER_ID
                 }
@@ -327,7 +366,16 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                     val index = event.findPointerIndex(activePointerId).let {
                         if (it >= 0) it else event.actionIndex
                     }
-                    sendPointer("UP", event.getX(index), event.getY(index), allowOutsideCapture = true)
+                    val x = event.getX(index)
+                    val y = event.getY(index)
+                    when (touchMode) {
+                        0 -> if (!touchMoved) sendInput("CLICK 1")
+                        1 -> if (!touchMoved) {
+                            sendPointer("MOVE", x, y, allowOutsideCapture = true)
+                            sendInput("CLICK 1")
+                        }
+                        else -> sendPointer("UP", x, y, allowOutsideCapture = true)
+                    }
                 }
                 pointerCaptured = false
                 activePointerId = MotionEvent.INVALID_POINTER_ID
