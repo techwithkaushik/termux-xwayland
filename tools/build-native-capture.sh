@@ -2,7 +2,13 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-xml="${TERMUX_XWAYLAND_CAPTURE_XML:-${PREFIX:-/data/data/com.termux/files/usr}/share/libweston-16/protocols/weston-output-capture.xml}"
+default_xml="${PREFIX:-/data/data/com.termux/files/usr}/share/libweston-16/protocols/weston-output-capture.xml"
+bundled_xml="$root/native/capture/weston-output-capture.xml"
+if [[ -r "$default_xml" ]]; then
+  xml="${TERMUX_XWAYLAND_CAPTURE_XML:-$default_xml}"
+else
+  xml="${TERMUX_XWAYLAND_CAPTURE_XML:-$bundled_xml}"
+fi
 out="${1:-$root/dist/termux-xwayland-capture}"
 scanner="${WAYLAND_SCANNER:-wayland-scanner}"
 
