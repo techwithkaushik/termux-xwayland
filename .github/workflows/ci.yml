@@ -147,3 +147,45 @@ jobs:
           path: dist/termux-xwayland-bridge_0.3.0_all.deb
           if-no-files-found: error
           retention-days: 14
+
+  release-bundle:
+    needs: [android, native-scaffold]
+    name: Bundle all installable artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Binder client DEX
+        uses: actions/download-artifact@v4
+        with:
+          name: termux-xwayland-binder-client-dex
+          path: bundle/termux
+      - name: Download Android host APK
+        uses: actions/download-artifact@v4
+        with:
+          name: termux-xwayland-debug-apk
+          path: bundle/android
+      - name: Download Termux DEB package
+        uses: actions/download-artifact@v4
+        with:
+          name: termux-xwayland-bridge-deb
+          path: bundle/termux
+      - name: Add install notes and checksums
+        run: |
+          set -euo pipefail
+          cat > bundle/README.txt <<'EOF'
+          Termux-XWayland CI artifact bundle
+
+          android/: debug APK for the Android display host
+          termux/: Termux DEB package and standalone Binder client DEX
+
+          Install the APK on Android and the DEB inside Termux. The standalone
+          DEX is provided for diagnostics/manual package staging. A green CI
+          run validates build/tests, not live Weston capture on a physical device.
+          EOF
+          (cd bundle && find android termux -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - name: Upload the single combined artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xwayland-all-artifacts
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 14
