@@ -46,11 +46,13 @@ grep -q 'native Wayland capture' README.md
 grep -q 'native `termux-xwayland-capture` helper' README.md
 grep -q 'no FFmpeg fallback' README.md
 grep -q 'weston_capture_v1' README.md
-# The production host UI is intentionally minimal: desktop surface, connection status and PiP action only.
-grep -q 'actionButton("PiP")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+# The desktop host UI is immersive; disconnected state exposes Settings and Exit, while PiP is automatic on leave.
+grep -q 'Not connected' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'actionButton("⚙  Settings")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'actionButton("⏻  Exit")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+! grep -q 'actionButton("PiP")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'enterDesktopPictureInPicture' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'supportsPictureInPicture="true"' android-app/src/main/AndroidManifest.xml
-grep -q 'FRAME STREAM ACTIVE' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 ! grep -q 'previewImage.setFrame(testFrame)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.removeCallbacks(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
