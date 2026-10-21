@@ -85,7 +85,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     }
 
     fun setFrame(pixels: ByteArray, width: Int, height: Int) {
-        if (width <= 0 || height <= 0 || pixels.size < width * height) return
+        if (width <= 0 || height <= 0 || pixels.size < width * height * 4) return
         synchronized(frameLock) {
             // Keep only the newest decoded frame; avoid allocating/copying a Bitmap per frame.
             latestFrame = PixelFrame(pixels, width, height)
