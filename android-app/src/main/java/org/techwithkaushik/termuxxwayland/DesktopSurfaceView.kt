@@ -482,13 +482,12 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
     }
 
-    private fun frameWidthForInput(): Float = synchronized(frameLock) {
-        (latestFrame?.width ?: 640).toFloat()
-    }
+    // Input coordinates target the full-size XWayland output, not the
+    // bandwidth-capped preview frame. Using latestFrame.width here makes
+    // touch motion progressively sluggish whenever the stream is downscaled.
+    private fun frameWidthForInput(): Float = resources.displayMetrics.widthPixels.toFloat()
 
-    private fun frameHeightForInput(): Float = synchronized(frameLock) {
-        (latestFrame?.height ?: 360).toFloat()
-    }
+    private fun frameHeightForInput(): Float = resources.displayMetrics.heightPixels.toFloat()
 
     private fun contentBounds(): android.graphics.RectF {
         val frameWidth: Int
