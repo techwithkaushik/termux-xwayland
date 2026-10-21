@@ -8,7 +8,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 
 - **Android host:** Kotlin UI receives the Termux-authorized Binder session, validates the caller and TXWB framing, and renders received RGBA frames.
 - **Termux package:** `termux-xwayland` starts Weston/XWayland and launches the client from the existing Termux installation.
-- **Termux client:** `termux-package/src/BridgeClient.java` is compiled to DEX in CI and packaged in the Termux DEB. It opens a Binder-authorized file-descriptor session. Frame forwarding is wired to a native `termux-xwayland-capture` helper, but that helper is not implemented or packaged yet; therefore real desktop frames are not currently sent.
+- **Termux client:** `termux-package/src/BridgeClient.java` is compiled to DEX in CI and packaged in the Termux DEB. It opens a Binder-authorized file-descriptor session. Frame forwarding is wired to the native `termux-xwayland-capture` source, but the helper is deliberately not packaged until a matching Weston build grants narrowly scoped capture authorization; therefore real desktop frames are not yet guaranteed or claimed.
 - **Packaging:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
 - **Transport security:** no production TCP listener is used. Binder caller UID checks and the session FD handoff are required.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
@@ -26,6 +26,7 @@ install -D -m 0644 dist/termux-binder-client/bridge-client.dex \
   termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
 bash tools/test-termux-package.sh
 bash termux-package/build-deb.sh dist
+bash tools/verify-live-capture.sh
 ```
 
 CI stages the DEX automatically and publishes the display-host APK, client DEX and Termux DEB. In Termux:
@@ -36,7 +37,7 @@ termux-xwayland start
 termux-xwayland status
 ```
 
-Weston and XWayland can start independently of frame streaming. Do not install FFmpeg for frame capture: the bridge intentionally has no FFmpeg fallback. `termux-xwayland status` and `termux-xwayland logs` help diagnose server and Binder-session state; they do not prove frame capture works.
+Weston and XWayland can start independently of frame streaming. Do not install FFmpeg for frame capture: the bridge intentionally has no FFmpeg fallback. `termux-xwayland status` and `termux-xwayland logs` help diagnose server and Binder-session state; `bash tools/verify-live-capture.sh` checks required device components. None of these alone proves frame capture works.
 
 ## Verification boundary
 
