@@ -39,7 +39,11 @@ fi
 check_grep 'Package: termux-xwayland-bridge' "$pkg/DEBIAN/control" "package name metadata"
 check_grep 'Version: 0.3.0' "$pkg/DEBIAN/control" "package version metadata"
 check_grep 'Depends: bash, coreutils, socat' "$pkg/DEBIAN/control" "loopback status monitor dependency"
-check_grep 'clang, pkg-config, wayland' "$pkg/DEBIAN/control" "native capture build dependencies"
+check_grep 'Suggests: clang, pkg-config, wayland' "$pkg/DEBIAN/control" "optional native capture build dependencies"
+if grep -Fq 'wayland' <(sed -n 's/^Depends: //p' "$pkg/DEBIAN/control"); then
+  echo "FAIL: optional Wayland capture toolchain must not block bridge package configuration." >&2
+  exit 1
+fi
 check_file "$root/native/capture/weston-output-capture.xml"
 check_grep 'bundled_xml="$root/native/capture/weston-output-capture.xml"' "$root/tools/build-native-capture.sh" "bundled capture protocol fallback"
 check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metadata"
