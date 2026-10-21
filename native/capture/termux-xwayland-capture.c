@@ -570,20 +570,7 @@ int main(int argc, char **argv) {
     }
     txw_log_init();
     txw_log("INFO", "process_start", "argc=%d", argc);
-#ifdef TXW_HAVE_XFIXES
-    Display *xdisplay = NULL;
-    const char *xdisplay_name = getenv("DISPLAY");
-    if (xdisplay_name && *xdisplay_name) {
-        xdisplay = XOpenDisplay(xdisplay_name);
-        if (xdisplay) {
-            txw_log("INFO", "xfixes_cursor_enabled", "display=%s", xdisplay_name);
-        } else {
-            txw_log("WARN", "xfixes_cursor_unavailable", "display=%s", xdisplay_name);
-        }
-    } else {
-        txw_log("WARN", "xfixes_cursor_unavailable", "reason=DISPLAY_not_set");
-    }
-#endif
+
     struct capture_state s = {0};
     s.display = wl_display_connect(NULL);
     if (!s.display) { fprintf(stderr, "CAPTURE_ERROR: cannot connect to Wayland: %s\n", strerror(errno)); return 2; }
@@ -599,9 +586,6 @@ int main(int argc, char **argv) {
     if (s.shm) wl_shm_destroy(s.shm);
     if (registry) wl_registry_destroy(registry);
     wl_display_disconnect(s.display);
-#ifdef TXW_HAVE_XFIXES
-    if (xdisplay) XCloseDisplay(xdisplay);
-#endif
     txw_log(result == 0 ? "INFO" : "ERROR", "process_exit", "exit_code=%d", result);
     if (txw_log_file && txw_log_file != stderr) fclose(txw_log_file);
     txw_log_file = NULL;
