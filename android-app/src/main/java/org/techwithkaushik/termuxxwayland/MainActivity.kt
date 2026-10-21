@@ -273,7 +273,11 @@ class MainActivity : Activity() {
                         )
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
-                        if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.GONE
+                        if (::cursorOverlay.isInitialized) {
+                            // A successful transport can still carry an all-black Weston buffer.
+                            // Keep the startup pointer visible until actual desktop pixels arrive.
+                            cursorOverlay.visibility = if (frameHasVisiblePixels(frame)) View.GONE else View.VISIBLE
+                        }
                         binderFrameCount++
                         if (::binderStatusDescription.isInitialized) {
                             binderStatusDescription.text =
@@ -293,6 +297,24 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun frameHasVisiblePixels(frame: RgbaFrameCodec.Frame): Boolean {
+        val pixels = frame.pixels
+        if (pixels.isEmpty()) return false
+        // Sample at most about 4096 pixels so this check stays cheap on ARM32.
+        val step = maxOf(1, pixels.size / 4096)
+        var visibleSamples = 0
+        var index = 0
+        while (index < pixels.size) {
+            val rgb = pixels[index] and 0x00FFFFFF
+            val red = (rgb ushr 16) and 0xFF
+            val green = (rgb ushr 8) and 0xFF
+            val blue = rgb and 0xFF
+            if (maxOf(red, green, blue) > 24 && ++visibleSamples >= 8) return true
+            index += step
+        }
+        return false
     }
 
     private fun handleTermuxIntent(intent: Intent?) {
