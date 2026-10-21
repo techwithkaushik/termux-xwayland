@@ -501,6 +501,19 @@ start_session() {
   done
   if [ -s "$RUNTIME_DIR/host-display-size" ]; then
     printf 'Android host display size received: %s\n' "$(cat "$RUNTIME_DIR/host-display-size")"
+    # Weston cannot change the headless output dimensions in-place through
+    # this launcher; restart only when the existing output has stale dimensions.
+    if server_is_running && [ -r "$RUNTIME_DIR/display-size" ]; then
+      local host_width host_height old_width old_height
+      read -r host_width host_height < "$RUNTIME_DIR/host-display-size" || true
+      read -r old_width old_height < "$RUNTIME_DIR/display-size" || true
+      if [[ "$host_width" =~ ^[0-9]{3,4}$ && "$host_height" =~ ^[0-9]{3,4}$ &&
+            "$old_width" =~ ^[0-9]{3,4}$ && "$old_height" =~ ^[0-9]{3,4}$ ]] &&
+         { (( host_width != old_width )) || (( host_height != old_height )); }; then
+        printf 'Restarting Weston for updated display size %sx%s (was %sx%s).\n' "$host_width" "$host_height" "$old_width" "$old_height"
+        stop_server
+      fi
+    fi
   else
     printf '%s\n' 'Android display metrics were not received within 3 seconds; using documented shell-query fallback.' >&2
   fi
