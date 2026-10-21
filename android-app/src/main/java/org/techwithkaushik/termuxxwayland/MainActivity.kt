@@ -63,6 +63,7 @@ class MainActivity : Activity() {
     private lateinit var binderStatusDescription: TextView
     private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
+    private lateinit var cursorOverlay: CursorOverlayView
     private lateinit var headingContainer: LinearLayout
     private lateinit var connectionPanel: LinearLayout
     private lateinit var desktopRoot: FrameLayout
@@ -82,6 +83,8 @@ class MainActivity : Activity() {
             statusTitle.text = "Session connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
+            previewImage.visibility = View.VISIBLE
+            if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
             local.frameListener = { frame ->
                 if (binderFrameCount == 0L) {
@@ -98,7 +101,8 @@ class MainActivity : Activity() {
             if (::previewImage.isInitialized) {
                 previewImage.inputEventListener = null
                 previewImage.clearFrame()
-                previewImage.visibility = View.GONE
+                previewImage.visibility = View.VISIBLE
+                if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
             }
             if (::desktopProofDescription.isInitialized) {
                 desktopProofDescription.text =
@@ -269,6 +273,7 @@ class MainActivity : Activity() {
                         )
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
+                        if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.GONE
                         binderFrameCount++
                         if (::binderStatusDescription.isInitialized) {
                             binderStatusDescription.text =
@@ -422,6 +427,11 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
         }
+        cursorOverlay = CursorOverlayView(this).apply {
+            visibility = View.VISIBLE
+            contentDescription = "Pointer cursor (waiting for live desktop frame)"
+        }
+        previewImage.cursorPositionListener = { x, y -> cursorOverlay.setCursorPosition(x, y) }
         desktopRoot = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             fitsSystemWindows = false
@@ -472,6 +482,11 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
         connectionPanel.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
+        desktopRoot.addView(cursorOverlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        cursorOverlay.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
         return desktopRoot
     }
 
@@ -562,7 +577,8 @@ class MainActivity : Activity() {
                         "Connected (same UID)"
                     }
                     previewImage.clearFrame()
-                    previewImage.visibility = View.GONE
+                    previewImage.visibility = View.VISIBLE
+                    if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
                     desktopProofDescription.text =
                         "NO LIVE DESKTOP FRAME • Legacy socket test passed, but its synthetic test image is deliberately not rendered as a desktop."
                     desktopProofDescription.setTextColor(Color.rgb(185, 28, 28))
@@ -629,7 +645,8 @@ class MainActivity : Activity() {
         }
         connectButton.text = "Run legacy socket diagnostic"
         previewImage.clearFrame()
-        previewImage.visibility = View.GONE
+        previewImage.visibility = View.VISIBLE
+        if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
     }
