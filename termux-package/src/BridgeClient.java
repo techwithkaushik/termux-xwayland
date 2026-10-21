@@ -620,6 +620,8 @@ public final class BridgeClient {
             Process process = activeNativeInput;
             activeNativeInput = null;
             if (process != null) process.destroy();
+            nativeInputDisabled = false;
+            nativeInputUnavailableLogged = false;
         }
     }
 
