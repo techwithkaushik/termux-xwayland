@@ -275,41 +275,109 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         else -> null
     }
 
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (width <= 0 || height <= 0) return true
-        val action = when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> "DOWN"
-            MotionEvent.ACTION_MOVE -> "MOVE"
-            MotionEvent.ACTION_UP -> "UP"
-            MotionEvent.ACTION_CANCEL -> "CANCEL"
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val index = event.actionIndex
+                if (!sendPointer("DOWN", event.getX(index), event.getY(index))) return true
+                activePointerId = event.getPointerId(index)
+                pointerCaptured = true
+                requestFocus()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Keep the original finger as the primary pointer; a second finger
+                // must not accidentally release or re-press the desktop mouse button.
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!pointerCaptured) return true
+                val index = event.findPointerIndex(activePointerId)
+                if (index < 0) return true
+                val now = android.os.SystemClock.uptimeMillis()
+                if (now - lastMoveAt < 16L) return true
+                lastMoveAt = now
+                sendPointer("MOVE", event.getX(index), event.getY(index))
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (event.getPointerId(event.actionIndex) == activePointerId) {
+                    sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex))
+                    pointerCaptured = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (pointerCaptured) {
+                    val index = event.findPointerIndex(activePointerId).let {
+                        if (it >= 0) it else event.actionIndex
+                    }
+                    sendPointer("UP", event.getX(index), event.getY(index))
+                }
+                pointerCaptured = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (pointerCaptured) sendPointer("CANCEL", event.x, event.y)
+                pointerCaptured = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                return true
+            }
+            MotionEvent.ACTION_HOVER_MOVE -> {
+                sendPointer("MOVE", event.x, event.y, allowOutsideCapture = true)
+                return true
+            }
+            MotionEvent.ACTION_SCROLL -> {
+                val vertical = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                val horizontal = event.getAxisValue(MotionEvent.AXIS_HSCROLL)
+                if (vertical != 0f || horizontal != 0f) {
+                    sendInput("SCROLL $vertical $horizontal")
+                }
+                return true
+            }
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                val down = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS
+                val state = event.buttonState
+                val button = when {
+                    state and MotionEvent.BUTTON_SECONDARY != 0 -> 3
+                    state and MotionEvent.BUTTON_TERTIARY != 0 -> 2
+                    else -> 1
+                }
+                sendInput("BUTTON $button ${if (down) "DOWN" else "UP"}")
+                return true
+            }
             else -> return true
         }
-        val bounds = contentBounds()
-        val insideContent = event.x >= bounds.left && event.x <= bounds.right &&
-            event.y >= bounds.top && event.y <= bounds.bottom
-        if (action == "DOWN") {
-            if (!insideContent) return true
-            pointerCaptured = true
-            requestFocus()
-        } else if (!pointerCaptured) {
-            return true
-        }
+    }
 
-        val now = android.os.SystemClock.uptimeMillis()
-        if (action == "MOVE" && now - lastMoveAt < 33L) return true
-        if (action == "MOVE") lastMoveAt = now
-        cursorPositionListener?.invoke(event.x, event.y)
-        val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
-        val normalizedY = ((event.y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
-        synchronized(frameLock) {
-            frameVersion++
-            frameLock.notifyAll()
-        }
-        runCatching {
-            inputEventListener?.invoke("$action $normalizedX $normalizedY".toByteArray(Charsets.US_ASCII))
-        }
-        if (action == "UP" || action == "CANCEL") pointerCaptured = false
+    private fun sendPointer(
+        action: String,
+        x: Float,
+        y: Float,
+        allowOutsideCapture: Boolean = false
+    ): Boolean {
+        val bounds = contentBounds()
+        val insideContent = x >= bounds.left && x <= bounds.right &&
+            y >= bounds.top && y <= bounds.bottom
+        if (!insideContent && !allowOutsideCapture) return false
+        if (bounds.width() <= 0f || bounds.height() <= 0f) return false
+
+        cursorPositionListener?.invoke(x, y)
+        val normalizedX = ((x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
+        val normalizedY = ((y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
+        sendInput("$action $normalizedX $normalizedY")
         return true
+    }
+
+    private fun sendInput(value: String) {
+        runCatching {
+            inputEventListener?.invoke(value.toByteArray(Charsets.US_ASCII))
+        }
     }
 
     private fun contentBounds(): android.graphics.RectF {
