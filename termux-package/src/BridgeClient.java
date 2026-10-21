@@ -413,6 +413,19 @@ public final class BridgeClient {
             return;
         }
 
+        // IME text is passed as UTF-8, never through a shell. Bound it and reject controls.
+        if (event.startsWith("TEXT ")) {
+            String text = event.substring(5);
+            if (text.isEmpty() || text.getBytes(StandardCharsets.UTF_8).length > 100
+                    || text.codePoints().anyMatch(cp -> Character.isISOControl(cp) && cp != '\\n' && cp != '\\t')) {
+                System.err.println("INPUT_REJECTED reason=invalid_text");
+                return;
+            }
+            String typeText = text.replace("\\n", "\\r").replace("\\t", "\\t");
+            runInputCommand(new ProcessBuilder(xdotool, "type", "--clearmodifiers", "--delay", "0", "--", typeText));
+            return;
+        }
+
         // Keyboard packets use: KEY <xdotool-key-name> DOWN|UP.
         if (fields.length == 3 && "KEY".equals(fields[0])) {
             if (!fields[2].equals("DOWN") && !fields[2].equals("UP")) {
