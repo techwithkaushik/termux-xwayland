@@ -25,6 +25,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private var latestFrame: Bitmap? = null
     @Volatile private var surfaceReady = false
+    @Volatile private var firstFrameDrawnLogged = false
+    @Volatile private var renderFailureLogged = false
     var inputEventListener: ((ByteArray) -> Unit)? = null
     private var lastMoveAt = 0L
     private var pointerCaptured = false
@@ -67,6 +69,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         surfaceReady = true
+        android.util.Log.i(TAG, "event=surface_created width=" + width + " height=" + height)
         renderLatestFrame()
     }
 
@@ -133,7 +136,11 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         if (!surfaceReady || width <= 0 || height <= 0) return
         val canvas = try {
             holder.lockCanvas()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (!renderFailureLogged) {
+                renderFailureLogged = true
+                android.util.Log.w(TAG, "event=surface_lock_failed width=" + width + " height=" + height, error)
+            }
             null
         } ?: return
 
@@ -156,10 +163,18 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         android.graphics.RectF(left, top, left + drawWidth, top + drawHeight),
                         paint
                     )
+                    if (!firstFrameDrawnLogged) {
+                        firstFrameDrawnLogged = true
+                        android.util.Log.i(TAG, "event=first_frame_drawn bitmap=" + bitmap.width + "x" + bitmap.height + " canvas=" + canvas.width + "x" + canvas.height)
+                    }
                 }
             }
         } finally {
             holder.unlockCanvasAndPost(canvas)
         }
+    }
+
+    private companion object {
+        const val TAG = "TermuxXWayland"
     }
 }
