@@ -169,7 +169,7 @@ grep -Fq 'Binder transport: not connected' <<<"$status_output" || { echo "FAIL: 
 grep -Fq 'Android host detection: not active' <<<"$status_output" || {
   echo "FAIL: status should report no monitor before start" >&2; exit 1;
 }
-grep -Fq 'Native Wayland frame capture: unavailable (native helper not installed)' <<<"$status_output" || {
+grep -Fq 'Native Wayland frame capture: helper not built yet' <<<"$status_output" || {
   echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
 }
 
