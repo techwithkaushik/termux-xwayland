@@ -6,7 +6,7 @@ Run graphical sessions from Termux and show them in the standalone Android app. 
 
 ## Components
 
-1. **Android host:** Kotlin Activity plus a `SurfaceView` or equivalent surface renderer. Validate frame dimensions, format and payload bounds before updating the surface.
+1. **Android host:** Kotlin Activity plus a `SurfaceView`. `NativeEglRenderer` binds its `Surface` to `ANativeWindow` and EGL/GLES2; the native render loop owns EGL resources on one thread. Validate frame dimensions and payload bounds before upload.
 2. **Wayland compositor:** native Rust compositor (Smithay is a candidate, not yet integrated). Own Wayland surfaces, damage tracking, composition and output lifecycle.
 3. **Frame export:** export the compositor's rendered output buffer at the compositor boundary. Prefer a supported shared-buffer path when available; otherwise use bounded RGBA frames over the authenticated bridge as the first correct implementation. Do not capture the screen by running an external desktop recorder.
 4. **Three-part integration:** the existing Termux app provides the Linux userspace; a Termux-side companion package/CLI starts and manages sessions; the Termux-XWayland Android host owns display and input. The companion contract is in [termux-companion-contract.md](termux-companion-contract.md). Control-plane launch and persistent frame/input transport are separate responsibilities. Direct abstract AF_UNIX connections across app UIDs can be denied by Android SELinux; test on Android 10. No TCP/localhost fallback.
@@ -17,17 +17,18 @@ Run graphical sessions from Termux and show them in the standalone Android app. 
 
 The compositor is the source of truth for desktop pixels. Frames should be obtained from its output/render target, not by launching FFmpeg to repeatedly capture `$DISPLAY`. FFmpeg is optional diagnostic tooling only; it is not a runtime dependency and is not part of the live rendering pipeline.
 
-The initial frame transport may copy pixels to a bounded protocol message. Optimize only after correctness is proven: damage rectangles, frame pacing, buffer reuse and shared memory can follow. Do not claim zero-copy or GPU acceleration without device measurements.
+The Android presentation stage now uses EGL/GLES2 to draw received frames directly to the `SurfaceView`'s native window. The current bridge still delivers pixel frames that are materialized as Android `Bitmap`s and copied to an integer pixel array for texture upload; this is not zero-copy and is not yet direct Weston-output-buffer transport. Next optimize correctness-first: export actual Weston output buffers, then consider bounded shared-memory or supported shared-buffer transport, damage rectangles and buffer reuse. Do not claim zero-copy or end-to-end GPU acceleration without device measurements.
 
 ## Milestones
 
 1. Android host and bounded protocol smoke test. **Implemented; still only a synthetic frame.**
-2. Native compositor dependency and Android 10/ARM32 build feasibility. **Not yet verified.**
-3. One native Wayland surface rendered by the compositor and exported through the bridge.
-4. Android displays changing compositor frames with lifecycle-safe start/stop.
-5. Touch/keyboard input and resize handling.
-6. XWayland integration and a known X11 test client.
-7. XFCE session, ARM32/ARM64 validation, memory/performance checks and release packaging.
+2. Native EGL/GLES2 `SurfaceView` presentation path. **Implemented in `fix/native-egl-surface-renderer`; requires CI and device verification.**
+3. Native compositor dependency and Android 10/ARM32 build feasibility. **Not yet verified.**
+4. One native Wayland surface rendered by the compositor and exported through the bridge.
+5. Android displays actual changing compositor frames with lifecycle-safe start/stop.
+6. Touch/keyboard input and resize handling.
+7. XWayland integration and a known X11 test client.
+8. XFCE session, ARM32/ARM64 validation, memory/performance checks and release packaging.
 
 ## Constraints and security
 
