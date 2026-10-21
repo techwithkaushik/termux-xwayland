@@ -141,10 +141,11 @@ start_host() {
 case "${1:-status}" in
   status|check) show_status ;;
   start)
+    detect_host || fail "Android host not detected. Install the Termux-XWayland Android host APK first."
     start_compositor
-    if detect_host; then start_host; else
-      printf 'Android host is not installed; compositor remains available for local Wayland clients.\n' >&2
-      exit 2
+    if ! start_host; then
+      stop_compositor >/dev/null 2>&1 || true
+      fail "Android host launch failed; compositor was stopped."
     fi
     ;;
   stop) stop_compositor ;;
