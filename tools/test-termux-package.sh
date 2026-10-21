@@ -51,7 +51,7 @@ check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host packag
 check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host package ID"
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
-check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"' "$script" "Android host receives server monitor details"
+check_grep '"$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=starting&port=$port"' "$script" "Android host receives server monitor details"
 check_grep 'org.techwithkaushik.termuxxwayland.client.BridgeClient' "$script" "Termux starts the app_process Binder client"
 check_grep 'resolve_xwayland_display()' "$script" "XWayland display is detected from the Weston log"
 check_grep 'Host ready for input and applications. No desktop or GUI app was auto-started.' "$script" "host startup stays ready without launching a desktop"
@@ -187,7 +187,7 @@ grep -Fq 'Native Wayland frame capture: helper not built yet' <<<"$status_output
 launch_uri="$(cat "$open_log")"
 grep -Fq 'SESSION_CONNECTED' "$cli_tmp/runtime/binder-session.log" || { echo "FAIL: mock Binder client did not connect" >&2; exit 1; }
 [[ "$launch_uri" == termuxxwayland://start\?session_id=* &&
-   "$launch_uri" == *"&server=running&port="* &&
+   "$launch_uri" == *"&server=starting&port="* &&
    "$launch_uri" != *"&token="* ]] || {
   echo "FAIL: start must send session ID and monitor port (got: $launch_uri)" >&2; exit 1;
 }
