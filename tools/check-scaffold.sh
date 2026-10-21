@@ -71,6 +71,10 @@ grep -q 'ACTION_OPEN_SESSION' termux-package/src/BridgeClient.java
 grep -q 'interfaceDescriptor' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
 grep -q 'android:exported="false"' android-app/src/main/AndroidManifest.xml
 grep -q 'Native Wayland frame capture: unavailable (native helper not installed)' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+ # Keep privileged framebuffer capture opt-in until a narrowly scoped Weston policy exists.
+! grep -Eq 'weston_args\+\=.*--debug|weston_args=.*--debug' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+! grep -q 'termux-xwayland-capture' termux-package/build-deb.sh
+grep -q 'Do not enable blanket screenshot authorization' docs/weston-capture-build-gate.md
 grep -q 'FFmpeg capture fallback: disabled' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'termux-xwayland x11' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 echo "Bridge, socket-probe syntax, and scaffold structure checks passed."
