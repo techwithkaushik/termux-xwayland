@@ -46,12 +46,28 @@ class BridgeSessionService : Service() {
     inner class BridgeBinder : Binder() {
         @Volatile
         internal var frameListener: ((RgbaFrameCodec.Frame) -> Unit)? = null
+        private var receivedFrameCount = 0L
 
         internal fun dispatchFrame(payload: ByteArray) {
-            // Keep transport alive, but skip full-frame decoding while the Activity is detached.
+            val count = synchronized(this) { ++receivedFrameCount }
+            if (count == 1L || count % 100L == 0L) {
+                Log.i(TAG, "event=frame_packet_received count=$count payload_bytes=${payload.size} listener_attached=${frameListener != null}")
+            }
+            // Keep transport alive, but skip expensive pixel decoding while the Activity is detached.
             val listener = frameListener ?: return
-            val frame = RgbaFrameCodec.decode(payload)
-            listener(frame)
+            try {
+                val frame = RgbaFrameCodec.decode(payload)
+                if (count == 1L || count % 100L == 0L) {
+                    Log.i(TAG, "event=frame_packet_decoded count=$count width=${frame.width} height=${frame.height}")
+                }
+                listener(frame)
+            } catch (error: IOException) {
+                Log.e(TAG, "event=frame_packet_decode_failed count=$count payload_bytes=${payload.size}", error)
+                throw error
+            } catch (error: RuntimeException) {
+                Log.e(TAG, "event=frame_listener_failed count=$count", error)
+                throw error
+            }
         }
 
         /** Sends validated, bounded pointer/key events back through the same Binder-transferred FD. */
