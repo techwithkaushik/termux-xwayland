@@ -70,7 +70,7 @@ internal class CursorOverlayView(context: Context) : View(context) {
         arrow.lineTo(x + 11f * unit, y + 16f * unit)
         arrow.lineTo(x + 21f * unit, y + 16f * unit)
         arrow.close()
-        canvas.drawPath(arrow, outline)
         canvas.drawPath(arrow, fill)
+        canvas.drawPath(arrow, outline)
     }
 }
