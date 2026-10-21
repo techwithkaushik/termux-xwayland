@@ -50,7 +50,7 @@ bash -n tools/probe-weston-headless.sh
 test -f tools/probe-weston-x11-client.sh
 test -f docs/weston-xwayland-client-probe.md
 bash -n tools/probe-weston-x11-client.sh
-test -x tools/capture-x11-frame.sh
+test -f tools/capture-x11-frame.sh
 test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
 grep -q 'native Wayland capture' README.md
