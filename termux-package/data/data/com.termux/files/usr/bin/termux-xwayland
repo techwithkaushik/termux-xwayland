@@ -413,21 +413,11 @@ start_session() {
     stop_server >/dev/null 2>&1 || true
     fail "could not start Android host status monitor"
   }
-  [ -x "$TERMUX_OPEN" ] || {
-    stop_server >/dev/null 2>&1 || true
-    stop_monitor
-    fail "termux-open is unavailable; install/update termux-tools"
-  }
-  if ! "$TERMUX_OPEN" "termuxxwayland://start?session_id=$session_id&server=running&port=$port"; then
-    stop_server >/dev/null 2>&1 || true
-    stop_monitor
-    fail "could not open Android host deep link"
-  fi
   if ! start_binder_session; then
     stop_binder_session
     stop_monitor
     stop_server >/dev/null 2>&1 || true
-    fail "Android host opened, but the Termux Binder session could not connect; inspect $SESSION_LOG_FILE"
+    fail "Termux Binder session could not connect; inspect $SESSION_LOG_FILE"
   fi
   notify_user "Termux-XWayland" "Binder session connected. Real desktop frame rendering is still pending."
   printf 'Wayland server started; Android host launch request sent.\n'
