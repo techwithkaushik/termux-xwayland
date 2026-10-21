@@ -140,20 +140,20 @@ class MainActivity : Activity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // On Android 10, enter PiP when the user leaves the host while frames are arriving.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
-            !isFinishing && binderFrameCount > 0L && ::previewImage.isInitialized &&
-            previewImage.visibility == View.VISIBLE) {
-            runCatching {
-                val bounds = android.graphics.Rect()
-                previewImage.getGlobalVisibleRect(bounds)
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .setSourceRectHint(bounds)
-                    .build()
-                enterPictureInPictureMode(params)
-            }.onFailure { Log.w("TermuxXWayland", "Could not enter picture-in-picture", it) }
-        }
+        if (binderFrameCount > 0L) enterDesktopPictureInPicture()
+    }
+
+    private fun enterDesktopPictureInPicture() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O ||
+            isFinishing || isDestroyed) return
+        runCatching {
+            val bounds = android.graphics.Rect()
+            if (::previewImage.isInitialized) previewImage.getGlobalVisibleRect(bounds)
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+            if (!bounds.isEmpty) builder.setSourceRectHint(bounds)
+            enterPictureInPictureMode(builder.build())
+        }.onFailure { Log.w("TermuxXWayland", "Could not enter picture-in-picture", it) }
     }
 
     override fun onStart() {
@@ -341,13 +341,26 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         val heading = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(8))
         }
-        heading.addView(label("TERMUX • WAYLAND", 12, blue, true))
-        heading.addView(label("Linux desktop", 22, ink, true).apply {
+        val titleColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        titleColumn.addView(label("TERMUX • WAYLAND", 12, blue, true))
+        titleColumn.addView(label("Linux desktop", 22, ink, true).apply {
             setPadding(0, dp(4), 0, dp(2))
         })
+        heading.addView(titleColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val pipButton = actionButton("PiP") { enterDesktopPictureInPicture() }.apply {
+            contentDescription = "Enter picture-in-picture mode"
+            isEnabled = true
+            minWidth = dp(64)
+        }
+        heading.addView(pipButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { leftMargin = dp(8) })
         statusTitle = label("Waiting for Termux session", 15, ink, true)
         statusDescription = label("Start the session from Termux. This host will stay closed until you open it.", 12, muted, false)
         heading.addView(statusTitle)
