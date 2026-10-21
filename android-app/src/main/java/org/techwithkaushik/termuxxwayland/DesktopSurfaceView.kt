@@ -3,6 +3,7 @@ package org.techwithkaushik.termuxxwayland
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
@@ -34,7 +35,10 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var pointerCaptured = false
 
     init {
-        setBackgroundColor(Color.BLACK)
+        // Match Termux:X11's transparent view background. Configure alpha before
+        // the Surface is created so EGL can composite letterbox areas correctly.
+        setBackgroundColor(Color.TRANSPARENT)
+        holder.setFormat(PixelFormat.TRANSLUCENT)
         isFocusable = true
         isFocusableInTouchMode = true
         holder.addCallback(this)
