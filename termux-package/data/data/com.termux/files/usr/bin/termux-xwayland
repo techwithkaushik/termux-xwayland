@@ -194,13 +194,36 @@ start_server() {
   # Query the Android physical display size so the headless Weston output
   # matches the handset's native portrait/landscape resolution. "wm size"
   # reports the physical dimensions without applying a display override.
-  local display_width=640 display_height=360 wm_output wm_size
+  local display_width=640 display_height=360 wm_output wm_size display_dump display_match
+  : > "$RUNTIME_DIR/display-detection.log"
+  # Prefer Android's physical size, then the display override, then DisplayManager's
+  # real dimensions. Some Android 10/MIUI builds deny or omit the wm size output
+  # to the Termux UID, so a failed query must not silently go undocumented.
   if [ -x /system/bin/wm ]; then
-    wm_output="$(/system/bin/wm size 2>/dev/null || true)"
+    wm_output="$(/system/bin/wm size 2>&1 || true)"
+    printf 'wm size output: %s\n' "$wm_output" >> "$RUNTIME_DIR/display-detection.log"
     wm_size="$(printf '%s\n' "$wm_output" | sed -n 's/.*Physical size: *\([0-9][0-9]*x[0-9][0-9]*\).*/\1/p' | tail -n 1)"
+    if [ -z "$wm_size" ]; then
+      wm_size="$(printf '%s\n' "$wm_output" | sed -n 's/.*Override size: *\([0-9][0-9]*x[0-9][0-9]*\).*/\1/p' | tail -n 1)"
+    fi
     if [[ "$wm_size" =~ ^([0-9]{3,5})x([0-9]{3,5})$ ]]; then
       display_width="${BASH_REMATCH[1]}"
       display_height="${BASH_REMATCH[2]}"
+    fi
+  else
+    printf '%s\n' 'wm size unavailable: /system/bin/wm is not executable' >> "$RUNTIME_DIR/display-detection.log"
+  fi
+  if (( display_width == 640 && display_height == 360 )); then
+    if [ -x /system/bin/dumpsys ]; then
+      display_dump="$(/system/bin/dumpsys display 2>&1 || true)"
+      printf '%s\n' "$display_dump" >> "$RUNTIME_DIR/display-detection.log"
+      display_match="$(printf '%s\n' "$display_dump" | sed -nE 's/.*real[[:space:]]+([0-9]{3,5})[[:space:]]+x[[:space:]]+([0-9]{3,5}).*/\1x\2/p' | head -n 1)"
+      if [[ "$display_match" =~ ^([0-9]{3,5})x([0-9]{3,5})$ ]]; then
+        display_width="${BASH_REMATCH[1]}"
+        display_height="${BASH_REMATCH[2]}"
+      fi
+    else
+      printf '%s\n' 'dumpsys display unavailable: /system/bin/dumpsys is not executable' >> "$RUNTIME_DIR/display-detection.log"
     fi
   fi
   # Keep the compositor within safe limits on unusual/virtual displays.
