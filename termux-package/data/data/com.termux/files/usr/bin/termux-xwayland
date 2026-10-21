@@ -40,7 +40,7 @@ session_pid() {
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   args="$(ps -p "$pid" -o args= 2>/dev/null)" || return 1
-  case "$args" in *weston*"$RUNTIME_DIR"*) printf '%s\n' "$pid"; return 0 ;; esac
+  case "$args" in *weston*"$LOG_FILE"*) printf '%s\n' "$pid"; return 0 ;; esac
   return 1
 }
 
