@@ -63,7 +63,6 @@ class MainActivity : Activity() {
     private lateinit var binderStatusDescription: TextView
     private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
-    private lateinit var cursorOverlay: CursorOverlayView
     private lateinit var headingContainer: LinearLayout
     private lateinit var connectionPanel: LinearLayout
     private lateinit var desktopRoot: FrameLayout
@@ -84,8 +83,13 @@ class MainActivity : Activity() {
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
             previewImage.visibility = View.VISIBLE
-            if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
+            // Never retain pixels from an earlier Binder session. Until the new
+            // server sends a frame, the desktop surface stays empty/black.
+            pendingDesktopFrame.set(null)
+            previewImage.clearFrame()
+            binderFrameCount = 0L
+            if (::connectionPanel.isInitialized) connectionPanel.visibility = View.VISIBLE
             local.frameListener = { frame ->
                 if (binderFrameCount == 0L) {
                     Log.i("TermuxXWayland", "event=first_frame_received width=${frame.width} height=${frame.height}")
@@ -98,11 +102,11 @@ class MainActivity : Activity() {
 
         override fun onServiceDisconnected(name: ComponentName) {
             localBridgeBinder?.frameListener = null
+            pendingDesktopFrame.set(null)
             if (::previewImage.isInitialized) {
                 previewImage.inputEventListener = null
                 previewImage.clearFrame()
                 previewImage.visibility = View.VISIBLE
-                if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
             }
             if (::desktopProofDescription.isInitialized) {
                 desktopProofDescription.text =
@@ -273,11 +277,6 @@ class MainActivity : Activity() {
                         )
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
-                        if (::cursorOverlay.isInitialized) {
-                            // A successful transport can still carry an all-black Weston buffer.
-                            // Keep the startup pointer visible until actual desktop pixels arrive.
-                            cursorOverlay.visibility = if (frameHasVisiblePixels(frame)) View.GONE else View.VISIBLE
-                        }
                         binderFrameCount++
                         if (::binderStatusDescription.isInitialized) {
                             binderStatusDescription.text =
@@ -297,24 +296,6 @@ class MainActivity : Activity() {
                 }
             }
         }
-    }
-
-    private fun frameHasVisiblePixels(frame: RgbaFrameCodec.Frame): Boolean {
-        val pixels = frame.pixels
-        if (pixels.isEmpty()) return false
-        // Sample at most about 4096 pixels so this check stays cheap on ARM32.
-        val step = maxOf(1, pixels.size / 4096)
-        var visibleSamples = 0
-        var index = 0
-        while (index < pixels.size) {
-            val rgb = pixels[index] and 0x00FFFFFF
-            val red = (rgb ushr 16) and 0xFF
-            val green = (rgb ushr 8) and 0xFF
-            val blue = rgb and 0xFF
-            if (maxOf(red, green, blue) > 24 && ++visibleSamples >= 8) return true
-            index += step
-        }
-        return false
     }
 
     private fun handleTermuxIntent(intent: Intent?) {
@@ -449,11 +430,6 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
         }
-        cursorOverlay = CursorOverlayView(this).apply {
-            visibility = View.VISIBLE
-            contentDescription = "Pointer cursor (waiting for live desktop frame)"
-        }
-        previewImage.cursorPositionListener = { x, y -> cursorOverlay.setCursorPosition(x, y) }
         desktopRoot = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             fitsSystemWindows = false
@@ -504,11 +480,6 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
         connectionPanel.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
-        desktopRoot.addView(cursorOverlay, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-        cursorOverlay.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
         return desktopRoot
     }
 
@@ -600,7 +571,6 @@ class MainActivity : Activity() {
                     }
                     previewImage.clearFrame()
                     previewImage.visibility = View.VISIBLE
-                    if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
                     desktopProofDescription.text =
                         "NO LIVE DESKTOP FRAME • Legacy socket test passed, but its synthetic test image is deliberately not rendered as a desktop."
                     desktopProofDescription.setTextColor(Color.rgb(185, 28, 28))
@@ -668,7 +638,6 @@ class MainActivity : Activity() {
         connectButton.text = "Run legacy socket diagnostic"
         previewImage.clearFrame()
         previewImage.visibility = View.VISIBLE
-        if (::cursorOverlay.isInitialized) cursorOverlay.visibility = View.VISIBLE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
     }
