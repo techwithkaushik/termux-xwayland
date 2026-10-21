@@ -81,6 +81,7 @@ public final class BridgeClient {
     private static volatile Process activeNativeInput;
     private static BufferedWriter nativeInputWriter;
     private static boolean nativeInputUnavailableLogged;
+    private static boolean nativeInputDisabled;
     // Keep slow xdotool process launches off the Binder protocol/heartbeat loop.
     // A single worker preserves key/button event ordering while the reader can
     // continue answering PINGs and accepting frames during input bursts.
@@ -566,12 +567,20 @@ public final class BridgeClient {
         }
 
         synchronized (BridgeClient.class) {
+            if (nativeInputDisabled) return false;
             try {
                 Process process = activeNativeInput;
-                if (process == null || !process.isAlive() || nativeInputWriter == null) {
+                if (process != null && !process.isAlive()) {
+                    nativeInputDisabled = true;
+                    nativeInputWriter = null;
+                    activeNativeInput = null;
+                    return false;
+                }
+                if (process == null || nativeInputWriter == null) {
                     String helper = findExecutable("termux-xwayland-input");
                     String display = System.getenv("DISPLAY");
                     if (helper == null || display == null || display.trim().isEmpty()) {
+                        nativeInputDisabled = true;
                         if (!nativeInputUnavailableLogged) {
                             System.err.println("NATIVE_INPUT_UNAVAILABLE reason=helper_or_DISPLAY_missing; falling back to xdotool");
                             nativeInputUnavailableLogged = true;
@@ -598,6 +607,7 @@ public final class BridgeClient {
                 if (process != null) process.destroy();
                 activeNativeInput = null;
                 nativeInputWriter = null;
+                nativeInputDisabled = true;
                 return false;
             }
         }
