@@ -7,7 +7,7 @@ import java.io.IOException
  * Wire metadata: big-endian u16 width, big-endian u16 height, format=1, then 3 reserved zero bytes.
  */
 internal object RgbaFrameCodec {
-    internal data class Frame(val width: Int, val height: Int, val pixels: IntArray)
+    internal data class Frame(val width: Int, val height: Int, val pixels: ByteArray)
 
     fun decode(payload: ByteArray): Frame {
         if (payload.size < 8) throw IOException("Truncated frame metadata")
@@ -23,15 +23,9 @@ internal object RgbaFrameCodec {
             throw IOException("Frame pixel length does not match its dimensions")
         }
 
-        val pixels = IntArray(width * height)
-        var offset = 8
-        for (index in pixels.indices) {
-            val red = payload[offset++].toInt() and 0xff
-            val green = payload[offset++].toInt() and 0xff
-            val blue = payload[offset++].toInt() and 0xff
-            val alpha = payload[offset++].toInt() and 0xff
-            pixels[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-        }
+        // Keep the wire RGBA bytes intact. Native GLES can upload them directly,
+        // avoiding a per-pixel RGBA -> ARGB -> RGBA conversion on every frame.
+        val pixels = payload.copyOfRange(8, payload.size)
         return Frame(width, height, pixels)
     }
 
