@@ -218,7 +218,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 val value = text?.toString().orEmpty()
                 if (value.isEmpty()) return true
                 // Keep the bridge packet bounded and reject control characters.
-                val safe = value.filter { it == '\\n' || it == '\\t' || it >= ' ' && it != '\\u007f' }
+                val safe = value.filter { it == '\n' || it == '\t' || it >= ' ' && it != '\u007f' }
                 if (safe.isNotEmpty() && safe.toByteArray(Charsets.UTF_8).size <= 100) {
                     inputEventListener?.invoke(("TEXT " + safe).toByteArray(Charsets.UTF_8))
                 }
