@@ -11,6 +11,8 @@ import android.os.ParcelFileDescriptor;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -55,6 +57,9 @@ public final class BridgeClient {
     private static final int FRAME_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
     private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
     private static volatile Process activeFrameCapture;
+    private static volatile Process activeNativeInput;
+    private static BufferedWriter nativeInputWriter;
+    private static boolean nativeInputUnavailableLogged;
     // Keep slow xdotool process launches off the Binder protocol/heartbeat loop.
     // A single worker preserves key/button event ordering while the reader can
     // continue answering PINGs and accepting frames during input bursts.
@@ -492,9 +497,97 @@ public final class BridgeClient {
         return (int) Math.max(-8192L, Math.min(8192L, value));
     }
 
+    /**
+     * Send latency-sensitive pointer packets through one persistent XTest process.
+     * Spawning xdotool for every move costs tens of milliseconds on low-end ARM devices.
+     * Returns true only when a recognized pointer packet was accepted by the helper.
+     */
+    private static boolean dispatchNativePointer(String rawEvent) {
+        String[] fields = rawEvent.trim().split("\\s+");
+        if (fields.length == 0) return false;
+        String op = fields[0];
+        if (!("REL".equals(op) || "MOVE".equals(op) || "BUTTON".equals(op) || "CLICK".equals(op))) return false;
+        final String command;
+        try {
+            if ("REL".equals(op) && fields.length == 3) {
+                int dx = Integer.parseInt(fields[1]), dy = Integer.parseInt(fields[2]);
+                if (Math.abs((long) dx) > 4096L || Math.abs((long) dy) > 4096L) return true;
+                if (dx == 0 && dy == 0) return true;
+                command = "REL " + dx + " " + dy;
+            } else if ("MOVE".equals(op) && fields.length == 3) {
+                float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
+                if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;
+                int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (FRAME_WIDTH - 1)));
+                int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (FRAME_HEIGHT - 1)));
+                command = "MOVE " + x + " " + y;
+            } else if ("BUTTON".equals(op) && fields.length == 3 &&
+                    ("DOWN".equals(fields[2]) || "UP".equals(fields[2]))) {
+                int button = Integer.parseInt(fields[1]);
+                if (button < 1 || button > 3) return true;
+                command = "BUTTON " + button + " " + fields[2];
+            } else if ("CLICK".equals(op) && fields.length == 2) {
+                int button = Integer.parseInt(fields[1]);
+                if (button < 1 || button > 3) return true;
+                command = "CLICK " + button;
+            } else {
+                return false;
+            }
+        } catch (NumberFormatException invalid) {
+            return false;
+        }
+
+        synchronized (BridgeClient.class) {
+            try {
+                Process process = activeNativeInput;
+                if (process == null || !process.isAlive() || nativeInputWriter == null) {
+                    String helper = findExecutable("termux-xwayland-input");
+                    String display = System.getenv("DISPLAY");
+                    if (helper == null || display == null || display.trim().isEmpty()) {
+                        if (!nativeInputUnavailableLogged) {
+                            System.err.println("NATIVE_INPUT_UNAVAILABLE reason=helper_or_DISPLAY_missing; falling back to xdotool");
+                            nativeInputUnavailableLogged = true;
+                        }
+                        return false;
+                    }
+                    process = new ProcessBuilder(helper, "--display", display,
+                            "--width", Integer.toString(FRAME_WIDTH),
+                            "--height", Integer.toString(FRAME_HEIGHT))
+                            .redirectError(ProcessBuilder.Redirect.INHERIT).start();
+                    activeNativeInput = process;
+                    nativeInputWriter = new BufferedWriter(new OutputStreamWriter(
+                            process.getOutputStream(), StandardCharsets.US_ASCII), 256);
+                    System.out.println("NATIVE_INPUT_STARTED backend=persistent-XTest display=" + display);
+                    System.out.flush();
+                }
+                nativeInputWriter.write(command);
+                nativeInputWriter.newLine();
+                nativeInputWriter.flush();
+                return true;
+            } catch (IOException error) {
+                System.err.println("NATIVE_INPUT_FAILED reason=" + error.getClass().getSimpleName());
+                Process process = activeNativeInput;
+                if (process != null) process.destroy();
+                activeNativeInput = null;
+                nativeInputWriter = null;
+                return false;
+            }
+        }
+    }
+
+    private static void stopNativeInput() {
+        synchronized (BridgeClient.class) {
+            try { if (nativeInputWriter != null) nativeInputWriter.close(); } catch (IOException ignored) {}
+            nativeInputWriter = null;
+            Process process = activeNativeInput;
+            activeNativeInput = null;
+            if (process != null) process.destroy();
+        }
+    }
+
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
         String rawEvent = new String(payload, StandardCharsets.UTF_8);
+        if (dispatchNativePointer(rawEvent)) return;
         String xdotool = findExecutable("xdotool");
         if (xdotool == null) {
             System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
