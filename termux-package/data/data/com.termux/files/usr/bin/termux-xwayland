@@ -1,13 +1,20 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -u
 
-# Debug APKs append .debug via applicationIdSuffix; release APKs do not.
+# Android host package IDs (debug builds use applicationIdSuffix ".debug").
 APP_IDS=("org.techwithkaushik.termuxxwayland" "org.techwithkaushik.termuxxwayland.debug")
 DETECTED_APP_ID=""
-# Optional executable overrides make the CLI testable outside Android. Normal
-# installations continue to use Android's package manager and Termux's opener.
 SYSTEM_PM="${TERMUX_XWAYLAND_PM:-/system/bin/pm}"
 TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"
+WESTON="${TERMUX_XWAYLAND_WESTON:-weston}"
+XWAYLAND="${TERMUX_XWAYLAND_XWAYLAND:-Xwayland}"
+RUNTIME_BASE="${TERMUX_XWAYLAND_RUNTIME_BASE:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}}"
+SESSION_DIR="$RUNTIME_BASE/termux-xwayland-session-${UID:-$(id -u)}"
+RUNTIME_DIR="$SESSION_DIR/runtime"
+PID_FILE="$SESSION_DIR/weston.pid"
+LOG_FILE="$SESSION_DIR/weston.log"
+STDOUT_FILE="$SESSION_DIR/weston.stdout.log"
+WAYLAND_DISPLAY_NAME="${TERMUX_XWAYLAND_WAYLAND_DISPLAY:-wayland-0}"
 
 fail() {
   printf 'termux-xwayland: %s\n' "$*" >&2
@@ -20,12 +27,20 @@ detect_host() {
   for app_id in "${APP_IDS[@]}"; do
     output="$("$SYSTEM_PM" path "$app_id" 2>/dev/null)" || continue
     case "$output" in
-      package:*)
-        DETECTED_APP_ID="$app_id"
-        return 0
-        ;;
+      package:*) DETECTED_APP_ID="$app_id"; return 0 ;;
     esac
   done
+  return 1
+}
+
+session_pid() {
+  local pid args
+  [ -r "$PID_FILE" ] || return 1
+  IFS= read -r pid < "$PID_FILE" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  args="$(ps -p "$pid" -o args= 2>/dev/null)" || return 1
+  case "$args" in *weston*"$RUNTIME_DIR"*) printf '%s\n' "$pid"; return 0 ;; esac
   return 1
 }
 
@@ -34,49 +49,113 @@ show_status() {
     printf 'Android host: installed (%s)\n' "$DETECTED_APP_ID"
   else
     printf 'Android host: NOT DETECTED\n'
-    printf 'Checked package IDs:\n'
-    printf '  - %s\n' "${APP_IDS[@]}"
-    printf 'Install the Termux-XWayland Android APK, then retry.\n'
-    return 1
+    printf 'Checked package IDs: %s\n' "${APP_IDS[*]}"
   fi
-  printf 'Termux companion: installed (deb package)\n'
-  printf 'Live compositor/stream: not implemented yet\n'
+  if session_pid >/dev/null; then
+    printf 'Wayland compositor: running (headless/Pixman; session bootstrap only)\n'
+    printf 'Wayland socket: %s/%s\n' "$RUNTIME_DIR" "$WAYLAND_DISPLAY_NAME"
+    printf 'XWayland: requested from Weston\n'
+    printf 'Android frame/input transport: not integrated\n'
+    printf 'Log: %s\n' "$LOG_FILE"
+  else
+    printf 'Wayland compositor: stopped\n'
+    printf 'Android frame/input transport: not integrated\n'
+  fi
+}
+
+prepare_session() {
+  command -v "$WESTON" >/dev/null 2>&1 || fail "Weston is missing; install it with: pkg install weston"
+  command -v "$XWAYLAND" >/dev/null 2>&1 || fail "XWayland is missing; install it with: pkg install xwayland"
+  mkdir -p "$RUNTIME_DIR" || fail "cannot create session runtime directory: $RUNTIME_DIR"
+  chmod 700 "$SESSION_DIR" "$RUNTIME_DIR" || fail "cannot secure session runtime directory"
+}
+
+start_compositor() {
+  if session_pid >/dev/null; then
+    printf 'Wayland compositor is already running.\n'
+    return 0
+  fi
+  prepare_session
+  rm -f "$RUNTIME_DIR/$WAYLAND_DISPLAY_NAME"
+  export XDG_RUNTIME_DIR="$RUNTIME_DIR"
+  export WAYLAND_DISPLAY="$WAYLAND_DISPLAY_NAME"
+
+  # Intentionally start only the compositor/server. No desktop environment or
+  # terminal is launched automatically; users can start clients later.
+  "$WESTON" --backend=headless --renderer=pixman --socket="$WAYLAND_DISPLAY_NAME" \
+    --no-config --log="$LOG_FILE" --xwayland >"$STDOUT_FILE" 2>&1 &
+  local pid=$!
+  printf '%s\n' "$pid" > "$PID_FILE"
+  chmod 600 "$PID_FILE" "$LOG_FILE" "$STDOUT_FILE" 2>/dev/null || true
+
+  local ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if [[ -S "$RUNTIME_DIR/$WAYLAND_DISPLAY_NAME" ]] && kill -0 "$pid" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then break; fi
+    sleep 1
+  done
+  if [[ "$ready" -ne 1 ]]; then
+    stop_compositor >/dev/null 2>&1 || true
+    printf 'Weston did not become ready. Recent logs:\n' >&2
+    tail -n 50 "$LOG_FILE" "$STDOUT_FILE" 2>/dev/null >&2 || true
+    fail "compositor startup failed"
+  fi
+  printf 'Wayland compositor ready (PID %s).\n' "$pid"
+  printf 'WAYLAND_DISPLAY=%s\n' "$WAYLAND_DISPLAY_NAME"
+  printf 'XDG_RUNTIME_DIR=%s\n' "$RUNTIME_DIR"
+  printf 'No desktop was started. Android frame/input transport is not integrated yet.\n'
+  printf 'Log: %s\n' "$LOG_FILE"
+}
+
+stop_compositor() {
+  local pid
+  if ! pid="$(session_pid)"; then
+    rm -f "$PID_FILE"
+    printf 'Wayland compositor is not running.\n'
+    return 0
+  fi
+  kill -TERM "$pid" 2>/dev/null || true
+  local stopped=0
+  for _ in 1 2 3 4 5; do
+    if ! kill -0 "$pid" 2>/dev/null; then stopped=1; break; fi
+    sleep 1
+  done
+  if [[ "$stopped" -eq 0 ]]; then
+    # Only signal the process if its command line still matches this session.
+    if session_pid | grep -Fxq "$pid"; then kill -KILL "$pid" 2>/dev/null || true; fi
+  fi
+  rm -f "$PID_FILE" "$RUNTIME_DIR/$WAYLAND_DISPLAY_NAME"
+  printf 'Wayland compositor stopped. Logs retained at %s\n' "$SESSION_DIR"
 }
 
 start_host() {
-  detect_host || {
-    printf 'Android host: NOT DETECTED\n' >&2
-    printf 'Checked package IDs: %s\n' "${APP_IDS[*]}" >&2
-    printf 'Install the Termux-XWayland Android APK first.\n' >&2
-    exit 2
-  }
-  # Launch through Android's VIEW intent so MIUI does not need the app UID
-  # to call protected am/monkey shell entry points. The host registers this URI.
+  detect_host || fail "Android host not detected. Install the Termux-XWayland Android host APK first."
   [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
-  if "$TERMUX_OPEN" "termuxxwayland://start"; then
-    printf 'Termux-XWayland host launch requested (%s). Confirm the host UI opens; this does not start a Linux compositor.\n' "$DETECTED_APP_ID"
-  else
-    fail "Could not open the Termux-XWayland launcher URI. Rebuild/reinstall the Android host APK with the latest manifest."
-  fi
+  "$TERMUX_OPEN" "termuxxwayland://start" || fail "could not open the Android host deep link"
+  printf 'Android host launch requested (%s).\n' "$DETECTED_APP_ID"
 }
 
 case "${1:-status}" in
   status|check) show_status ;;
-  start) start_host ;;
-  stop)
-    printf 'Session stop is not available yet: the persistent session controller is not implemented.\n' >&2
-    exit 3
+  start)
+    start_compositor
+    if detect_host; then start_host; else
+      printf 'Android host is not installed; compositor remains available for local Wayland clients.\n' >&2
+      exit 2
+    fi
     ;;
-  --version|-V)
-    printf 'termux-xwayland companion 0.1.0 (session streaming not implemented)\n'
-    ;;
+  stop) stop_compositor ;;
+  --version|-V) printf 'termux-xwayland companion 0.2.0 (headless compositor bootstrap; Android stream pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
 Usage: termux-xwayland [status|check|start|stop|--version|--help]
 
-status/check  Detect release or debug Android host package.
-start         Open the Android host (does not start a compositor yet).
-stop          Reserved; session lifecycle is not implemented yet.
+status/check  Show Android host and compositor status.
+start         Start Weston with XWayland, then open the Android host. No desktop is auto-started.
+stop          Stop only the Weston process started for this session.
 EOF
     ;;
   *)
