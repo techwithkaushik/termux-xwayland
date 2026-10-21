@@ -2,7 +2,7 @@
 
 A standalone Android display host for graphical sessions launched from Termux. The goal is to let users start graphical sessions in Termux and view them in this app, including X11 applications through XWayland and native Wayland applications.
 
-> **Status: compositor bootstrap implemented; no real Android desktop rendering yet.** The Termux CLI can start/stop Weston with its headless Pixman backend and request XWayland startup without automatically opening a desktop environment. This is a session-lifecycle milestone, not the final Android renderer: Weston currently renders headlessly, the Android app still has a synthetic RGBA test-frame path, and the target Android 10 device rejected the prototype cross-UID abstract socket with EACCES. Real compositor-surface export, authorized persistent frame/input transport, GPU-backed Android presentation and visible X11/Wayland clients are not yet implemented. Do not run xfce4-session expecting it to appear in the Android app.
+> **Status: compositor bootstrap implemented; no real desktop rendering yet on Android.** The Termux CLI can start/stop Weston with its headless Pixman backend and request XWayland startup without automatically opening a desktop environment. This is a session-lifecycle milestone, not the final Android renderer: Weston currently renders headlessly, the Android app still has a synthetic RGBA test-frame path, and the target Android 10 device rejected the prototype cross-UID abstract socket with EACCES. Real compositor-surface export, authorized persistent frame/input transport, GPU-backed Android presentation and visible X11/Wayland clients are not yet implemented. Do not run xfce4-session expecting it to appear in the Android app.
 
 ## Current implementation
 
