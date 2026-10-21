@@ -258,7 +258,11 @@ public final class BridgeClient {
                     System.err.flush();
                 } finally {
                     opened.set(false);
-                    Looper.getMainLooper().quit();
+                    // app_process prepared the main looper for Android framework
+                    // initialization. Android forbids quitting that looper from a
+                    // Binder worker; terminate this dedicated client process when its
+                    // single Binder session ends instead.
+                    System.exit(0);
                 }
             }, "termux-xwayland-binder-session");
             worker.setDaemon(false);
