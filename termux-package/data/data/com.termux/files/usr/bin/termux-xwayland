@@ -136,8 +136,29 @@ server_is_running() {
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null
 }
+build_capture_helper_if_possible() {
+  local helper="${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-xwayland-capture"
+  local builder="${PREFIX:-/data/data/com.termux/files/usr}/share/termux-xwayland/tools/build-native-capture.sh"
+  if [[ -x "$helper" ]]; then
+    printf 'Native Wayland frame capture: helper already installed (%s)\n' "$helper"
+    return 0
+  fi
+  if [[ -r "$builder" ]]; then
+    printf '%s\n' 'Native Wayland frame capture: attempting on-device build against installed Termux/Weston ABI.'
+    if bash "$builder" "$helper"; then
+      printf '%s\n' 'Native Wayland frame capture: helper build succeeded.'
+      return 0
+    fi
+    printf '%s\n' 'Native Wayland frame capture: build unavailable; install clang, pkg-config, wayland, and Weston capture protocol XML, then retry.' >&2
+  else
+    printf '%s\n' 'Native Wayland frame capture: build recipe not installed; update termux-xwayland-bridge package.' >&2
+  fi
+  return 0
+}
+
 start_server() {
   prepare_runtime_dir
+  build_capture_helper_if_possible
   if server_is_running; then
     if [ ! -S "$RUNTIME_DIR/$WAYLAND_SOCKET" ]; then
       fail "Weston PID $(cat "$PID_FILE") exists but Wayland socket is missing; inspect $LOG_FILE or run termux-xwayland stop"
