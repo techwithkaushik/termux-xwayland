@@ -132,9 +132,14 @@ stop_compositor() {
 }
 
 start_host() {
-  detect_host || fail "Android host not detected. Install the Termux-XWayland Android host APK first."
-  [ -x "$TERMUX_OPEN" ] || fail "termux-open is unavailable; install/update termux-tools"
-  "$TERMUX_OPEN" "termuxxwayland://start" || fail "could not open the Android host deep link"
+  [ -x "$TERMUX_OPEN" ] || {
+    printf 'termux-xwayland: termux-open is unavailable; install/update termux-tools\n' >&2
+    return 1
+  }
+  "$TERMUX_OPEN" "termuxxwayland://start" || {
+    printf 'termux-xwayland: could not open the Android host deep link\n' >&2
+    return 1
+  }
   printf 'Android host launch requested (%s).\n' "$DETECTED_APP_ID"
 }
 
@@ -149,7 +154,7 @@ case "${1:-status}" in
     fi
     ;;
   stop) stop_compositor ;;
-  --version|-V) printf 'termux-xwayland companion 0.2.0 (headless compositor bootstrap; Android stream pending)\n' ;;
+  --version|-V) printf 'termux-xwayland companion 0.1.0 (headless compositor bootstrap; Android stream pending)\n' ;;
   --help|-h|help)
     cat <<'EOF'
 Usage: termux-xwayland [status|check|start|stop|--version|--help]
