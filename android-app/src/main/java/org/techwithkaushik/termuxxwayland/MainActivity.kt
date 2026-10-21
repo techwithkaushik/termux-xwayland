@@ -1,5 +1,19 @@
 package org.techwithkaushik.termuxxwayland
 
+private fun RgbaFrameCodec.Frame.toArgbPixels(): IntArray {
+    val result = IntArray(width * height)
+    var source = 0
+    for (index in result.indices) {
+        val red = pixels[source++].toInt() and 0xff
+        val green = pixels[source++].toInt() and 0xff
+        val blue = pixels[source++].toInt() and 0xff
+        val alpha = pixels[source++].toInt() and 0xff
+        result[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+    }
+    return result
+}
+
+
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.ClipData
@@ -707,7 +721,7 @@ class MainActivity : Activity() {
 
     private fun decodeTestFrame(payload: ByteArray): Bitmap {
         val frame = RgbaFrameCodec.decode(payload)
-        return Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(frame.toArgbPixels(), frame.width, frame.height, Bitmap.Config.ARGB_8888)
     }
 
     private fun showError(message: String) {
