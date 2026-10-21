@@ -29,6 +29,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var renderedVersion = -1L
     private var firstFrameDrawnLogged = false
     var inputEventListener: ((ByteArray) -> Unit)? = null
+    var cursorPositionListener: ((Float, Float) -> Unit)? = null
     private var lastMoveAt = 0L
     private var pointerCaptured = false
 
@@ -224,6 +225,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         val now = android.os.SystemClock.uptimeMillis()
         if (action == "MOVE" && now - lastMoveAt < 16L) return true
         if (action == "MOVE") lastMoveAt = now
+        cursorPositionListener?.invoke(event.x, event.y)
         val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
         val normalizedY = ((event.y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
         synchronized(frameLock) {
