@@ -8,7 +8,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 
 - **Android host:** Kotlin UI receives the Termux-authorized Binder session, validates the caller and TXWB framing, and renders received RGBA frames.
 - **Termux package:** `termux-xwayland` starts Weston/XWayland and launches the client from the existing Termux installation.
-- **Termux client:** `termux-package/src/BridgeClient.java` is compiled to DEX in CI and packaged in the Termux DEB. It opens a Binder-authorized file-descriptor session. Frame forwarding is wired to the native `termux-xwayland-capture` source, but the helper is deliberately not packaged until a matching Weston build grants narrowly scoped capture authorization; therefore real desktop frames are not yet guaranteed or claimed.
+- **Termux client:** `termux-package/src/BridgeClient.java` is compiled to DEX in CI and packaged in the Termux DEB. It opens a Binder-authorized file-descriptor session. Frame forwarding is wired to the native `termux-xwayland-capture` helper source, but the helper is deliberately not packaged until a matching Weston build grants narrowly scoped capture authorization; therefore real desktop frames are not yet guaranteed or claimed.
 - **Packaging:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
 - **Transport security:** no production TCP listener is used. Binder caller UID checks and the session FD handoff are required.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
