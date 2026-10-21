@@ -34,6 +34,10 @@ android {
     namespace = "org.techwithkaushik.termuxxwayland"
     compileSdk = 35
 
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
+    }
+
     signingConfigs {
         if (hasDevSigning) {
             create("dev") {
@@ -52,6 +56,7 @@ android {
         versionCode = 1
         versionName = "0.1.0-alpha01"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     buildTypes {
@@ -71,6 +76,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions { jvmTarget = "11" }
+
+    externalNativeBuild {
+        cmake { version = "3.22.1" }
+    }
 }
 
 dependencies {
