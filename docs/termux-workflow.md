@@ -2,10 +2,25 @@
 
 ## Current milestone
 
-The Termux DEB contains a Java direct-socket client compiled to DEX in CI. It connects to the existing Android host over a session-specific abstract AF_UNIX socket, validates TXWB v1 framing, and maintains a PING/PONG heartbeat. When XWayland and ffmpeg are installed, the client can capture a 640×360 X11/XWayland image at 2 FPS and send RGBA FRAME messages. The Android host validates and displays received frames. Target-device visual verification is still pending; native Wayland capture and input forwarding remain incomplete.
+The Termux DEB contains the Java app_process client and manages Weston/XWayland. The client requests native Weston output capture and forwards RGBA frames over the authenticated Binder-transferred FD. Actual frame delivery still depends on the installed Weston capture protocol and its authorization policy.
 
-The Binder service has been removed from the runtime path. The retired ipc-companion APK is not part of the supported install flow. Cross-UID abstract sockets previously failed with EACCES on the target Android 10 device, so the new direction must be verified on-device.
+The stream is capped at 640×360 worth of pixels per frame while preserving the display aspect ratio. This prevents a phone-sized output (for example 1080×2400) from creating a 10 MB packet per frame. The Android renderer keeps the newest frame rather than building a stale-frame queue. Pointer movement prefers a persistent native XTest helper; when its optional development dependencies are unavailable, the xdotool fallback remains enabled.
 
+Termux:X11 is the reference for the performance target: it keeps the X server and native rendering pipeline in the same app process and uses native EGL/GLES presentation, rather than transporting a complete RGBA desktop image for every frame. The current bridge is still a copied-frame path, not zero-copy. Measure frame FPS and pointer latency on the target Android 10 device before claiming real-time performance.
+
+## Optional native input helper
+
+The DEB ships the source and build recipe. Install the optional toolchain in Termux before starting the session:
+
+```bash
+pkg install clang pkg-config libx11 libxtst
+termux-xwayland stop
+termux-xwayland start
+```
+
+At startup the CLI attempts to build termux-xwayland-input. It keeps an XTest connection open and receives bounded pointer commands through stdin. If compilation or XTest initialization fails, the client logs the reason and falls back to xdotool.
+
+FRAME_SENT entries in the Termux session log include the measured interval FPS, stream dimensions, packet size, capture read time and bridge write time. Use these to distinguish a slow capture source from a transport or rendering bottleneck.
 ## Build artifacts
 
 CI publishes:
