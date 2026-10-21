@@ -19,6 +19,10 @@ grep -q 'externalNativeBuild' android-app/build.gradle.kts
 grep -q 'nativeRender' android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
 grep -q 'pendingDesktopFrame.set(null)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_preferences' android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
+test -f native/input/termux-xwayland-input.c
+test -f tools/build-native-input.sh
+bash -n tools/build-native-input.sh
+grep -q 'XTestFakeRelativeMotionEvent' native/input/termux-xwayland-input.c
 test -f native/compositor/Cargo.toml
 test -f native/compositor/src/main.rs
 test -f native/compositor/src/protocol.rs
