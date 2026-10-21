@@ -59,6 +59,7 @@ class MainActivity : Activity() {
     private lateinit var binderStatusDescription: TextView
     private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
+    private lateinit var headingContainer: LinearLayout
     private var binderServiceBound = false
     private var binderFrameCount = 0L
     // Keep at most one pending frame so a slow UI thread cannot accumulate
@@ -144,6 +145,25 @@ class MainActivity : Activity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (binderFrameCount > 0L) enterDesktopPictureInPicture()
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        applyPictureInPictureLayout(isInPictureInPictureMode)
+    }
+
+    private fun applyPictureInPictureLayout(inPip: Boolean) {
+        if (!::headingContainer.isInitialized) return
+        headingContainer.visibility = if (inPip) View.GONE else View.VISIBLE
+        statusTitle.visibility = if (inPip) View.GONE else View.VISIBLE
+        statusDescription.visibility = if (inPip) View.GONE else View.VISIBLE
+        binderStatusDescription.visibility = if (inPip) View.GONE else View.VISIBLE
+        desktopProofDescription.visibility = if (inPip) View.GONE else View.VISIBLE
+        previewImage.visibility = View.VISIBLE
+        previewImage.requestLayout()
     }
 
     private fun enterDesktopPictureInPicture() {
@@ -343,7 +363,7 @@ class MainActivity : Activity() {
             setBackgroundColor(page)
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
-        val heading = LinearLayout(this).apply {
+        headingContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(8))
@@ -355,22 +375,23 @@ class MainActivity : Activity() {
         titleColumn.addView(label("Linux desktop", 22, ink, true).apply {
             setPadding(0, dp(4), 0, dp(2))
         })
-        heading.addView(titleColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        headingContainer.addView(titleColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val pipButton = actionButton("PiP") { enterDesktopPictureInPicture() }.apply {
             contentDescription = "Enter picture-in-picture mode"
             isEnabled = true
             minWidth = dp(64)
         }
-        heading.addView(pipButton, LinearLayout.LayoutParams(
+        headingContainer.addView(pipButton, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { leftMargin = dp(8) })
-        statusTitle = label("Waiting for Termux session", 15, ink, true)
-        statusDescription = label("Start the session from Termux. This host will stay closed until you open it.", 12, muted, false)
-        heading.addView(statusTitle)
-        heading.addView(statusDescription)
-        root.addView(heading, LinearLayout.LayoutParams(
+        root.addView(headingContainer, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+
+        statusTitle = label("Waiting for Termux session", 15, ink, true)
+        root.addView(statusTitle, margins(bottom = 2))
+        statusDescription = label("Start the session from Termux. This host will stay closed until you open it.", 12, muted, false)
+        root.addView(statusDescription, margins(bottom = 4))
 
         binderStatusDescription = label("Bridge: waiting for authenticated session", 12, muted, false).apply {
             setPadding(dp(4), dp(4), dp(4), dp(8))
@@ -397,6 +418,7 @@ class MainActivity : Activity() {
         root.addView(desktopProofDescription, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+        applyPictureInPictureLayout(isInPictureInPictureMode)
         return root
     }
 
