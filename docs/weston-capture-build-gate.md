@@ -53,3 +53,42 @@ proves that the client compiled. A runtime `CAPTURE_STOPPED` or
 the selected renderer/backend still needs work. The helper emits tightly
 packed RGBA frames to stdout only after a successful capture completion; its
 diagnostics go to stderr.
+
+## Required production authorization policy
+
+The stock capture helper is intentionally not treated as production-ready just
+because it can enumerate `weston_capture_v1`. Weston 16's capture authorization
+callback receives the requesting `wl_client` and the target output. The
+production compositor build must install an authority that:
+
+- defaults to deny;
+- verifies the requesting client's UID/GID/PID via Wayland client credentials;
+- checks the client PID's executable identity against the exact installed
+  `termux-xwayland-capture` binary (not merely a process name);
+- permits only the managed output created by this Termux-XWayland session;
+- rejects all other clients and all unexpected outputs;
+- is covered by a negative test proving a normal Wayland client is denied.
+
+The authority must be compiled into, or loaded by, the same version-matched
+Weston/libweston build that serves the `wayland-1` socket. A client-side option,
+a shell variable, or changing the protocol request cannot grant capture rights.
+Do not use `weston --debug` as a production substitute: that is a broad debug
+mode, not the narrow per-client policy described above.
+
+## End-to-end acceptance criteria
+
+A release is not considered live-desktop capable until all of the following
+are evidenced on the target Android device:
+
+1. A real X11 client (for example xterm) is visible in the Weston output.
+2. The capture helper reports successful capture completions without
+   `unauthorized` or synthetic-frame code paths.
+3. The Binder session log reports repeated `FRAME_SENT` events with increasing
+   counters while the desktop changes.
+4. The Android host's received-frame counter increases and the visible image
+   changes when the user moves a window or types.
+5. The capture helper exits cleanly when the Binder session is stopped.
+6. A non-helper Wayland client remains denied capture.
+
+CI can validate source, package contents and protocol/unit tests, but the
+physical-device checks above cannot be inferred from a green CI run.
