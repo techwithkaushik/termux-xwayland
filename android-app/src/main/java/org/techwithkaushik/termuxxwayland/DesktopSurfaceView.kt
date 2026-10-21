@@ -28,7 +28,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private val frameLock = Object()
     @Volatile private var surfaceReady = false
     @Volatile private var renderThread: Thread? = null
-    private data class PixelFrame(val pixels: IntArray, val width: Int, val height: Int)
+    private data class PixelFrame(val pixels: ByteArray, val width: Int, val height: Int)
     private var latestFrame: PixelFrame? = null
     private var frameVersion = 0L
     private var renderedVersion = -1L
@@ -84,7 +84,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         Log.i(TAG, "event=surface_destroyed")
     }
 
-    fun setFrame(pixels: IntArray, width: Int, height: Int) {
+    fun setFrame(pixels: ByteArray, width: Int, height: Int) {
         if (width <= 0 || height <= 0 || pixels.size < width * height) return
         synchronized(frameLock) {
             // Keep only the newest decoded frame; avoid allocating/copying a Bitmap per frame.
