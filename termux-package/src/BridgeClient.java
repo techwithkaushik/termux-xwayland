@@ -849,6 +849,8 @@ public final class BridgeClient {
             payload[3] = (byte) FRAME_HEIGHT;
             payload[4] = 1;
             long lastLog = 0L;
+            long lastStatsNanos = 0L;
+            long lastStatsFrameCount = 0L;
             long frameCount = 0L;
             try (DataInputStream raw = new DataInputStream(capture.getInputStream())) {
                 while (!Thread.currentThread().isInterrupted()) {
@@ -868,14 +870,23 @@ public final class BridgeClient {
                     writeFrame(output, FRAME, payload);
                     long writeFinished = System.nanoTime();
                     long now = System.currentTimeMillis();
+                    long statsNanos = System.nanoTime();
                     if (frameCount == 1L || lastLog == 0L || now - lastLog >= 5000L) {
+                        long statsElapsedNanos = lastStatsNanos == 0L ? 0L : statsNanos - lastStatsNanos;
+                        long statsFrames = frameCount - lastStatsFrameCount;
+                        double fps = statsElapsedNanos > 0L ? statsFrames * 1_000_000_000.0 / statsElapsedNanos : 0.0;
                         lastLog = now;
                         System.out.println("FRAME_SENT count=" + frameCount
                             + " epoch_seconds=" + (now / 1000L)
+                            + " fps=" + String.format(java.util.Locale.US, "%.1f", fps)
+                            + " frame_size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT
+                            + " packet_bytes=" + payload.length
                             + " read_ms=" + ((readFinished - readStarted) / 1_000_000L)
                             + " write_ms=" + ((writeFinished - writeStarted) / 1_000_000L)
                             + " transport=binder-fd");
                         System.out.flush();
+                        lastStatsNanos = statsNanos;
+                        lastStatsFrameCount = frameCount;
                     }
                 }
             } catch (IOException error) {
