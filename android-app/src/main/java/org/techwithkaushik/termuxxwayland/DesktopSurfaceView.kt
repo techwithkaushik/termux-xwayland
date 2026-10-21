@@ -31,10 +31,6 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     var inputEventListener: ((ByteArray) -> Unit)? = null
     private var lastMoveAt = 0L
     private var pointerCaptured = false
-    @Volatile private var cursorX = 0.5f
-    @Volatile private var cursorY = 0.5f
-    @Volatile private var desktopFrameAvailable = false
-    @Volatile private var cursorVisible = true
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -80,7 +76,6 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             val previous = latestFrame
             latestFrame = frame
             frameVersion++
-            desktopFrameAvailable = true
             if (previous != null && previous !== frame && !previous.isRecycled) {
                 previous.recycle()
             }
@@ -231,9 +226,6 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         if (action == "MOVE") lastMoveAt = now
         val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
         val normalizedY = ((event.y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
-        cursorX = normalizedX
-        cursorY = normalizedY
-        cursorVisible = true
         synchronized(frameLock) {
             frameVersion++
             frameLock.notifyAll()
@@ -243,30 +235,6 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
         if (action == "UP" || action == "CANCEL") pointerCaptured = false
         return true
-    }
-
-    private fun drawCursor(canvas: Canvas, x: Float, y: Float, scale: Float) {
-        // Startup marker until the first real desktop frame arrives; then show a desktop arrow.
-        if (!desktopFrameAvailable) {
-            val arm = 10f * scale
-            cursorPaint.style = Paint.Style.STROKE
-            cursorPaint.strokeWidth = 3f * scale
-            canvas.drawLine(x - arm, y - arm, x + arm, y + arm, cursorPaint)
-            canvas.drawLine(x + arm, y - arm, x - arm, y + arm, cursorPaint)
-            cursorPaint.style = Paint.Style.FILL
-            return
-        }
-        val path = android.graphics.Path().apply {
-            moveTo(x, y)
-            lineTo(x, y + 20f * scale)
-            lineTo(x + 5f * scale, y + 15f * scale)
-            lineTo(x + 9f * scale, y + 25f * scale)
-            lineTo(x + 13f * scale, y + 23f * scale)
-            lineTo(x + 9f * scale, y + 13f * scale)
-            lineTo(x + 16f * scale, y + 13f * scale)
-            close()
-        }
-        canvas.drawPath(path, cursorPaint)
     }
 
     private fun contentBounds(): android.graphics.RectF {
