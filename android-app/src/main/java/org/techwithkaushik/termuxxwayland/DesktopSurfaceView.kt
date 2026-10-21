@@ -7,6 +7,9 @@ import android.graphics.PixelFormat
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.InputConnection
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -203,6 +206,43 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         thread.start()
     }
 
+
+    override fun onCheckIsTextEditor(): Boolean = true
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT or
+            android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        return object : BaseInputConnection(this, true) {
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                val value = text?.toString().orEmpty()
+                if (value.isEmpty()) return true
+                // Keep the bridge packet bounded and reject control characters.
+                val safe = value.filter { it == '\\n' || it == '\\t' || it >= ' ' && it != '\\u007f' }
+                if (safe.isNotEmpty() && safe.toByteArray(Charsets.UTF_8).size <= 100) {
+                    inputEventListener?.invoke(("TEXT " + safe).toByteArray(Charsets.UTF_8))
+                }
+                return true
+            }
+
+            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                repeat(beforeLength.coerceIn(0, 20)) {
+                    inputEventListener?.invoke("KEY BackSpace DOWN".toByteArray(Charsets.US_ASCII))
+                    inputEventListener?.invoke("KEY BackSpace UP".toByteArray(Charsets.US_ASCII))
+                }
+                return true
+            }
+
+            override fun sendKeyEvent(event: KeyEvent): Boolean {
+                val name = xdotoolKeyName(event.keyCode) ?: return false
+                inputEventListener?.invoke(
+                    "KEY $name ${if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"}"
+                        .toByteArray(Charsets.US_ASCII)
+                )
+                return true
+            }
+        }
+    }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val name = xdotoolKeyName(keyCode) ?: return super.onKeyDown(keyCode, event)
