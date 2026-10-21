@@ -17,13 +17,13 @@ Run graphical sessions from Termux and show them in the standalone Android app. 
 
 The compositor is the source of truth for desktop pixels. Frames should be obtained from its output/render target, not by launching FFmpeg to repeatedly capture `$DISPLAY`. FFmpeg is optional diagnostic tooling only; it is not a runtime dependency and is not part of the live rendering pipeline.
 
-The initial frame transport may copy pixels to a bounded protocol message. Optimize only after correctness is proven: damage rectangles, frame pacing, buffer reuse and shared memory can follow. Do not claim zero-copy or GPU acceleration without device measurements.
+The current fallback transport copies RGBA pixels through a Binder-transferred FD, so it is not equivalent to Termux:X11's in-process X server and renderer. Bound each frame to at most 640×360 pixels (aspect-preserving) to prevent native phone resolutions from generating multi-megabyte packets. The Android EGL renderer uses `eglSwapInterval(0)` when supported and retains only the latest frame. Pointer events should use a persistent native XTest client, not a new `xdotool` process per motion event. These are latency mitigations, not zero-copy: the next architectural step is shared-buffer/damage-based delivery from the compositor boundary, with measured frame timestamps and device tests.
 
 ## Milestones
 
-1. Android host and bounded protocol smoke test. **Implemented; still only a synthetic frame.**
+1. Android host and bounded protocol smoke test. **Implemented.**
 2. Native compositor dependency and Android 10/ARM32 build feasibility. **Not yet verified.**
-3. One native Wayland surface rendered by the compositor and exported through the bridge.
+3. One native Wayland surface rendered by the compositor and exported through the bridge; measure capture FPS and end-to-end latency.
 4. Android displays changing compositor frames with lifecycle-safe start/stop.
 5. Touch/keyboard input and resize handling.
 6. XWayland integration and a known X11 test client.
