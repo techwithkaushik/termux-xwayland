@@ -13,6 +13,9 @@
             android:exported="true"
             android:grantUriPermissions="false" />
         <receiver
+            android:name=".ExitSessionReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".BridgeSessionReceiver"
             android:exported="true">
             <intent-filter>
