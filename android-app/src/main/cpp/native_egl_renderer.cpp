@@ -196,7 +196,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
 
     const jsize length = env->GetArrayLength(javaPixels);
     const jlong required = static_cast<jlong>(width) * height;
-    if (length < required) return JNI_FALSE;
+    if (length < required * 4) return JNI_FALSE;
 
     const jbyte* rgba = env->GetByteArrayElements(javaPixels, nullptr);
     if (!rgba) return JNI_FALSE;
