@@ -363,17 +363,21 @@ static int run_capture(struct capture_state *s, int requested_width, int request
                 s->got_size, s->got_format, s->formats_done, s->source_events_seen);
         return 5;
     }
-    if (s->width != requested_width || s->height != requested_height) {
-        fprintf(stderr, "CAPTURE_SIZE_MISMATCH: requested=%dx%d compositor=%dx%d\n",
-                requested_width, requested_height, s->width, s->height);
-        return 6;
-    }
-    if (s->width > INT32_MAX / 4 || (size_t)s->height > SIZE_MAX / ((size_t)s->width * 4)) {
+    /*
+     * Weston capture buffers must use the compositor's native output size.
+     * The Android TXWB stream has a fixed size, so scale after capture rather
+     * than rejecting perfectly valid outputs whose dimensions differ.
+     */
+    if (s->width > INT32_MAX / 4 ||
+        (size_t)s->height > SIZE_MAX / ((size_t)s->width * 4) ||
+        requested_width > INT32_MAX / 4 ||
+        (size_t)requested_height > SIZE_MAX / ((size_t)requested_width * 4)) {
         fprintf(stderr, "CAPTURE_ERROR: frame dimensions overflow\n");
         return 7;
     }
     int stride = s->width * 4;
     size_t bytes = (size_t)stride * (size_t)s->height;
+    size_t output_bytes = (size_t)requested_width * (size_t)requested_height * 4;
     int fd = make_buffer_file(bytes);
     if (fd < 0) {
         fprintf(stderr, "CAPTURE_ERROR: cannot allocate shared frame: %s\n", strerror(errno));
@@ -393,10 +397,14 @@ static int run_capture(struct capture_state *s, int requested_width, int request
     wl_shm_pool_destroy(pool);
     if (!buffer) { munmap(pixels, bytes); fprintf(stderr, "CAPTURE_ERROR: wl_shm buffer creation failed\n"); return 11; }
 
-    uint8_t *rgba = malloc(bytes);
+    uint8_t *rgba = malloc(output_bytes);
     if (!rgba) { wl_buffer_destroy(buffer); munmap(pixels, bytes); return 12; }
-    fprintf(stderr, "CAPTURE_READY: source=framebuffer size=%dx%d shm_format=%s; streaming RGBA frames to stdout\n",
-            s->width, s->height, s->format == WL_SHM_FORMAT_ARGB8888 ? "ARGB8888" : "XRGB8888");
+    fprintf(stderr, "CAPTURE_READY: source=framebuffer source_size=%dx%d stream_size=%dx%d shm_format=%s; streaming RGBA frames to stdout\n",
+            s->width, s->height, requested_width, requested_height,
+            s->format == WL_SHM_FORMAT_ARGB8888 ? "ARGB8888" : "XRGB8888");
+    txw_log("INFO", "capture_dimensions",
+            "source_width=%d source_height=%d stream_width=%d stream_height=%d",
+            s->width, s->height, requested_width, requested_height);
     unsigned long frame_number = 0;
     for (;;) {
         s->completed = 0;
@@ -408,11 +416,25 @@ static int run_capture(struct capture_state *s, int requested_width, int request
             free(rgba); wl_buffer_destroy(buffer); munmap(pixels, bytes); return 13;
         }
         const uint8_t *src = pixels;
-        for (size_t i = 0; i < bytes; i += 4) {
-            rgba[i] = src[i + 2];
-            rgba[i + 1] = src[i + 1];
-            rgba[i + 2] = src[i];
-            rgba[i + 3] = s->format == WL_SHM_FORMAT_ARGB8888 ? src[i + 3] : 255;
+        /*
+         * Nearest-neighbour scaling keeps the helper dependency-free and
+         * guarantees exactly requested_width * requested_height RGBA bytes
+         * per frame, which is the contract consumed by BridgeClient.
+         */
+        for (int y = 0; y < requested_height; y++) {
+            int source_y = (int)(((int64_t)y * s->height) / requested_height);
+            for (int x = 0; x < requested_width; x++) {
+                int source_x = (int)(((int64_t)x * s->width) / requested_width);
+                size_t source_offset = ((size_t)source_y * (size_t)s->width +
+                                        (size_t)source_x) * 4;
+                size_t target_offset = ((size_t)y * (size_t)requested_width +
+                                        (size_t)x) * 4;
+                rgba[target_offset] = src[source_offset + 2];
+                rgba[target_offset + 1] = src[source_offset + 1];
+                rgba[target_offset + 2] = src[source_offset];
+                rgba[target_offset + 3] =
+                    s->format == WL_SHM_FORMAT_ARGB8888 ? src[source_offset + 3] : 255;
+            }
         }
         /*
          * Log aggregate pixel health, not pixel contents. This distinguishes a
@@ -423,7 +445,7 @@ static int run_capture(struct capture_state *s, int requested_width, int request
         if (frame_number == 1 || frame_number % 50 == 0) {
             size_t non_black = 0;
             unsigned int max_channel = 0;
-            for (size_t i = 0; i < bytes; i += 4) {
+            for (size_t i = 0; i < output_bytes; i += 4) {
                 unsigned int r = rgba[i];
                 unsigned int g = rgba[i + 1];
                 unsigned int b = rgba[i + 2];
@@ -434,11 +456,11 @@ static int run_capture(struct capture_state *s, int requested_width, int request
             }
             txw_log(non_black ? "INFO" : "WARN", "frame_pixel_health",
                     "frame=%lu non_black_pixels=%zu total_pixels=%zu max_channel=%u",
-                    frame_number, non_black, bytes / 4, max_channel);
+                    frame_number, non_black, output_bytes / 4, max_channel);
         }
         size_t written = 0;
-        while (written < bytes) {
-            ssize_t n = write(STDOUT_FILENO, rgba + written, bytes - written);
+        while (written < output_bytes) {
+            ssize_t n = write(STDOUT_FILENO, rgba + written, output_bytes - written);
             if (n < 0 && errno == EINTR) continue;
             if (n <= 0) {
                 fprintf(stderr, "CAPTURE_STOPPED: output pipe closed\n");
