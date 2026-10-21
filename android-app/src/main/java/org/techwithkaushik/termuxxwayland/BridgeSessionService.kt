@@ -1,12 +1,16 @@
 package org.techwithkaushik.termuxxwayland
 
 import android.app.Service
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.os.Build
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
@@ -104,6 +108,9 @@ class BridgeSessionService : Service() {
     private val binder = BridgeBinder()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Keep the bridge session alive when the display Activity is minimized.
+        // Activity binding is UI lifecycle only; the actual session belongs to this service.
+        ensureForegroundSessionNotification()
         val remoteClient = intent?.extras?.getBundle(BridgeSessionReceiver.EXTRA_REMOTE_BUNDLE)
             ?.getBinder(BridgeSessionReceiver.EXTRA_REMOTE_CLIENT)
         if (remoteClient != null) {
@@ -160,6 +167,34 @@ class BridgeSessionService : Service() {
             isDaemon = true
             start()
         }
+    }
+
+    private fun ensureForegroundSessionNotification() {
+        val channelId = "termux_xwayland_session"
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    channelId,
+                    "Termux XWayland session",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Keeps the Termux desktop bridge session running while the host is minimized."
+                    setShowBadge(false)
+                }
+            )
+        }
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, channelId)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }.setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("Termux XWayland session")
+            .setContentText("Desktop bridge is running; return to the host to view the session.")
+            .setOngoing(true)
+            .build()
+        startForeground(73012, notification)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
