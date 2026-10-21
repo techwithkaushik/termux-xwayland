@@ -63,6 +63,8 @@ class MainActivity : Activity() {
     // hundreds of full-size pixel arrays and Bitmap allocations.
     private val pendingDesktopFrame = AtomicReference<RgbaFrameCodec.Frame?>(null)
     private val frameRenderPosted = AtomicBoolean(false)
+    @Volatile private var lastFrameRenderAtMs = 0L
+    private val frameRenderIntervalMs = 100L // Cap UI bitmap conversion/rendering at 10 FPS on low-memory devices.
     private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
     private val binderServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -165,6 +167,7 @@ class MainActivity : Activity() {
                 if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
                     val frame = pendingDesktopFrame.getAndSet(null)
                     if (frame != null) {
+                        lastFrameRenderAtMs = android.os.SystemClock.uptimeMillis()
                         previewImage.setFrame(
                             Bitmap.createBitmap(
                                 frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888
@@ -185,7 +188,11 @@ class MainActivity : Activity() {
                 }
             } finally {
                 frameRenderPosted.set(false)
-                if (pendingDesktopFrame.get() != null) scheduleDesktopFrameRender()
+                if (pendingDesktopFrame.get() != null) {
+                    val elapsed = android.os.SystemClock.uptimeMillis() - lastFrameRenderAtMs
+                    val delay = (frameRenderIntervalMs - elapsed).coerceAtLeast(1L)
+                    statusPollHandler.postDelayed({ scheduleDesktopFrameRender() }, delay)
+                }
             }
         }
     }
