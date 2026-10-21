@@ -28,7 +28,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private val frameLock = Object()
     @Volatile private var surfaceReady = false
     @Volatile private var renderThread: Thread? = null
-    private var latestFrame: Bitmap? = null
+    private data class PixelFrame(val pixels: IntArray, val width: Int, val height: Int)
+    private var latestFrame: PixelFrame? = null
     private var frameVersion = 0L
     private var renderedVersion = -1L
     private var firstFrameDrawnLogged = false
@@ -83,21 +84,18 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         Log.i(TAG, "event=surface_destroyed")
     }
 
-    fun setFrame(frame: Bitmap) {
+    fun setFrame(pixels: IntArray, width: Int, height: Int) {
+        if (width <= 0 || height <= 0 || pixels.size < width * height) return
         synchronized(frameLock) {
-            val previous = latestFrame
-            latestFrame = frame
+            // Keep only the newest decoded frame; avoid allocating/copying a Bitmap per frame.
+            latestFrame = PixelFrame(pixels, width, height)
             frameVersion++
-            if (previous != null && previous !== frame && !previous.isRecycled) {
-                previous.recycle()
-            }
             frameLock.notifyAll()
         }
     }
 
     fun clearFrame() {
         synchronized(frameLock) {
-            latestFrame?.let { if (!it.isRecycled) it.recycle() }
             latestFrame = null
             frameVersion++
             frameLock.notifyAll()
@@ -149,17 +147,15 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
                     val frame = snapshot.first
                     val version = snapshot.second
-                    if (frame == null || frame.isRecycled || !holder.surface.isValid) {
+                    if (frame == null || !holder.surface.isValid) {
                         synchronized(frameLock) { renderedVersion = version }
                         continue
                     }
 
                     try {
                         synchronized(frameLock) {
-                            if (surfaceReady && !frame.isRecycled && nativeHandle != 0L) {
-                                val pixels = IntArray(frame.width * frame.height)
-                                frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
-                                if (NativeEglRenderer.nativeRender(nativeHandle, pixels, frame.width, frame.height)) {
+                            if (surfaceReady && nativeHandle != 0L) {
+                                if (NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.width, frame.height)) {
                                     renderedVersion = version
                                     if (!firstFrameDrawnLogged) {
                                         firstFrameDrawnLogged = true
@@ -322,8 +318,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         val frameHeight: Int
         synchronized(frameLock) {
             val frame = latestFrame
-            frameWidth = if (frame != null && !frame.isRecycled) frame.width else 640
-            frameHeight = if (frame != null && !frame.isRecycled) frame.height else 360
+            frameWidth = frame?.width ?: 640
+            frameHeight = frame?.height ?: 360
         }
         val scale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
         val drawWidth = frameWidth * scale
