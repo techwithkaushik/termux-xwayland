@@ -155,6 +155,10 @@ start_server() {
   command -v "$WESTON_BIN" >/dev/null 2>&1 || fail "Weston is not installed. Run: pkg install weston"
   rm -f "$RUNTIME_DIR/$WAYLAND_SOCKET"
   local weston_args=(--backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" --no-config)
+  # TEMPORARY DEVELOPMENT MODE: Weston --debug broadly authorizes privileged capture.
+  # Remove this once the managed host is verified and a narrow compositor authority exists.
+  weston_args+=(--debug)
+  printf '%s\n' 'WARNING: temporary Weston --debug capture mode is enabled; do not use for a public/multi-user session.' >&2
   local x11_socket_dir="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix"
   if command -v Xwayland >/dev/null 2>&1; then
     if [[ ! -e "$x11_socket_dir" ]]; then
