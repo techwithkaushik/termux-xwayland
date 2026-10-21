@@ -38,6 +38,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -58,6 +59,10 @@ class MainActivity : Activity() {
     private lateinit var previewImage: DesktopSurfaceView
     private var binderServiceBound = false
     private var binderFrameCount = 0L
+    // Keep at most one pending frame so a slow UI thread cannot accumulate
+    // hundreds of full-size pixel arrays and Bitmap allocations.
+    private val pendingDesktopFrame = AtomicReference<RgbaFrameCodec.Frame?>(null)
+    private val frameRenderPosted = AtomicBoolean(false)
     private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
     private val binderServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -69,23 +74,9 @@ class MainActivity : Activity() {
                 if (binderFrameCount == 0L) {
                     Log.i("TermuxXWayland", "event=first_frame_received width=${frame.width} height=${frame.height}")
                 }
-                runOnUiThread {
-                    if (isFinishing || isDestroyed || !::previewImage.isInitialized) return@runOnUiThread
-                    previewImage.setFrame(
-                        Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
-                    )
-                    previewImage.visibility = View.VISIBLE
-                    binderFrameCount++
-                    if (::binderStatusDescription.isInitialized) {
-                        binderStatusDescription.text =
-                            "Binder FD: authenticated • real frame count: $binderFrameCount"
-                    }
-                    if (::desktopProofDescription.isInitialized) {
-                        desktopProofDescription.text =
-                            "FRAME STREAM ACTIVE • received ${frame.width}×${frame.height} pixel frames over Binder. This confirms transport only; desktop content and changing pixels are not yet verified. Frames received: $binderFrameCount."
-                        desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
-                    }
-                }
+                // Drop stale frames when Android is busy; always render the newest one.
+                pendingDesktopFrame.set(frame)
+                scheduleDesktopFrameRender()
             }
         }
 
@@ -165,6 +156,38 @@ class MainActivity : Activity() {
         }
         Log.i("TermuxXWayland", "event=activity_stopped binderFrames=$binderFrameCount")
         super.onStop()
+    }
+
+    private fun scheduleDesktopFrameRender() {
+        if (!frameRenderPosted.compareAndSet(false, true)) return
+        runOnUiThread {
+            try {
+                if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
+                    val frame = pendingDesktopFrame.getAndSet(null)
+                    if (frame != null) {
+                        previewImage.setFrame(
+                            Bitmap.createBitmap(
+                                frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888
+                            )
+                        )
+                        previewImage.visibility = View.VISIBLE
+                        binderFrameCount++
+                        if (::binderStatusDescription.isInitialized) {
+                            binderStatusDescription.text =
+                                "Binder FD: authenticated • rendered frames: $binderFrameCount"
+                        }
+                        if (::desktopProofDescription.isInitialized) {
+                            desktopProofDescription.text =
+                                "FRAME STREAM ACTIVE • received pixel frames over Binder; desktop content is not yet verified. Rendered frames: $binderFrameCount."
+                            desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
+                        }
+                    }
+                }
+            } finally {
+                frameRenderPosted.set(false)
+                if (pendingDesktopFrame.get() != null) scheduleDesktopFrameRender()
+            }
+        }
     }
 
     private fun handleTermuxIntent(intent: Intent?) {
