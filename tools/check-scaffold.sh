@@ -46,16 +46,17 @@ grep -q 'native Wayland capture' README.md
 grep -q 'native `termux-xwayland-capture` helper' README.md
 grep -q 'no FFmpeg fallback' README.md
 grep -q 'weston_capture_v1' README.md
-grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Binder transport: active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'NO LIVE DESKTOP FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+# The production host UI is intentionally minimal: desktop surface, connection status and PiP action only.
+grep -q 'actionButton("PiP")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'enterDesktopPictureInPicture' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'supportsPictureInPicture="true"' android-app/src/main/AndroidManifest.xml
 grep -q 'FRAME STREAM ACTIVE' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 ! grep -q 'previewImage.setFrame(testFrame)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.removeCallbacks(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
 grep -q 'LocalSocketAddress.Namespace.ABSTRACT' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Legacy AF_UNIX diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+! grep -q 'Legacy AF_UNIX diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'candidate.peerCredentials' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'BridgeMessageKind.PING' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'libc::geteuid()' native/compositor/src/bridge.rs
