@@ -476,6 +476,47 @@ public final class BridgeClient {
             return;
         }
 
+        // Trackpad motion is relative to the current X11 pointer, not the
+        // absolute location of the finger on the Android view.
+        if (fields.length == 3 && "REL".equals(fields[0])) {
+            final int dx;
+            final int dy;
+            try {
+                dx = Integer.parseInt(fields[1]);
+                dy = Integer.parseInt(fields[2]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_relative_coordinates");
+                return;
+            }
+            if (Math.abs((long) dx) > 4096L || Math.abs((long) dy) > 4096L) {
+                System.err.println("INPUT_REJECTED reason=relative_coordinates_out_of_range");
+                return;
+            }
+            if (dx != 0 || dy != 0) {
+                runInputCommand(new ProcessBuilder(xdotool, "mousemove_relative", "--",
+                    Integer.toString(dx), Integer.toString(dy)));
+            }
+            return;
+        }
+
+        // A trackpad tap generates a click without holding the button during motion.
+        if (fields.length == 2 && "CLICK".equals(fields[0])) {
+            final int button;
+            try {
+                button = Integer.parseInt(fields[1]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_click_button");
+                return;
+            }
+            if (button < 1 || button > 3) {
+                System.err.println("INPUT_REJECTED reason=invalid_click_button");
+                return;
+            }
+            runInputCommand(new ProcessBuilder(xdotool, "click", "--delay", "0",
+                Integer.toString(button)));
+            return;
+        }
+
         // Convert Android wheel axes to X11 wheel-button clicks.
         if (fields.length == 3 && "SCROLL".equals(fields[0])) {
             final float vertical;
@@ -544,7 +585,7 @@ public final class BridgeClient {
     private static void runInputCommand(ProcessBuilder command) {
         try {
             Process process = command.redirectErrorStream(true).start();
-            if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly();
+            if (!process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) process.destroyForcibly();
         } catch (Exception error) {
             System.err.println("INPUT_DISPATCH_FAILED: " + error.getClass().getSimpleName());
         }
