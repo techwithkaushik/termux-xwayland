@@ -75,7 +75,7 @@ grep -q 'ACTION_OPEN_SESSION' termux-package/src/BridgeClient.java
 ! grep -q 'context.bindService' termux-package/src/BridgeClient.java
 grep -q 'interfaceDescriptor' android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
 grep -q 'android:exported="false"' android-app/src/main/AndroidManifest.xml
-grep -q 'Native Wayland frame capture: unavailable (native helper not installed)' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+grep -q 'Native Wayland frame capture: helper not built yet' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 # Temporary integration phase explicitly enables Weston debug capture; remove before production.
 grep -Eq 'weston_args\+\=.*--debug|weston_args=.*--debug' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'native/capture/termux-xwayland-capture.c' termux-package/build-deb.sh
