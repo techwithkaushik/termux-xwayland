@@ -26,6 +26,8 @@ test -f tools/probe-weston-capture-build.sh
 test -f native/capture/termux-xwayland-capture.c
 grep -q 'weston_capture_v1_create' native/capture/termux-xwayland-capture.c
 test -f tools/build-native-capture.sh
+test -f tools/verify-live-capture.sh
+bash -n tools/verify-live-capture.sh
 bash -n tools/build-native-capture.sh
 grep -q 'weston-output-capture.xml' tools/build-native-capture.sh
 bash -n tools/probe-weston-capture-build.sh
