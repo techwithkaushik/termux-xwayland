@@ -219,7 +219,11 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
         return JNI_FALSE;
     }
     glViewport(0, 0, surfaceWidth, surfaceHeight);
-    glClearColor(0.f, 0.f, 0.f, 1.f);
+    // Clear unused letterbox pixels to transparent, not opaque black.
+    // The Java SurfaceView requests PixelFormat.TRANSLUCENT and EGL selects
+    // an RGBA config, so the window compositor can reveal its parent behind
+    // these pixels while the server-provided desktop pixels remain unchanged.
+    glClearColor(0.f, 0.f, 0.f, 0.f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     const float sourceAspect = static_cast<float>(width) / static_cast<float>(height);
