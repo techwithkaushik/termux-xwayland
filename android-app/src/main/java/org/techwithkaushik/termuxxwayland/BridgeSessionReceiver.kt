@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
 import android.util.Log
 
 /**
@@ -30,7 +31,11 @@ class BridgeSessionReceiver : BroadcastReceiver() {
         val serviceIntent = Intent(context, BridgeSessionService::class.java)
             .putExtra(EXTRA_REMOTE_BUNDLE, remoteBundle)
         try {
-            context.startService(serviceIntent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
         } catch (error: RuntimeException) {
             Log.e(TAG, "Unable to start bridge session service", error)
         }
