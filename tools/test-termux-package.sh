@@ -39,12 +39,16 @@ fi
 check_grep 'Package: termux-xwayland-bridge' "$pkg/DEBIAN/control" "package name metadata"
 check_grep 'Version: 0.3.0' "$pkg/DEBIAN/control" "package version metadata"
 check_grep 'Depends: bash, coreutils, socat' "$pkg/DEBIAN/control" "loopback status monitor dependency"
-check_grep 'Suggests: clang, pkg-config, wayland' "$pkg/DEBIAN/control" "optional native capture build dependencies"
+check_grep 'Suggests: clang, pkg-config, wayland, libx11, libxtst' "$pkg/DEBIAN/control" "optional native capture and XTest build dependencies"
 if grep -Fq 'wayland' <(sed -n 's/^Depends: //p' "$pkg/DEBIAN/control"); then
   echo "FAIL: optional Wayland capture toolchain must not block bridge package configuration." >&2
   exit 1
 fi
 check_file "$root/native/capture/weston-output-capture.xml"
+check_file "$root/native/input/termux-xwayland-input.c"
+check_file "$root/tools/build-native-input.sh"
+check_grep "XTestFakeRelativeMotionEvent" "$root/native/input/termux-xwayland-input.c" "native relative pointer motion avoids spawning xdotool per event"
+check_grep "dispatchNativePointer(rawEvent)" "$root/termux-package/src/BridgeClient.java" "persistent native pointer helper is preferred"
 check_grep 'bundled_xml="$root/native/capture/weston-output-capture.xml"' "$root/tools/build-native-capture.sh" "bundled capture protocol fallback"
 check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metadata"
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
