@@ -263,22 +263,21 @@ class MainActivity : Activity() {
                 if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
                     val frame = pendingDesktopFrame.getAndSet(null)
                     if (frame != null) {
-                        previewImage.setFrame(
-                            Bitmap.createBitmap(
-                                frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888
-                            )
-                        )
+                        previewImage.setFrame(frame.pixels, frame.width, frame.height)
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
                         binderFrameCount++
-                        if (::binderStatusDescription.isInitialized) {
-                            binderStatusDescription.text =
-                                "Binder FD: authenticated • rendered frames: $binderFrameCount"
-                        }
-                        if (::desktopProofDescription.isInitialized) {
-                            desktopProofDescription.text =
-                                "FRAME STREAM ACTIVE • received pixel frames over Binder; desktop content is not yet verified. Rendered frames: $binderFrameCount."
-                            desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
+                        // Avoid forcing extra TextView layout work on every desktop frame.
+                        if (binderFrameCount == 1L || binderFrameCount % 60L == 0L) {
+                            if (::binderStatusDescription.isInitialized) {
+                                binderStatusDescription.text =
+                                    "Binder FD: authenticated • rendered frames: $binderFrameCount"
+                            }
+                            if (::desktopProofDescription.isInitialized) {
+                                desktopProofDescription.text =
+                                    "FRAME STREAM ACTIVE • received pixel frames over Binder; desktop content is not yet verified. Rendered frames: $binderFrameCount."
+                                desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
+                            }
                         }
                     }
                 }
