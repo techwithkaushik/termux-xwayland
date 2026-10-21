@@ -446,7 +446,7 @@ class MainActivity : Activity() {
 
     private fun renderFrame(payload: ByteArray) {
         // Validate the complete bounded frame before handing bytes to native code.
-        RgbaFrameCodec.decode(payload)
+        RgbaFrameCodec.validate(payload)
         val surface = previewSurface.holder.surface
         if (!surface.isValid) throw IOException("Android display surface is not ready")
         val result = NativeBridge.nativeRenderRgba(surface, payload)
