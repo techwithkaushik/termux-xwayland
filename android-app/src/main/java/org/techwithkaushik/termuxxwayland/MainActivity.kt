@@ -64,6 +64,8 @@ class MainActivity : Activity() {
     private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
     private lateinit var headingContainer: LinearLayout
+    private lateinit var connectionPanel: LinearLayout
+    private lateinit var desktopRoot: FrameLayout
     private var binderServiceBound = false
     private var binderFrameCount = 0L
     // Keep at most one pending frame so a slow UI thread cannot accumulate
@@ -75,6 +77,7 @@ class MainActivity : Activity() {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             val local = service as? BridgeSessionService.BridgeBinder ?: return
             localBridgeBinder = local
+            if (::connectionPanel.isInitialized && binderFrameCount == 0L) connectionPanel.visibility = View.VISIBLE
             Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
             statusTitle.text = "Session connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
@@ -265,6 +268,7 @@ class MainActivity : Activity() {
                             )
                         )
                         previewImage.visibility = View.VISIBLE
+                        if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
                         binderFrameCount++
                         if (::binderStatusDescription.isInitialized) {
                             binderStatusDescription.text =
@@ -418,7 +422,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
         }
-        return FrameLayout(this).apply {
+        desktopRoot = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             fitsSystemWindows = false
             addView(previewImage, FrameLayout.LayoutParams(
@@ -426,6 +430,49 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
         }
+        connectionPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setBackgroundColor(Color.rgb(18, 24, 35))
+            addView(TextView(this@MainActivity).apply {
+                text = "Not connected"
+                textSize = 20f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(24))
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            val actions = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            actions.addView(actionButton("⚙  Settings") {
+                runCatching {
+                    startActivity(Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")
+                    ))
+                }.onFailure { Log.w("TermuxXWayland", "Could not open app settings", it) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(8)
+            })
+            actions.addView(actionButton("⏻  Exit") {
+                finishAndRemoveTask()
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = dp(8)
+            })
+            addView(actions, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        desktopRoot.addView(connectionPanel, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        connectionPanel.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
+        return desktopRoot
     }
 
     private fun connectOrDisconnect() {
