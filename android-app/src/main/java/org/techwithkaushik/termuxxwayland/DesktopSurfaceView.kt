@@ -163,7 +163,18 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                                 Log.i(TAG, "event=first_frame_drawn renderer=EGL_GLES2 pixels=${frame.width}x${frame.height}")
                             }
                         } else {
-                            Log.w(TAG, "event=native_egl_render_failed")
+                            // A failed GPU/surface operation must consume this frame version.
+                            // Otherwise the render loop immediately retries the same frame
+                            // without waiting for a new one, pegging a CPU core and worsening
+                            // EGL_BAD_SURFACE/context-loss crashes.
+                            synchronized(frameLock) {
+                                renderedVersion = maxOf(renderedVersion, version)
+                            }
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastLoggedErrorAt > 5000L) {
+                                Log.w(TAG, "event=native_egl_render_failed frame=${frame.width}x${frame.height}")
+                                lastLoggedErrorAt = now
+                            }
                         }
                     } catch (e: Exception) {
                         val now = android.os.SystemClock.uptimeMillis()
