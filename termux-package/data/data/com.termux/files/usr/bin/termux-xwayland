@@ -191,6 +191,24 @@ start_server() {
   weston_args+=(--debug)
   printf '%s\n' 'WARNING: temporary Weston --debug capture mode is enabled; do not use for a public/multi-user session.' >&2
   local x11_socket_dir="${PREFIX:-/data/data/com.termux/files/usr}/tmp/.X11-unix"
+  # Query the Android physical display size so the headless Weston output
+  # matches the handset's native portrait/landscape resolution. "wm size"
+  # reports the physical dimensions without applying a display override.
+  local display_width=640 display_height=360 wm_output wm_size
+  if [ -x /system/bin/wm ]; then
+    wm_output="$(/system/bin/wm size 2>/dev/null || true)"
+    wm_size="$(printf '%s\\n' "$wm_output" | sed -n 's/.*Physical size: *\\([0-9][0-9]*x[0-9][0-9]*\\).*/\\1/p' | tail -n 1)"
+    if [[ "$wm_size" =~ ^([0-9]{3,5})x([0-9]{3,5})$ ]]; then
+      display_width="${BASH_REMATCH[1]}"
+      display_height="${BASH_REMATCH[2]}"
+    fi
+  fi
+  # Keep the compositor within safe limits on unusual/virtual displays.
+  if (( display_width < 320 || display_width > 4096 || display_height < 320 || display_height > 4096 )); then
+    display_width=640
+    display_height=360
+  fi
+  printf 'Native display output: %sx%s\\n' "$display_width" "$display_height"
   if command -v Xwayland >/dev/null 2>&1; then
     if [[ ! -e "$x11_socket_dir" ]]; then
       mkdir -m 1777 "$x11_socket_dir" || fail "cannot create X11 socket directory: $x11_socket_dir"
@@ -198,7 +216,7 @@ start_server() {
     elif [[ ! -d "$x11_socket_dir" ]]; then
       fail "X11 socket path exists but is not a directory: $x11_socket_dir"
     fi
-    weston_args+=(--xwayland --width=640 --height=360)
+    weston_args+=(--xwayland --width="$display_width" --height="$display_height")
   fi
    : > "$WESTON_CONSOLE_LOG_FILE"
   XDG_RUNTIME_DIR="$RUNTIME_DIR" "$WESTON_BIN" "${weston_args[@]}" >>"$WESTON_CONSOLE_LOG_FILE" 2>&1 &
