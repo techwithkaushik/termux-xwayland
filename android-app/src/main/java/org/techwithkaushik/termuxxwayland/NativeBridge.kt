@@ -25,4 +25,11 @@ object NativeBridge {
      * sending data. Returns 0 on success or a negative errno on failure.
      */
     external fun nativeProbeUnixSocket(path: String): Int
+
+    /**
+     * Presents one validated RGBA8888 frame on an Android Surface using
+     * ANativeWindow. The frame payload uses the bridge's 8-byte metadata header.
+     * Call from a worker thread; returns 0 on success or a negative errno.
+     */
+    external fun nativeRenderRgba(surface: android.view.Surface, payload: ByteArray): Int
 }
