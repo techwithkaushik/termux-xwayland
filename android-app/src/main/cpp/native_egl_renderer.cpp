@@ -237,7 +237,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
         r->lastWidth = width;
         r->lastHeight = height;
     } else {
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, r->rgba.data());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, reinterpret_cast<const GLvoid*>(rgba));
     }
     env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(rgba), JNI_ABORT);
     glUniform1i(r->sampler, 0);
