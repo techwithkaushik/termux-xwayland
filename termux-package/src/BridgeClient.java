@@ -405,17 +405,16 @@ public final class BridgeClient {
     /** Decode bounded normalized touch events and route them to the active XWayland display. */
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
-        String event = new String(payload, StandardCharsets.UTF_8).trim();
-        String[] fields = event.split("\\s+");
+        String rawEvent = new String(payload, StandardCharsets.UTF_8);
         String xdotool = findExecutable("xdotool");
         if (xdotool == null) {
             System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
             return;
         }
 
-        // IME text is passed as UTF-8, never through a shell. Bound it and reject controls.
-        if (event.startsWith("TEXT ")) {
-            String text = event.substring(5);
+        // Preserve leading/trailing spaces in committed IME text.
+        if (rawEvent.startsWith("TEXT ")) {
+            String text = rawEvent.substring(5);
             if (text.isEmpty() || text.getBytes(StandardCharsets.UTF_8).length > 100
                     || text.codePoints().anyMatch(cp -> Character.isISOControl(cp) && cp != '\\n' && cp != '\\t')) {
                 System.err.println("INPUT_REJECTED reason=invalid_text");
@@ -425,6 +424,9 @@ public final class BridgeClient {
             runInputCommand(new ProcessBuilder(xdotool, "type", "--clearmodifiers", "--delay", "0", "--", typeText));
             return;
         }
+
+        String event = rawEvent.trim();
+        String[] fields = event.split("\\s+");
 
         // Keyboard packets use: KEY <xdotool-key-name> DOWN|UP.
         if (fields.length == 3 && "KEY".equals(fields[0])) {
