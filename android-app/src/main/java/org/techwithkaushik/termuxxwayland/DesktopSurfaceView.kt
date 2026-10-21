@@ -99,7 +99,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     private fun startRenderThread() {
         if (renderThread?.isAlive == true) return
-        renderThread = Thread({
+        val thread = Thread({
             var nativeHandle = 0L
             var lastLoggedErrorAt = 0L
             try {
@@ -192,8 +192,11 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             }
         }, "XWaylandNativeEglRenderer").apply {
             priority = Thread.NORM_PRIORITY
-            start()
         }
+        // Publish the reference before starting: a very fast thread exit must be
+        // able to clear its own reference in finally without racing this assignment.
+        renderThread = thread
+        thread.start()
     }
 
 
