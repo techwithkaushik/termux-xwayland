@@ -335,10 +335,52 @@ public final class BridgeClient {
                         connected = true;
                         System.out.println("SESSION_CONNECTED host_uid=" + hostUid + " transport=binder-fd");
                         System.out.flush();
+                        /*
+                         * Capture is an optional native child process and may exit when
+                         * Weston denies capture, its socket is recreated, or the helper
+                         * encounters a transient Wayland failure. Do not leave a healthy
+                         * Binder session permanently black after that first failure.
+                         * Retry with bounded backoff; diagnostics from each attempt remain
+                         * visible in the session log.
+                         */
                         Thread captureStarter = new Thread(() -> {
-                            Process capture = startFrameCapture();
-                            activeFrameCapture = capture;
-                            if (capture != null) startFrameForwarder(capture, output);
+                            long retryDelayMs = 1000L;
+                            while (!Thread.currentThread().isInterrupted()) {
+                                Process capture = startFrameCapture();
+                                if (capture == null) {
+                                    sleepBeforeCaptureRetry(retryDelayMs);
+                                    retryDelayMs = Math.min(retryDelayMs * 2L, 10000L);
+                                    continue;
+                                }
+                                activeFrameCapture = capture;
+                                Thread forwarder = startFrameForwarder(capture, output);
+                                try {
+                                    while (!Thread.currentThread().isInterrupted()) {
+                                        if (capture.waitFor(1000L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                                            break;
+                                        }
+                                        if (!forwarder.isAlive()) {
+                                            System.err.println("FRAME_CAPTURE_RESTART reason=frame_forwarder_stopped");
+                                            capture.destroy();
+                                            break;
+                                        }
+                                    }
+                                    if (Thread.currentThread().isInterrupted()) capture.destroy();
+                                    int exitCode = capture.isAlive() ? -1 : capture.exitValue();
+                                    System.out.println("FRAME_CAPTURE_EXIT exit_code=" + exitCode
+                                        + " retry_delay_ms=" + retryDelayMs);
+                                    System.out.flush();
+                                    forwarder.join(1000L);
+                                } catch (InterruptedException interrupted) {
+                                    Thread.currentThread().interrupt();
+                                    capture.destroy();
+                                } finally {
+                                    if (activeFrameCapture == capture) activeFrameCapture = null;
+                                }
+                                if (Thread.currentThread().isInterrupted()) break;
+                                sleepBeforeCaptureRetry(retryDelayMs);
+                                retryDelayMs = Math.min(retryDelayMs * 2L, 10000L);
+                            }
                         }, "termux-xwayland-frame-capture-start");
                         captureStarter.setDaemon(true);
                         captureStarter.start();
@@ -479,7 +521,7 @@ public final class BridgeClient {
         return null;
     }
 
-    private static void startFrameForwarder(Process capture, DataOutputStream output) {
+    private static Thread startFrameForwarder(Process capture, DataOutputStream output) {
         Thread thread = new Thread(() -> {
             byte[] pixels = new byte[FRAME_BYTES];
             byte[] payload = new byte[8 + FRAME_BYTES];
@@ -529,6 +571,17 @@ public final class BridgeClient {
         }, "termux-xwayland-frame-forwarder");
         thread.setDaemon(true);
         thread.start();
+        return thread;
+    }
+
+    private static void sleepBeforeCaptureRetry(long delayMs) {
+        try {
+            System.out.println("FRAME_CAPTURE_RETRY scheduled_delay_ms=" + delayMs);
+            System.out.flush();
+            Thread.sleep(delayMs);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static Frame readFrame(DataInputStream input) throws IOException {
