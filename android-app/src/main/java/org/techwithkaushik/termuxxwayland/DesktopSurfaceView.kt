@@ -50,10 +50,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         synchronized(frameLock) {
+            // Re-present the most recent frame after a size/format change.
             renderedVersion = -1L
             frameLock.notifyAll()
         }
-        Log.i(TAG, "event=surface_changed width=$width height=$height format=$format")
+        Log.i(TAG, "event=surface_changed width=$width height=$height format=$format valid=${holder.surface.isValid}")
+        // surfaceChanged can arrive after a fast EGL initialization failure. Make
+        // sure a dead renderer is restarted instead of leaving a permanently black view.
+        if (holder.surface.isValid && renderThread?.isAlive != true) startRenderThread()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -99,12 +103,27 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
             var nativeHandle = 0L
             var lastLoggedErrorAt = 0L
             try {
-                if (!surfaceReady || !holder.surface.isValid) return@Thread
-                nativeHandle = NativeEglRenderer.nativeInitialize(holder.surface)
-                if (nativeHandle == 0L) {
-                    Log.e(TAG, "event=native_egl_init_failed")
-                    return@Thread
+                // Some Android devices deliver surfaceCreated before the window is
+                // fully EGL-ready. Retry initialization while this same surface lives
+                // instead of exiting permanently on the first transient failure.
+                while (surfaceReady && !Thread.currentThread().isInterrupted &&
+                    nativeHandle == 0L) {
+                    if (!holder.surface.isValid) {
+                        try { Thread.sleep(100L) } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
+                        continue
+                    }
+                    nativeHandle = NativeEglRenderer.nativeInitialize(holder.surface)
+                    if (nativeHandle == 0L && surfaceReady &&
+                        !Thread.currentThread().isInterrupted) {
+                        Log.e(TAG, "event=native_egl_init_failed retry_ms=500")
+                        try { Thread.sleep(500L) } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
+                    }
                 }
+                if (nativeHandle == 0L) return@Thread
                 Log.i(TAG, "event=native_egl_initialized renderer=EGL_GLES2")
                 while (surfaceReady && !Thread.currentThread().isInterrupted) {
                     val snapshot = synchronized(frameLock) {
@@ -157,7 +176,19 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                     runCatching { NativeEglRenderer.nativeRelease(nativeHandle) }
                         .onFailure { Log.w(TAG, "event=native_egl_release_failed", it) }
                 }
-                Log.i(TAG, "event=native_egl_thread_stopped")
+                // Clear only our own thread reference. A new Surface may already
+                // have installed a replacement renderer thread.
+                if (renderThread === Thread.currentThread()) renderThread = null
+                Log.i(TAG, "event=native_egl_thread_stopped surfaceReady=${surfaceReady}")
+                // Covers the race where surfaceCreated arrives while the previous
+                // thread is still exiting and startRenderThread therefore cannot start.
+                if (surfaceReady && !Thread.currentThread().isInterrupted) {
+                    post {
+                        if (surfaceReady && holder.surface.isValid && renderThread?.isAlive != true) {
+                            startRenderThread()
+                        }
+                    }
+                }
             }
         }, "XWaylandNativeEglRenderer").apply {
             priority = Thread.NORM_PRIORITY
