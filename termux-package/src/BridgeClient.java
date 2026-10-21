@@ -416,11 +416,11 @@ public final class BridgeClient {
         if (rawEvent.startsWith("TEXT ")) {
             String text = rawEvent.substring(5);
             if (text.isEmpty() || text.getBytes(StandardCharsets.UTF_8).length > 100
-                    || text.codePoints().anyMatch(cp -> Character.isISOControl(cp) && cp != '\\n' && cp != '\\t')) {
+                    || text.codePoints().anyMatch(cp -> Character.isISOControl(cp) && cp != '\n' && cp != '\t')) {
                 System.err.println("INPUT_REJECTED reason=invalid_text");
                 return;
             }
-            String typeText = text.replace("\\n", "\\r").replace("\\t", "\\t");
+            String typeText = text.replace("\n", "\r").replace("\t", "\t");
             runInputCommand(new ProcessBuilder(xdotool, "type", "--clearmodifiers", "--delay", "0", "--", typeText));
             return;
         }
