@@ -1,19 +1,6 @@
 package org.techwithkaushik.termuxxwayland
 
 
-private fun RgbaFrameCodec.Frame.toArgbPixels(): IntArray {
-    val result = IntArray(width * height)
-    var source = 0
-    for (index in result.indices) {
-        val red = pixels[source++].toInt() and 0xff
-        val green = pixels[source++].toInt() and 0xff
-        val blue = pixels[source++].toInt() and 0xff
-        val alpha = pixels[source++].toInt() and 0xff
-        result[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-    }
-    return result
-}
-
 import android.graphics.Bitmap
 import java.io.Closeable
 import java.io.IOException
@@ -28,6 +15,19 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Bound only to 127.0.0.1; never exposed on LAN interfaces and does not
  * require a separately installed companion app. Session token authenticates HELLO.
  */
+private fun RgbaFrameCodec.Frame.toArgbPixels(): IntArray {
+    val result = IntArray(width * height)
+    var source = 0
+    for (index in result.indices) {
+        val red = pixels[source++].toInt() and 0xff
+        val green = pixels[source++].toInt() and 0xff
+        val blue = pixels[source++].toInt() and 0xff
+        val alpha = pixels[source++].toInt() and 0xff
+        result[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+    }
+    return result
+}
+
 internal class BridgeSocketServer(
     private val sessionId: String,
     private val expectedTermuxUid: Int,
