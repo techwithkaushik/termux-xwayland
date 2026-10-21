@@ -48,8 +48,10 @@ class BridgeSessionService : Service() {
         internal var frameListener: ((RgbaFrameCodec.Frame) -> Unit)? = null
 
         internal fun dispatchFrame(payload: ByteArray) {
+            // Keep transport alive, but skip full-frame decoding while the Activity is detached.
+            val listener = frameListener ?: return
             val frame = RgbaFrameCodec.decode(payload)
-            frameListener?.invoke(frame)
+            listener(frame)
         }
 
         /** Sends validated, bounded pointer/key events back through the same Binder-transferred FD. */
