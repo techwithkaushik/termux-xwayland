@@ -180,7 +180,7 @@ start_server() {
   rm -f "$PID_FILE"
   command -v "$WESTON_BIN" >/dev/null 2>&1 || fail "Weston is not installed. Run: pkg install weston"
   rm -f "$RUNTIME_DIR/$WAYLAND_SOCKET"
-  local weston_args=(--backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" --no-config)
+  local weston_args=(--backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" --no-config --shell=kiosk-shell.so)
   # Weston 16 headless defaults to the no-op renderer, which does not render a
   # framebuffer or service renderer capture tasks. Force software rendering so
   # the output has real pixels and the capture protocol can receive size/format
