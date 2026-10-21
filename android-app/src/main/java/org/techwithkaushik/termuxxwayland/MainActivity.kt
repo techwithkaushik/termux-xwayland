@@ -348,7 +348,7 @@ class MainActivity : Activity() {
             binderStatusDescription.text = when (binderState) {
                 "connecting" -> "Binder transport: connecting; waiting for an authorized Termux PING/PONG."
                 "connected" -> if (binderFrameCount > 0L) {
-                    "Binder transport: active; $binderFrameCount XWayland frames received. Native Wayland capture and input forwarding remain pending."
+                    "Binder transport: active; $binderFrameCount frames rendered. Check Termux session logs for capture-helper and input-routing status."
                 } else {
                     "Binder transport: active; Termux UID authorization and PING/PONG are confirmed. Waiting for XWayland frames."
                 }
