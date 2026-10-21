@@ -364,7 +364,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 }
                 val dx = x - lastTouchX
                 val dy = y - lastTouchY
-                if (now - lastMoveAt < 8L) return true
+                if (now - lastMoveAt < 16L) return true
                 lastMoveAt = now
                 when (touchMode) {
                     0 -> {
