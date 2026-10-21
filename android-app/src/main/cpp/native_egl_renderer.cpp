@@ -144,10 +144,28 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeInitialize(
     EGLConfig config = nullptr;
     EGLint count = 0;
     if (eglChooseConfig(r->display, configAttrs, &config, 1, &count) != EGL_TRUE || count < 1) {
-        LOGE("No compatible EGL window config");
+        LOGE("No compatible EGL window config: 0x%x", eglGetError());
         destroy(r);
         return 0;
     }
+
+    // Android SurfaceView buffers have a concrete native pixel format. An EGL
+    // RGBA config can otherwise fail eglCreateWindowSurface with EGL_BAD_MATCH
+    // when the ANativeWindow still advertises a different format.
+    EGLint nativeVisualId = 0;
+    if (eglGetConfigAttrib(r->display, config, EGL_NATIVE_VISUAL_ID, &nativeVisualId) != EGL_TRUE) {
+        LOGE("eglGetConfigAttrib(EGL_NATIVE_VISUAL_ID) failed: 0x%x", eglGetError());
+        destroy(r);
+        return 0;
+    }
+    const int geometryResult = ANativeWindow_setBuffersGeometry(r->window, 0, 0, nativeVisualId);
+    if (geometryResult != 0) {
+        LOGE("ANativeWindow_setBuffersGeometry failed: %d nativeVisualId=%d", geometryResult, nativeVisualId);
+        destroy(r);
+        return 0;
+    }
+    LOGI("EGL native window format configured visual=%d", nativeVisualId);
+
     const EGLint contextAttrs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
     r->context = eglCreateContext(r->display, config, EGL_NO_CONTEXT, contextAttrs);
     r->surface = eglCreateWindowSurface(r->display, config, r->window, nullptr);
