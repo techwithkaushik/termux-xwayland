@@ -73,6 +73,10 @@ int main(int argc, char **argv) {
         } else if (!strcmp(op, "BUTTON")) {
             if (a < 1 || a > 3 || (strcmp(action, "DOWN") && strcmp(action, "UP"))) continue;
             button(dpy, a, !strcmp(action, "DOWN"));
+        } else if (!strcmp(op, "DOWN") || !strcmp(op, "UP") || !strcmp(op, "CANCEL")) {
+            if (a < 0 || a >= width || b < 0 || b >= height) continue;
+            XTestFakeMotionEvent(dpy, DefaultScreen(dpy), a, b, CurrentTime);
+            button(dpy, 1, !strcmp(op, "DOWN"));
         } else if (!strcmp(op, "CLICK")) {
             if (a < 1 || a > 3) continue;
             button(dpy, a, 1);
