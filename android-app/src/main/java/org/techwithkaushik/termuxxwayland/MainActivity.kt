@@ -22,12 +22,16 @@ import android.os.Process
 import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
+import android.view.KeyEvent
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -66,8 +70,6 @@ class MainActivity : Activity() {
     // hundreds of full-size pixel arrays and Bitmap allocations.
     private val pendingDesktopFrame = AtomicReference<RgbaFrameCodec.Frame?>(null)
     private val frameRenderPosted = AtomicBoolean(false)
-    @Volatile private var lastFrameRenderAtMs = 0L
-    private val frameRenderIntervalMs = 33L // Keep Canvas updates near 30 FPS while bounding bitmap churn on low-memory devices.
     private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
     private val binderServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -127,12 +129,59 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = ink
-        window.navigationBarColor = ink
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(buildScreen())
+        applyImmersiveMode()
         Log.i("TermuxXWayland", "event=activity_created package=$packageName sdk=${android.os.Build.VERSION.SDK_INT}")
         handleTermuxIntent(intent)
         refreshTermuxControlStatus()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        if (::tokenInput.isInitialized && tokenInput.hasFocus()) {
+            if (imm.isAcceptingText) {
+                imm.hideSoftInputFromWindow(window.decorView.windowToken, 0)
+                tokenInput.clearFocus()
+            } else {
+                imm.showSoftInput(tokenInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+            return
+        }
+        if (::tokenInput.isInitialized) {
+            tokenInput.requestFocus()
+            imm.showSoftInput(tokenInput, InputMethodManager.SHOW_IMPLICIT)
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+            onBackPressed()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun applyImmersiveMode() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && !isInPictureInPictureMode) applyImmersiveMode()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -157,11 +206,11 @@ class MainActivity : Activity() {
 
     private fun applyPictureInPictureLayout(inPip: Boolean) {
         if (!::headingContainer.isInitialized) return
-        headingContainer.visibility = if (inPip) View.GONE else View.VISIBLE
-        statusTitle.visibility = if (inPip) View.GONE else View.VISIBLE
-        statusDescription.visibility = if (inPip) View.GONE else View.VISIBLE
-        binderStatusDescription.visibility = if (inPip) View.GONE else View.VISIBLE
-        desktopProofDescription.visibility = if (inPip) View.GONE else View.VISIBLE
+        headingContainer.visibility = View.GONE
+        statusTitle.visibility = View.GONE
+        statusDescription.visibility = View.GONE
+        binderStatusDescription.visibility = View.GONE
+        desktopProofDescription.visibility = View.GONE
         previewImage.visibility = View.VISIBLE
         previewImage.requestLayout()
     }
@@ -210,7 +259,6 @@ class MainActivity : Activity() {
                 if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
                     val frame = pendingDesktopFrame.getAndSet(null)
                     if (frame != null) {
-                        lastFrameRenderAtMs = android.os.SystemClock.uptimeMillis()
                         previewImage.setFrame(
                             Bitmap.createBitmap(
                                 frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888
@@ -232,9 +280,7 @@ class MainActivity : Activity() {
             } finally {
                 frameRenderPosted.set(false)
                 if (pendingDesktopFrame.get() != null) {
-                    val elapsed = android.os.SystemClock.uptimeMillis() - lastFrameRenderAtMs
-                    val delay = (frameRenderIntervalMs - elapsed).coerceAtLeast(1L)
-                    statusPollHandler.postDelayed({ scheduleDesktopFrameRender() }, delay)
+                    previewImage.postOnAnimation { scheduleDesktopFrameRender() }
                 }
             }
         }
@@ -358,68 +404,28 @@ class MainActivity : Activity() {
     }
 
     private fun buildScreen(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(page)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-        }
-        headingContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(8))
-        }
-        val titleColumn = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        titleColumn.addView(label("TERMUX • WAYLAND", 12, blue, true))
-        titleColumn.addView(label("Linux desktop", 22, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(2))
-        })
-        headingContainer.addView(titleColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val pipButton = actionButton("PiP") { enterDesktopPictureInPicture() }.apply {
-            contentDescription = "Enter picture-in-picture mode"
-            isEnabled = true
-            minWidth = dp(64)
-        }
-        headingContainer.addView(pipButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { leftMargin = dp(8) })
-        root.addView(headingContainer, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-
-        statusTitle = label("Waiting for Termux session", 15, ink, true)
-        root.addView(statusTitle, margins(bottom = 2))
-        statusDescription = label("Start the session from Termux. This host will stay closed until you open it.", 12, muted, false)
-        root.addView(statusDescription, margins(bottom = 4))
-
-        binderStatusDescription = label("Bridge: waiting for authenticated session", 12, muted, false).apply {
-            setPadding(dp(4), dp(4), dp(4), dp(8))
-        }
-        root.addView(binderStatusDescription, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        // Keep legacy status objects initialized for bridge/session diagnostics,
+        // but never attach their text or controls to the desktop host UI.
+        statusTitle = TextView(this)
+        statusDescription = TextView(this)
+        binderStatusDescription = TextView(this)
+        desktopProofDescription = TextView(this)
+        headingContainer = LinearLayout(this)
 
         previewImage = DesktopSurfaceView(this).apply {
             visibility = View.VISIBLE
-            contentDescription = "Live Termux XWayland desktop; Picture-in-Picture available while frames are active"
+            contentDescription = "Live Linux desktop"
             setBackgroundColor(Color.BLACK)
+            inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
         }
-        root.addView(previewImage, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ).apply {
-            topMargin = dp(4)
-            bottomMargin = dp(4)
-        })
-        desktopProofDescription = label(
-            "Waiting for live desktop frames. Leave this screen while frames are active to enter PiP.",
-            12, muted, false
-        ).apply { setPadding(dp(4), dp(6), dp(4), dp(4)) }
-        root.addView(desktopProofDescription, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        applyPictureInPictureLayout(isInPictureInPictureMode)
-        return root
+        return FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            fitsSystemWindows = false
+            addView(previewImage, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+        }
     }
 
     private fun connectOrDisconnect() {
