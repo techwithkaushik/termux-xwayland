@@ -296,7 +296,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
 
         val now = android.os.SystemClock.uptimeMillis()
-        if (action == "MOVE" && now - lastMoveAt < 16L) return true
+        if (action == "MOVE" && now - lastMoveAt < 33L) return true
         if (action == "MOVE") lastMoveAt = now
         cursorPositionListener?.invoke(event.x, event.y)
         val normalizedX = ((event.x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
