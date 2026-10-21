@@ -529,7 +529,7 @@ public final class BridgeClient {
         String[] fields = rawEvent.trim().split("\\s+");
         if (fields.length == 0) return false;
         String op = fields[0];
-        if (!("REL".equals(op) || "MOVE".equals(op) || "BUTTON".equals(op) || "CLICK".equals(op))) return false;
+        if (!("REL".equals(op) || "MOVE".equals(op) || "DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op) || "BUTTON".equals(op) || "CLICK".equals(op))) return false;
         final String command;
         try {
             if ("REL".equals(op) && fields.length == 3) {
@@ -543,6 +543,12 @@ public final class BridgeClient {
                 int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
                 int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
                 command = "MOVE " + x + " " + y;
+            } else if (("DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op)) && fields.length == 3) {
+                float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
+                if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;
+                int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+                int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
+                command = op + " " + x + " " + y;
             } else if ("BUTTON".equals(op) && fields.length == 3 &&
                     ("DOWN".equals(fields[2]) || "UP".equals(fields[2]))) {
                 int button = Integer.parseInt(fields[1]);
