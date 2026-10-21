@@ -7,6 +7,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 ## Current implementation
 
 - **Android host:** Kotlin UI receives the Termux-authorized Binder session, validates the caller and TXWB framing, and renders received RGBA frames.
+- **Lifecycle:** `termux-xwayland start` starts host services and opens the Android host in a ready/idle state. It does not launch a desktop environment or GUI application. Start an app later with `termux-xwayland app xterm`, or explicitly start a desktop session with `termux-xwayland desktop startxfce4`.
 - **Termux package:** `termux-xwayland` starts Weston/XWayland and launches the client from the existing Termux installation.
 - **Termux client:** `termux-package/src/BridgeClient.java` is compiled to DEX in CI and packaged in the Termux DEB. It opens a Binder-authorized file-descriptor session. Frame forwarding is wired to the native `termux-xwayland-capture` helper source, but the helper is deliberately not packaged until a matching Weston build grants narrowly scoped capture authorization; therefore real desktop frames are not yet guaranteed or claimed.
 - **Packaging:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
@@ -35,6 +36,10 @@ CI stages the DEX automatically and publishes the display-host APK, client DEX a
 pkg install weston socat xorg-xwayland xdotool xterm
 termux-xwayland start
 termux-xwayland status
+# Later, when desired:
+termux-xwayland app xterm
+# Or launch a desktop environment explicitly:
+termux-xwayland desktop startxfce4
 ```
 
 Weston is started with the Pixman software renderer (`--use-pixman`) because the headless backend's default no-op renderer cannot produce capturable desktop pixels. This uses CPU rendering. Weston and XWayland can still start independently of frame streaming. Do not install FFmpeg for frame capture: the bridge intentionally has no FFmpeg fallback. `termux-xwayland status` and `termux-xwayland logs` help diagnose server and Binder-session state; `bash tools/verify-live-capture.sh` checks required device components. None of these alone proves frame capture works.
