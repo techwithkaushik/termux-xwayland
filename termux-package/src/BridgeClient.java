@@ -470,20 +470,40 @@ public final class BridgeClient {
             payload[3] = (byte) FRAME_HEIGHT;
             payload[4] = 1;
             long lastLog = 0L;
+            long frameCount = 0L;
             try (DataInputStream raw = new DataInputStream(capture.getInputStream())) {
                 while (!Thread.currentThread().isInterrupted()) {
+                    long readStarted = System.nanoTime();
                     raw.readFully(pixels);
+                    long readFinished = System.nanoTime();
+                    frameCount++;
                     System.arraycopy(pixels, 0, payload, 8, pixels.length);
+                    if (frameCount == 1L) {
+                        System.out.println("FRAME_READ count=1 bytes=" + pixels.length
+                            + " elapsed_ms=" + ((readFinished - readStarted) / 1_000_000L));
+                        System.out.flush();
+                        System.out.println("FRAME_FORWARD_WRITE_BEGIN count=1 payload_bytes=" + payload.length);
+                        System.out.flush();
+                    }
+                    long writeStarted = System.nanoTime();
                     writeFrame(output, FRAME, payload);
+                    long writeFinished = System.nanoTime();
                     long now = System.currentTimeMillis();
-                    if (lastLog == 0L || now - lastLog >= 5000L) {
+                    if (frameCount == 1L || lastLog == 0L || now - lastLog >= 5000L) {
                         lastLog = now;
-                        System.out.println("FRAME_SENT epoch_seconds=" + (now / 1000L) + " transport=binder-fd");
+                        System.out.println("FRAME_SENT count=" + frameCount
+                            + " epoch_seconds=" + (now / 1000L)
+                            + " read_ms=" + ((readFinished - readStarted) / 1_000_000L)
+                            + " write_ms=" + ((writeFinished - writeStarted) / 1_000_000L)
+                            + " transport=binder-fd");
                         System.out.flush();
                     }
                 }
             } catch (IOException error) {
-                System.err.println("FRAME_CAPTURE_STOPPED epoch_seconds=" + (System.currentTimeMillis() / 1000L) + " reason=" + error.getClass().getName() + " message=" + String.valueOf(error.getMessage()));
+                System.err.println("FRAME_CAPTURE_STOPPED count=" + frameCount
+                    + " epoch_seconds=" + (System.currentTimeMillis() / 1000L)
+                    + " reason=" + error.getClass().getName()
+                    + " message=" + String.valueOf(error.getMessage()));
                 error.printStackTrace(System.err);
                 System.out.flush();
             }
