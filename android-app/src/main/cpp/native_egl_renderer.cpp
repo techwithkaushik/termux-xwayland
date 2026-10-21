@@ -179,7 +179,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeInitialize(
     // wait for every incoming frame. The Android compositor still presents
     // Surface buffers; the producer should not add an extra 16 ms queue delay.
     if (eglSwapInterval(r->display, 0) != EGL_TRUE) {
-        LOGW("eglSwapInterval(0) unsupported; driver default pacing remains active: 0x%x", eglGetError());
+        LOGE("eglSwapInterval(0) unsupported; driver default pacing remains active: 0x%x", eglGetError());
     }
     if (!initializeGl(r)) {
         destroy(r);
