@@ -38,7 +38,7 @@ public final class BridgeClient {
         "org.techwithkaushik.termuxxwayland.IBridgeSession";
     private static final int OPEN_SESSION = IBinder.FIRST_CALL_TRANSACTION;
     private static final int VERSION = 1;
-    private static final int MAX_PAYLOAD = 16 * 1024 * 1024;
+    private static final int MAX_PAYLOAD = 32 * 1024 * 1024;
     private static final byte[] MAGIC = new byte[] { 0x54, 0x58, 0x57, 0x42 };
     private static final int WELCOME = 2;
     private static final int PING = 7;
@@ -48,10 +48,21 @@ public final class BridgeClient {
     private static final int INPUT = 4;
     private static final int RESIZE = 5;
     private static final int CLIPBOARD = 6;
-    private static final int FRAME_WIDTH = 640;
-    private static final int FRAME_HEIGHT = 360;
-    private static final int FRAME_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 4;
+    private static final int FRAME_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
+    private static final int FRAME_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
+    private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
     private static volatile Process activeFrameCapture;
+
+    private static int envDimension(String name, int fallback) {
+        String value = System.getenv(name);
+        if (value == null) return fallback;
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 320 && parsed <= 4096 ? parsed : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
 
     private BridgeClient() {}
 
