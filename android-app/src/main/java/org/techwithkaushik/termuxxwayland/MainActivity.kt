@@ -152,21 +152,14 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
+        // Back toggles the software keyboard; it must never finish the desktop host.
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        if (::tokenInput.isInitialized && tokenInput.hasFocus()) {
-            if (imm.isAcceptingText) {
-                imm.hideSoftInputFromWindow(window.decorView.windowToken, 0)
-                tokenInput.clearFocus()
-            } else {
-                imm.showSoftInput(tokenInput, InputMethodManager.SHOW_IMPLICIT)
-            }
-            return
-        }
-        if (::tokenInput.isInitialized) {
-            tokenInput.requestFocus()
-            imm.showSoftInput(tokenInput, InputMethodManager.SHOW_IMPLICIT)
+        if (!::previewImage.isInitialized) return
+        if (imm.isAcceptingText) {
+            imm.hideSoftInputFromWindow(previewImage.windowToken, 0)
         } else {
-            super.onBackPressed()
+            previewImage.requestFocus()
+            imm.showSoftInput(previewImage, InputMethodManager.SHOW_IMPLICIT)
         }
     }
 
