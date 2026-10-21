@@ -25,8 +25,6 @@ struct Renderer {
     GLint sampler = -1;
     int lastWidth = 0;
     int lastHeight = 0;
-    // Reuse the conversion buffer across frames to avoid repeated heap allocations.
-    std::vector<uint8_t> rgba;
 };
 
 const char* kVertexShader =
@@ -186,7 +184,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeInitialize(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
-    JNIEnv* env, jobject /* thiz */, jlong handle, jintArray javaPixels, jint width, jint height) {
+    JNIEnv* env, jobject /* thiz */, jlong handle, jbyteArray javaPixels, jint width, jint height) {
     auto* r = reinterpret_cast<Renderer*>(handle);
     if (!r || !javaPixels || width <= 0 || height <= 0 ||
         static_cast<jlong>(width) * height > 16777216LL) {
@@ -200,19 +198,10 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     const jlong required = static_cast<jlong>(width) * height;
     if (length < required) return JNI_FALSE;
 
-    const jint* argb = env->GetIntArrayElements(javaPixels, nullptr);
-    if (!argb) return JNI_FALSE;
-    const size_t rgbaBytes = static_cast<size_t>(required) * 4;
-    if (r->rgba.size() != rgbaBytes) r->rgba.resize(rgbaBytes);
-    for (jlong i = 0; i < required; ++i) {
-        const uint32_t p = static_cast<uint32_t>(argb[i]);
-        const size_t j = static_cast<size_t>(i) * 4;
-        r->rgba[j] = static_cast<uint8_t>((p >> 16) & 0xff);
-        r->rgba[j + 1] = static_cast<uint8_t>((p >> 8) & 0xff);
-        r->rgba[j + 2] = static_cast<uint8_t>(p & 0xff);
-        r->rgba[j + 3] = static_cast<uint8_t>((p >> 24) & 0xff);
-    }
-    env->ReleaseIntArrayElements(javaPixels, const_cast<jint*>(argb), JNI_ABORT);
+    const jbyte* rgba = env->GetByteArrayElements(javaPixels, nullptr);
+    if (!rgba) return JNI_FALSE;
+    // The frame codec preserves wire RGBA8888 bytes, so GLES can upload
+    // them directly instead of converting every pixel on every frame.
 
     EGLint surfaceWidth = 0, surfaceHeight = 0;
     eglQuerySurface(r->display, r->surface, EGL_WIDTH, &surfaceWidth);
@@ -244,12 +233,13 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     glBindTexture(GL_TEXTURE_2D, r->texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     if (r->lastWidth != width || r->lastHeight != height) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, r->rgba.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, reinterpret_cast<const GLvoid*>(rgba));
         r->lastWidth = width;
         r->lastHeight = height;
     } else {
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, r->rgba.data());
     }
+    env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(rgba), JNI_ABORT);
     glUniform1i(r->sampler, 0);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
