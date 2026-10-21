@@ -8,7 +8,6 @@ import android.net.LocalSocket
 import android.net.LocalServerSocket
 import android.net.LocalSocketAddress
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -21,18 +20,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.nio.ByteBuffer
 import java.io.IOException
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
 class MainActivity : Activity() {
@@ -45,18 +38,10 @@ class MainActivity : Activity() {
     private lateinit var tokenInput: EditText
     private lateinit var statusTitle: TextView
     private lateinit var statusDescription: TextView
-    private lateinit var previewImage: ImageView
+    private lateinit var previewSurface: android.view.SurfaceView
     private lateinit var connectButton: Button
     @Volatile private var activeSocket: LocalSocket? = null
     @Volatile private var connecting = false
-    private lateinit var tcpProbeTitle: TextView
-    private lateinit var tcpProbeDescription: TextView
-    private lateinit var tcpProbeButton: Button
-    @Volatile private var tcpProbeRunning = false
-    private lateinit var framedProbeTitle: TextView
-    private lateinit var framedProbeDescription: TextView
-    private lateinit var framedProbeButton: Button
-    @Volatile private var framedProbeRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,15 +94,12 @@ class MainActivity : Activity() {
         )
         status.addView(statusTitle)
         status.addView(statusDescription)
-        previewImage = ImageView(this).apply {
-            visibility = View.GONE
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = "Synthetic bridge test frame"
+        previewSurface = android.view.SurfaceView(this).apply {
+            contentDescription = "Native RGBA frame surface"
             setBackgroundColor(Color.rgb(20, 29, 43))
         }
-        status.addView(previewImage, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
+        status.addView(previewSurface, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(220)
         ).apply { topMargin = dp(12) })
         content.addView(status, margins(top = 22, bottom = 16))
 
@@ -155,40 +137,6 @@ class MainActivity : Activity() {
             "IPC status",
             "The old separate-companion Binder probes have been retired. The supported design is a Termux-installed bridge package; no live Termux-to-host session or desktop frame stream is connected yet."
         ), margins(top = 8, bottom = 16))
-
-        content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
-            setPadding(0, dp(8), 0, dp(8))
-        })
-        content.addView(infoCard(
-            "Diagnostic only • 127.0.0.1:38471",
-            "Checks whether this Android app can reach a one-shot TCP echo server running inside Termux on the same phone. This is not enabled as a bridge fallback and does not send desktop frames."
-        ), margins(bottom = 10))
-        tcpProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        tcpProbeDescription = label(
-            "Start the repository's TCP probe server in Termux, then tap the button below.",
-            13, muted, false
-        )
-        content.addView(tcpProbeTitle)
-        content.addView(tcpProbeDescription, margins(bottom = 8))
-        tcpProbeButton = actionButton("Test Termux TCP connection") { runTcpProbe() }
-        content.addView(tcpProbeButton, margins(bottom = 10))
-        content.addView(infoCard(
-            "TXWB v1 framing diagnostic • 127.0.0.1:38472",
-            "Uses the existing 12-byte TXWB header and checks magic, version, reserved bits, message type, payload length and exact PING/PONG payload. One-shot test only; not a production transport."
-        ), margins(bottom = 10))
-        framedProbeTitle = label("Not tested", 17, ink, true).apply {
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        framedProbeDescription = label(
-            "Checks the existing TXWB v1 12-byte frame header, PING/PONG message types, payload length, and exact payload echo. Diagnostic only.",
-            13, muted, false
-        )
-        content.addView(framedProbeTitle)
-        content.addView(framedProbeDescription, margins(bottom = 8))
-        framedProbeButton = actionButton("Test framed TXWB protocol") { runFramedProbe() }
-        content.addView(framedProbeButton, margins(bottom = 16))
 
         content.addView(label("Rust JNI socket reader", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
@@ -388,7 +336,7 @@ class MainActivity : Activity() {
                 if (frameMessage.kind != BridgeMessageKind.FRAME) {
                     throw IllegalStateException("Expected a test frame after authentication")
                 }
-                val testFrame = decodeTestFrame(frameMessage.payload)
+                renderFrame(frameMessage.payload)
 
                 // A successful authenticated handshake proves Android -> Termux;
                 // PING/PONG verifies traffic in both directions over this socket.
@@ -414,8 +362,6 @@ class MainActivity : Activity() {
                     } else {
                         "Connected (same UID)"
                     }
-                    previewImage.setImageBitmap(testFrame)
-                    previewImage.visibility = View.VISIBLE
                     statusDescription.text = String.format(
                         java.util.Locale.US,
                         "Termux peer UID: %d (kernel-verified) • Android app UID: %d\nPING/PONG round trip: %.2f ms\nInitial frame received. Waiting for subsequent FRAME messages; the current bridge still sends only a synthetic frame.",
@@ -428,15 +374,12 @@ class MainActivity : Activity() {
                             val message = BridgeProtocol.read(sessionSocket.getInputStream())
                             when (message.kind) {
                                 BridgeMessageKind.FRAME -> {
-                                    val bitmap = decodeTestFrame(message.payload)
+                                    renderFrame(message.payload)
                                     runOnUiThread {
                                         if (activeSocket === sessionSocket) {
-                                            previewImage.setImageBitmap(bitmap)
                                             statusTitle.text = "Frame received"
                                             statusDescription.text =
-                                                "Receiving bridge frames. Desktop capture is not yet wired into the Termux server."
-                                        } else {
-                                            bitmap.recycle()
+                                                "Frame presented through the native Android Surface. The current Termux server still sends synthetic test frames, not compositor output."
                                         }
                                     }
                                 }
@@ -485,8 +428,6 @@ class MainActivity : Activity() {
             try { socket?.close() } catch (_: Exception) { }
         }
         connectButton.text = "Connect securely"
-        previewImage.setImageDrawable(null)
-        previewImage.visibility = View.GONE
         statusTitle.text = "Not connected"
         statusDescription.text = "Bridge session closed."
     }
@@ -496,78 +437,6 @@ class MainActivity : Activity() {
 
 
 
-    private fun runTcpProbe() {
-        if (tcpProbeRunning) return
-        tcpProbeRunning = true
-        tcpProbeButton.isEnabled = false
-        tcpProbeTitle.text = "Connecting to 127.0.0.1:38471…"
-        tcpProbeDescription.text = "Testing a loopback TCP echo from Android host to Termux."
-        Thread({
-            val result = try {
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress("127.0.0.1", 38471), 3000)
-                    socket.soTimeout = 3000
-                    val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
-                    val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-                    writer.write("TERMUX_XWAYLAND_TCP_PROBE\n")
-                    writer.flush()
-                    val reply = reader.readLine()
-                    if (reply != "PASS TERMUX_XWAYLAND_TCP_PROBE") {
-                        throw IOException("Unexpected TCP echo response: ${reply ?: "connection closed"}")
-                    }
-                    "PASS • Android host connected to Termux on 127.0.0.1:38471 and received the exact echo. This is a one-shot connectivity test only."
-                }
-            } catch (error: Exception) {
-                "FAIL • ${error.message ?: error.javaClass.simpleName}. Ensure the Termux probe server is running on 127.0.0.1:38471."
-            }
-            runOnUiThread {
-                tcpProbeRunning = false
-                tcpProbeButton.isEnabled = true
-                tcpProbeTitle.text = if (result.startsWith("PASS")) "TCP loopback passed" else "TCP loopback failed"
-                tcpProbeDescription.text = result
-            }
-        }, "tcp-loopback-probe").start()
-    }
-
-    private fun runFramedProbe() {
-        if (framedProbeRunning) return
-        framedProbeRunning = true
-        framedProbeButton.isEnabled = false
-        framedProbeTitle.text = "Testing TXWB v1 framing…"
-        framedProbeDescription.text = "Sending one bounded PING frame to the loopback diagnostic server."
-        Thread({
-            val result = try {
-                val payload = "TERMUX_XWAYLAND_FRAME_PROBE".toByteArray(Charsets.UTF_8)
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress("127.0.0.1", 38472), 3000)
-                    socket.soTimeout = 3000
-                    BridgeProtocol.write(socket.getOutputStream(), BridgeMessageKind.PING, payload)
-                    val response = BridgeProtocol.read(socket.getInputStream())
-                    if (response.kind != BridgeMessageKind.PONG) {
-                        throw IOException("Expected PONG frame, received ${response.kind}")
-                    }
-                    if (!response.payload.contentEquals(payload)) {
-                        throw IOException("PONG payload did not exactly match PING payload")
-                    }
-                    "PASS • TXWB v1 header, PING/PONG types, bounded payload length and exact echo verified on 127.0.0.1:38472. Diagnostic only; no desktop frames or production bridge."
-                }
-            } catch (error: Exception) {
-                "FAIL • ${error.message ?: error.javaClass.simpleName}. Start tools/tcp-framed-protocol-probe.py in Termux."
-            }
-            runOnUiThread {
-                framedProbeRunning = false
-                framedProbeButton.isEnabled = true
-                framedProbeTitle.text = if (result.startsWith("PASS")) {
-                    "TXWB framed protocol passed"
-                } else {
-                    "TXWB framed protocol failed"
-                }
-                framedProbeDescription.text = result
-            }
-        }, "tcp-framed-protocol-probe").start()
-    }
-
-
     private fun socketNameForToken(token: ByteArray): String {
         val fingerprint = token.take(8).joinToString("") { byte ->
             (byte.toInt() and 0xff).toString(16).padStart(2, '0')
@@ -575,9 +444,13 @@ class MainActivity : Activity() {
         return "$SOCKET_PREFIX$fingerprint"
     }
 
-    private fun decodeTestFrame(payload: ByteArray): Bitmap {
-        val frame = RgbaFrameCodec.decode(payload)
-        return Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
+    private fun renderFrame(payload: ByteArray) {
+        // Validate the complete bounded frame before handing bytes to native code.
+        RgbaFrameCodec.decode(payload)
+        val surface = previewSurface.holder.surface
+        if (!surface.isValid) throw IOException("Android display surface is not ready")
+        val result = NativeBridge.nativeRenderRgba(surface, payload)
+        if (result != 0) throw IOException("Native Surface renderer failed (code $result)")
     }
 
     private fun showError(message: String) {
