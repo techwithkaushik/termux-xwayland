@@ -12,7 +12,7 @@ Termux XWayland pairs the existing Android display-host APK with a Termux-instal
 - **Packaging:** the Android host remains the only APK; the Termux-side client stays inside the Termux DEB.
 - **Transport security:** no production TCP listener is used. Binder caller UID checks and the session FD handoff are required.
 - **Protocol limits:** TXWB v1 uses a 12-byte header and a 16 MiB maximum payload.
-- **Capture blocker:** Weston’s `weston_capture_v1` protocol is privileged and capture requests are denied unless a compositor-side authority explicitly authorizes them. A Wayland client alone cannot safely enable this. The native capture helper is now included as source plus an on-device build recipe; the current debug mode is temporary and broad, and must be replaced with narrowly scoped compositor authorization before production.
+- **Capture blocker:** Weston 16’s headless backend defaults to the no-op renderer unless explicitly configured. The launcher now forces `--use-pixman` so the output has real pixels and renderer capture tasks can be serviced. The `weston_capture_v1` protocol is also privileged and requires compositor authorization. A Wayland client alone cannot safely enable this. The native capture helper is now included as source plus an on-device build recipe; the current debug mode is temporary and broad, and must be replaced with narrowly scoped compositor authorization before production.
 - **Remaining:** on-device verification of Binder session and actual frames, authorized native Wayland capture, Android touch/keyboard forwarding, resize/clipboard routing and reconnect handling.
 
 ## Build and run
@@ -37,7 +37,7 @@ termux-xwayland start
 termux-xwayland status
 ```
 
-Weston and XWayland can start independently of frame streaming. Do not install FFmpeg for frame capture: the bridge intentionally has no FFmpeg fallback. `termux-xwayland status` and `termux-xwayland logs` help diagnose server and Binder-session state; `bash tools/verify-live-capture.sh` checks required device components. None of these alone proves frame capture works.
+Weston is started with the Pixman software renderer (`--use-pixman`) because the headless backend's default no-op renderer cannot produce capturable desktop pixels. This uses CPU rendering. Weston and XWayland can still start independently of frame streaming. Do not install FFmpeg for frame capture: the bridge intentionally has no FFmpeg fallback. `termux-xwayland status` and `termux-xwayland logs` help diagnose server and Binder-session state; `bash tools/verify-live-capture.sh` checks required device components. None of these alone proves frame capture works.
 
 ## Verification boundary
 
