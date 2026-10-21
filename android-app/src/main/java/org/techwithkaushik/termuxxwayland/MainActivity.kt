@@ -82,8 +82,8 @@ class MainActivity : Activity() {
                     }
                     if (::desktopProofDescription.isInitialized) {
                         desktopProofDescription.text =
-                            "LIVE DESKTOP VERIFIED • received real pixel frame ${frame.width}×${frame.height} over the production Binder FD stream. Frames received: $binderFrameCount."
-                        desktopProofDescription.setTextColor(Color.rgb(21, 128, 61))
+                            "FRAME STREAM ACTIVE • received ${frame.width}×${frame.height} pixel frames over Binder. This confirms transport only; desktop content and changing pixels are not yet verified. Frames received: $binderFrameCount."
+                        desktopProofDescription.setTextColor(Color.rgb(180, 83, 9))
                     }
                 }
             }
@@ -324,7 +324,7 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
         ).apply { topMargin = dp(12) })
         desktopProofDescription = label(
-            "NO LIVE DESKTOP FRAME • The app has not received real compositor pixels yet. Binder PING/PONG and a running server are not screen proof. This preview stays hidden until the production Binder FD delivers an actual frame.",
+            "DESKTOP CONTENT NOT VERIFIED • Waiting for pixel frames. Binder PING/PONG and frame delivery alone do not prove that the current desktop is visible or updating.",
             13, Color.rgb(185, 28, 28), true
         ).apply { setPadding(0, dp(10), 0, dp(2)) }
         status.addView(desktopProofDescription)
@@ -357,8 +357,8 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Commands copied", Toast.LENGTH_SHORT).show()
         }, margins(bottom = 8))
         content.addView(infoCard(
-            "What this test proves",
-            "This legacy button exercises the historical abstract-socket smoke test only. Production Binder status above changes to active only after the Termux UID is authorized and a valid PING/PONG round trip succeeds. Real desktop frames, Wayland compositor integration, input forwarding and XWayland are still pending."
+            "Current implementation status",
+            "The Binder FD frame transport is connected, but the black preview shows that usable desktop rendering is not complete. Frame delivery is not treated as proof of visible desktop content. Input forwarding, desktop-content validation and full interactive desktop behavior still need implementation and device verification."
         ), margins(top = 8, bottom = 16))
         content.addView(label("Temporary TCP loopback probe", 20, ink, true).apply {
             setPadding(0, dp(8), 0, dp(8))
