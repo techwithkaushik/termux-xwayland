@@ -78,6 +78,7 @@ grep -q 'android:exported="false"' android-app/src/main/AndroidManifest.xml
 grep -q 'Native Wayland frame capture: helper not built yet' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 # Temporary integration phase explicitly enables Weston debug capture; remove before production.
 grep -Eq 'weston_args\+\=.*--debug|weston_args=.*--debug' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
+grep -Fq 'weston_args+=(--use-pixman)' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'native/capture/termux-xwayland-capture.c' termux-package/build-deb.sh
 grep -q 'build-native-capture.sh' termux-package/build-deb.sh
 grep -q 'build_capture_helper_if_possible' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
