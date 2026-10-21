@@ -477,6 +477,9 @@ show_status() {
   return 1
 }
 start_session() {
+  # start_monitor writes its PID/log/state files, so initialize the runtime
+  # directory before the first monitor startup (including clean test runtimes).
+  prepare_runtime_dir
   detect_host || {
     notify_user "Termux-XWayland" "Android host not found. Install the Termux-XWayland APK first."
     fail "Android host not detected; checked ${APP_IDS[*]}"
