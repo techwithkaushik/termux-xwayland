@@ -185,7 +185,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeInitialize(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
-    JNIEnv* env, jobject /* thiz */, jlong handle, jbyteArray javaPixels, jint width, jint height) {
+    JNIEnv* env, jobject /* thiz */, jlong handle, jbyteArray javaPixels, jint pixelOffset, jint width, jint height) {
     auto* r = reinterpret_cast<Renderer*>(handle);
     if (!r || !javaPixels || width <= 0 || height <= 0 ||
         static_cast<jlong>(width) * height > 16777216LL) {
@@ -196,11 +196,16 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     if (!makeCurrent(r)) return JNI_FALSE;
 
     const jsize length = env->GetArrayLength(javaPixels);
-    const jlong required = static_cast<jlong>(width) * height;
-    if (length < required * 4) return JNI_FALSE;
+    const jlong requiredBytes = static_cast<jlong>(width) * height * 4;
+    if (pixelOffset < 0 || static_cast<jlong>(pixelOffset) + requiredBytes > length) {
+        LOGE("nativeRender rejected invalid pixel range offset=%d required=%lld length=%d",
+             pixelOffset, static_cast<long long>(requiredBytes), length);
+        return JNI_FALSE;
+    }
 
-    const jbyte* rgba = env->GetByteArrayElements(javaPixels, nullptr);
-    if (!rgba) return JNI_FALSE;
+    const jbyte* arrayBytes = env->GetByteArrayElements(javaPixels, nullptr);
+    if (!arrayBytes) return JNI_FALSE;
+    const jbyte* rgba = arrayBytes + pixelOffset;
     // The frame codec preserves wire RGBA8888 bytes, so GLES can upload
     // them directly instead of converting every pixel on every frame.
 
@@ -208,7 +213,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     eglQuerySurface(r->display, r->surface, EGL_WIDTH, &surfaceWidth);
     eglQuerySurface(r->display, r->surface, EGL_HEIGHT, &surfaceHeight);
     if (surfaceWidth <= 0 || surfaceHeight <= 0) {
-        env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(rgba), JNI_ABORT);
+        env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(arrayBytes), JNI_ABORT);
         LOGE("eglQuerySurface returned invalid size %dx%d", surfaceWidth, surfaceHeight);
         return JNI_FALSE;
     }
@@ -241,7 +246,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     } else {
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, reinterpret_cast<const GLvoid*>(rgba));
     }
-    env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(rgba), JNI_ABORT);
+    env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(arrayBytes), JNI_ABORT);
     glUniform1i(r->sampler, 0);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
