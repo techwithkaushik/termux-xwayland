@@ -309,7 +309,7 @@ class MainActivity : Activity() {
         val serverState = uri.getQueryParameter("server").orEmpty()
         val port = uri.getQueryParameter("port")?.toIntOrNull() ?: -1
         if (!sessionId.matches(Regex("^[a-f0-9]{32}$")) ||
-            serverState != "running" ||
+            serverState !in setOf("running", "starting") ||
             port !in 30000..49999) {
             getSharedPreferences("termux_control_session", MODE_PRIVATE).edit()
                 .clear()
