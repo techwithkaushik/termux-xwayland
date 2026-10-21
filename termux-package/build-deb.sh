@@ -28,6 +28,14 @@ mkdir -p "$stage/DEBIAN" "$stage/data"
 cp "$pkg/DEBIAN/control" "$stage/DEBIAN/control"
 cp "$pkg/DEBIAN/postinst" "$stage/DEBIAN/postinst"
 cp -R "$pkg/data/." "$stage/data/"
+# Ship the native capture source and its build recipe. The helper itself must
+# be compiled on-device against the installed Termux ABI and Weston XML.
+capture_root="$stage/data/data/com.termux/files/usr/share/termux-xwayland"
+mkdir -p "$capture_root/native/capture" "$capture_root/tools"
+cp "$root/native/capture/termux-xwayland-capture.c" "$capture_root/native/capture/"
+cp "$root/tools/build-native-capture.sh" "$capture_root/tools/"
+chmod 0644 "$capture_root/native/capture/termux-xwayland-capture.c"
+chmod 0755 "$capture_root/tools/build-native-capture.sh"
 
 find "$stage" -type d -exec chmod 0755 {} +
 chmod 0644 "$stage/DEBIAN/control"
