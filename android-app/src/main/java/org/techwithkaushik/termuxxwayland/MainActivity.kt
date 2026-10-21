@@ -67,7 +67,7 @@ class MainActivity : Activity() {
     private val pendingDesktopFrame = AtomicReference<RgbaFrameCodec.Frame?>(null)
     private val frameRenderPosted = AtomicBoolean(false)
     @Volatile private var lastFrameRenderAtMs = 0L
-    private val frameRenderIntervalMs = 100L // Cap UI bitmap conversion/rendering at 10 FPS on low-memory devices.
+    private val frameRenderIntervalMs = 33L // Keep Canvas updates near 30 FPS while bounding bitmap churn on low-memory devices.
     private var localBridgeBinder: BridgeSessionService.BridgeBinder? = null
     private val binderServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
