@@ -28,7 +28,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private val frameLock = Object()
     @Volatile private var surfaceReady = false
     @Volatile private var renderThread: Thread? = null
-    private data class PixelFrame(val pixels: ByteArray, val width: Int, val height: Int)
+    private data class PixelFrame(val pixels: ByteArray, val width: Int, val height: Int, val pixelOffset: Int)
     private var latestFrame: PixelFrame? = null
     private var frameVersion = 0L
     private var renderedVersion = -1L
@@ -100,11 +100,11 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         Log.i(TAG, "event=surface_destroyed")
     }
 
-    fun setFrame(pixels: ByteArray, width: Int, height: Int) {
-        if (width <= 0 || height <= 0 || pixels.size < width * height * 4) return
+    fun setFrame(pixels: ByteArray, width: Int, height: Int, pixelOffset: Int = 0) {
+        if (width <= 0 || height <= 0 || pixelOffset < 0 || pixelOffset.toLong() + width.toLong() * height * 4L > pixels.size) return
         synchronized(frameLock) {
             // Keep only the newest decoded frame; avoid allocating/copying a Bitmap per frame.
-            latestFrame = PixelFrame(pixels, width, height)
+            latestFrame = PixelFrame(pixels, width, height, pixelOffset)
             frameVersion++
             frameLock.notifyAll()
         }
@@ -172,7 +172,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         // Do not hold frameLock while JNI/GPU work runs: the incoming
                         // frame callback must be able to replace stale frames immediately.
                         if (surfaceReady && nativeHandle != 0L &&
-                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.width, frame.height)) {
+                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height)) {
                             synchronized(frameLock) { renderedVersion = version }
                             if (!firstFrameDrawnLogged) {
                                 firstFrameDrawnLogged = true
