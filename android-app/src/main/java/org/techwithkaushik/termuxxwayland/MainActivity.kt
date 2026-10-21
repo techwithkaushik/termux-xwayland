@@ -1,18 +1,5 @@
 package org.techwithkaushik.termuxxwayland
 
-private fun RgbaFrameCodec.Frame.toArgbPixels(): IntArray {
-    val result = IntArray(width * height)
-    var source = 0
-    for (index in result.indices) {
-        val red = pixels[source++].toInt() and 0xff
-        val green = pixels[source++].toInt() and 0xff
-        val blue = pixels[source++].toInt() and 0xff
-        val alpha = pixels[source++].toInt() and 0xff
-        result[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-    }
-    return result
-}
-
 
 import android.app.Activity
 import android.app.PictureInPictureParams
@@ -61,6 +48,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** Android endpoint for the authenticated abstract Unix socket smoke test. */
+private fun RgbaFrameCodec.Frame.toArgbPixels(): IntArray {
+    val result = IntArray(width * height)
+    var source = 0
+    for (index in result.indices) {
+        val red = pixels[source++].toInt() and 0xff
+        val green = pixels[source++].toInt() and 0xff
+        val blue = pixels[source++].toInt() and 0xff
+        val alpha = pixels[source++].toInt() and 0xff
+        result[index] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+    }
+    return result
+}
+
 class MainActivity : Activity() {
     private val ink = Color.rgb(22, 32, 48)
     private val muted = Color.rgb(99, 113, 132)
