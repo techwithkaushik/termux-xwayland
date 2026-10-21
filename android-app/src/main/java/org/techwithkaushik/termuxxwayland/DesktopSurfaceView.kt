@@ -45,13 +45,17 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         surfaceReady = true
+        synchronized(frameLock) { renderedVersion = -1L }
         startRenderThread()
         Log.i(TAG, "event=surface_created width=$width height=$height")
         synchronized(frameLock) { frameLock.notifyAll() }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        synchronized(frameLock) { frameLock.notifyAll() }
+        synchronized(frameLock) {
+            renderedVersion = -1L
+            frameLock.notifyAll()
+        }
         Log.i(TAG, "event=surface_changed width=$width height=$height format=$format")
     }
 
