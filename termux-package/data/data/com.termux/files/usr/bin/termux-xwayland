@@ -197,18 +197,20 @@ start_server() {
   local display_width=640 display_height=360 wm_output wm_size
   if [ -x /system/bin/wm ]; then
     wm_output="$(/system/bin/wm size 2>/dev/null || true)"
-    wm_size="$(printf '%s\\n' "$wm_output" | sed -n 's/.*Physical size: *\\([0-9][0-9]*x[0-9][0-9]*\\).*/\\1/p' | tail -n 1)"
+    wm_size="$(printf '%s\n' "$wm_output" | sed -n 's/.*Physical size: *\([0-9][0-9]*x[0-9][0-9]*\).*/\1/p' | tail -n 1)"
     if [[ "$wm_size" =~ ^([0-9]{3,5})x([0-9]{3,5})$ ]]; then
       display_width="${BASH_REMATCH[1]}"
       display_height="${BASH_REMATCH[2]}"
     fi
   fi
   # Keep the compositor within safe limits on unusual/virtual displays.
-  if (( display_width < 320 || display_width > 4096 || display_height < 320 || display_height > 4096 )); then
+  if (( display_width < 320 || display_width > 4096 || display_height < 320 || display_height > 4096 || display_width * display_height > 8000000 )); then
     display_width=640
     display_height=360
   fi
-  printf 'Native display output: %sx%s\\n' "$display_width" "$display_height"
+  printf '%s %s\n' "$display_width" "$display_height" > "$RUNTIME_DIR/display-size"
+  chmod 600 "$RUNTIME_DIR/display-size"
+  printf 'Native display output: %sx%s\n' "$display_width" "$display_height"
   if command -v Xwayland >/dev/null 2>&1; then
     if [[ ! -e "$x11_socket_dir" ]]; then
       mkdir -m 1777 "$x11_socket_dir" || fail "cannot create X11 socket directory: $x11_socket_dir"
@@ -345,13 +347,20 @@ start_binder_session() {
   fi
   stop_binder_session
   : > "$SESSION_LOG_FILE"
-  local display=""
+  local display="" display_width=640 display_height=360
+  if [ -r "$RUNTIME_DIR/display-size" ]; then
+    read -r display_width display_height < "$RUNTIME_DIR/display-size"
+  fi
+  if [[ ! "$display_width" =~ ^[0-9]{3,4}$ || ! "$display_height" =~ ^[0-9]{3,4}$ ]]; then
+    display_width=640
+    display_height=360
+  fi
   if display="$(resolve_xwayland_display)"; then
-    printf 'XWayland display detected: %s\n' "$display"
-    nohup env DISPLAY="$display" WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+    printf 'XWayland display detected: %s (stream %sx%s)\n' "$display" "$display_width" "$display_height"
+    nohup env DISPLAY="$display" WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR" TERMUX_XWAYLAND_WIDTH="$display_width" TERMUX_XWAYLAND_HEIGHT="$display_height" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   else
     printf 'XWayland display not detected; Binder session will start without frame capture.\n'
-    nohup env -u DISPLAY WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
+    nohup env -u DISPLAY WAYLAND_DISPLAY="$WAYLAND_SOCKET" XDG_RUNTIME_DIR="$RUNTIME_DIR" TERMUX_XWAYLAND_WIDTH="$display_width" TERMUX_XWAYLAND_HEIGHT="$display_height" CLASSPATH="$CLIENT_DEX" "$APP_PROCESS_BIN" /system/bin org.techwithkaushik.termuxxwayland.client.BridgeClient </dev/null >"$SESSION_LOG_FILE" 2>&1 &
   fi
   local pid=$! attempt
   printf '%s\n' "$pid" > "$SESSION_PID_FILE"
