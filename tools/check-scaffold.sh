@@ -30,6 +30,17 @@ test -f docs/x11-capture-probe.md
 bash -n tools/capture-x11-frame.sh
 grep -q 'no real desktop rendering yet' README.md
 grep -q 'synthetic RGBA test frame' README.md
+grep -q 'nativeRenderRgba' android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeBridge.kt
+grep -q 'ANativeWindow_lock' native/host-jni/src/lib.rs
+grep -q 'RgbaFrameCodec.validate(payload)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+if grep -q 'android.permission.INTERNET' android-app/src/main/AndroidManifest.xml; then
+  echo 'The display host must not request INTERNET for a retired loopback diagnostic.' >&2
+  exit 1
+fi
+if grep -q 'Temporary TCP loopback probe\|Test Termux TCP connection\|Test framed TXWB protocol' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt; then
+  echo 'Retired TCP diagnostics must not be exposed in the production host UI.' >&2
+  exit 1
+fi
 grep -q 'termux_xwayland_' native/compositor/src/bridge.rs
 grep -q 'Rust JNI socket reader' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Run Rust JNI socket test' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
