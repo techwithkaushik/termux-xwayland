@@ -24,7 +24,9 @@ grep -q 'weston_capture_v1' tools/wayland-globals-probe.c
 grep -q 'wayland-globals-probe.c' tools/probe-weston-capture.sh
 test -f tools/probe-weston-capture-build.sh
 test -f native/capture/termux-xwayland-capture.c
+test -f native/capture/weston-output-capture.xml
 grep -q 'weston_capture_v1_create' native/capture/termux-xwayland-capture.c
+grep -q 'interface name="weston_capture_v1" version="2"' native/capture/weston-output-capture.xml
 test -f tools/build-native-capture.sh
 test -f tools/verify-live-capture.sh
 bash -n tools/verify-live-capture.sh
@@ -83,6 +85,7 @@ grep -q 'Native Wayland frame capture: helper not built yet' termux-package/data
 grep -Eq 'weston_args\+\=.*--debug|weston_args=.*--debug' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -Fq 'weston_args+=(--use-pixman)' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'native/capture/termux-xwayland-capture.c' termux-package/build-deb.sh
+grep -q 'native/capture/weston-output-capture.xml' termux-package/build-deb.sh
 grep -q 'build-native-capture.sh' termux-package/build-deb.sh
 grep -q 'build_capture_helper_if_possible' termux-package/data/data/com.termux/files/usr/bin/termux-xwayland
 grep -q 'Do not enable blanket screenshot authorization' docs/weston-capture-build-gate.md
