@@ -105,13 +105,16 @@ chmod +x "$mock_pm" "$mock_open"
 fake_weston="$cli_tmp/weston"
 cat > "$fake_weston" <<'MOCK_WESTON'
 #!/usr/bin/env bash
-python3 - "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" <<'PY'
+python3 - "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" <<'PY' &
 import socket, sys, time
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 server.bind(sys.argv[1])
 server.listen(1)
 time.sleep(120)
 PY
+child=$!
+trap 'kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit 0' TERM INT
+wait "$child"
 MOCK_WESTON
 fake_xwayland="$cli_tmp/Xwayland"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$fake_xwayland"
