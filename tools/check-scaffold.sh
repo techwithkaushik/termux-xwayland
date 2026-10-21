@@ -49,7 +49,7 @@ grep -q 'weston_capture_v1' README.md
 grep -q 'Run legacy socket diagnostic' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'Binder transport: active' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'NO LIVE DESKTOP FRAME' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'LIVE DESKTOP VERIFIED' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'FRAME STREAM ACTIVE' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 ! grep -q 'previewImage.setFrame(testFrame)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.post(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'statusPollHandler.removeCallbacks(statusPollRunnable)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
