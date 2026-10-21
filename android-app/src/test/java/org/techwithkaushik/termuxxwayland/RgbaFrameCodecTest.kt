@@ -15,11 +15,12 @@ class RgbaFrameCodecTest {
         val frame = RgbaFrameCodec.decode(payload)
         assertEquals(1, frame.width)
         assertEquals(1, frame.height)
-        assertEquals(4, frame.pixels.size)
-        assertEquals(0x12, frame.pixels[0].toInt() and 0xff)
-        assertEquals(0x34, frame.pixels[1].toInt() and 0xff)
-        assertEquals(0x56, frame.pixels[2].toInt() and 0xff)
-        assertEquals(0x78, frame.pixels[3].toInt() and 0xff)
+        assertEquals(payload.size, frame.pixels.size)
+        assertEquals(8, frame.pixelOffset)
+        assertEquals(0x12, frame.pixels[frame.pixelOffset].toInt() and 0xff)
+        assertEquals(0x34, frame.pixels[frame.pixelOffset + 1].toInt() and 0xff)
+        assertEquals(0x56, frame.pixels[frame.pixelOffset + 2].toInt() and 0xff)
+        assertEquals(0x78, frame.pixels[frame.pixelOffset + 3].toInt() and 0xff)
     }
 
     @Test
