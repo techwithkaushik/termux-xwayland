@@ -160,7 +160,7 @@ class MainActivity : Activity() {
 
     private fun scheduleDesktopFrameRender() {
         if (!frameRenderPosted.compareAndSet(false, true)) return
-        runOnUiThread {
+        statusPollHandler.post {
             try {
                 if (!isFinishing && !isDestroyed && ::previewImage.isInitialized) {
                     val frame = pendingDesktopFrame.getAndSet(null)
