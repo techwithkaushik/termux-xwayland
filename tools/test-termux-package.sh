@@ -108,6 +108,14 @@ if command -v dpkg-deb >/dev/null 2>&1; then
     echo "FAIL: built DEB does not contain the companion executable at the expected path." >&2
     exit 1
   fi
+  if ! dpkg-deb --contents "$archive" | grep -Fq '/share/termux-xwayland/native/input/termux-xwayland-input.c'; then
+    echo "FAIL: built DEB does not contain the native pointer helper source." >&2
+    exit 1
+  fi
+  if ! dpkg-deb --contents "$archive" | grep -Fq '/share/termux-xwayland/tools/build-native-input.sh'; then
+    echo "FAIL: built DEB does not contain the native pointer helper builder." >&2
+    exit 1
+  fi
 fi
 
 
