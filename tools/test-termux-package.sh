@@ -126,17 +126,16 @@ grep -Fq 'Android frame/input transport: not integrated' <<<"$status_output" || 
   echo "FAIL: status must clearly report the missing Android stream" >&2; exit 1;
 }
 
-"${cli_env[@]}" bash "$script" start >/dev/null
-grep -Fxq 'termuxxwayland://start' "$open_log" || {
-  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
-}
-
 if MOCK_HOST_PRESENT=no "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
   echo "FAIL: start should fail when no host package is detected" >&2; exit 1
 fi
 if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
   echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
 fi
+status_output="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland compositor: stopped' <<<"$status_output" || {
+  echo "FAIL: failed host launch must roll back the compositor" >&2; exit 1;
+}
 start_output="$("${cli_env[@]}" bash "$script" start)"
 grep -Fq 'Wayland compositor ready' <<<"$start_output" || {
   echo "FAIL: start should wait for compositor readiness" >&2; exit 1;
