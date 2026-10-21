@@ -366,6 +366,20 @@ static void composite_x11_cursor(Display *xdisplay, uint8_t *rgba,
 }
 #endif
 
+#ifdef TXW_HAVE_XFIXES
+static Display *open_cursor_display(void) {
+    const char *name = getenv("DISPLAY");
+    if (!name || !*name) {
+        txw_log("WARN", "xfixes_cursor_unavailable", "reason=DISPLAY_not_set");
+        return NULL;
+    }
+    Display *display = XOpenDisplay(name);
+    if (display) txw_log("INFO", "xfixes_cursor_enabled", "display=%s", name);
+    else txw_log("WARN", "xfixes_cursor_unavailable", "display=%s", name);
+    return display;
+}
+#endif
+
 static int run_capture(struct capture_state *s, int requested_width, int requested_height) {
     if (wl_display_roundtrip(s->display) < 0) {
         fprintf(stderr, "CAPTURE_ERROR: initial Wayland roundtrip failed\n");
@@ -447,6 +461,9 @@ static int run_capture(struct capture_state *s, int requested_width, int request
     wl_shm_pool_destroy(pool);
     if (!buffer) { munmap(pixels, bytes); fprintf(stderr, "CAPTURE_ERROR: wl_shm buffer creation failed\n"); return 11; }
 
+#ifdef TXW_HAVE_XFIXES
+    Display *xdisplay = open_cursor_display();
+#endif
     uint8_t *rgba = malloc(output_bytes);
     if (!rgba) { wl_buffer_destroy(buffer); munmap(pixels, bytes); return 12; }
     fprintf(stderr, "CAPTURE_READY: source=framebuffer source_size=%dx%d stream_size=%dx%d shm_format=%s; streaming RGBA frames to stdout\n",
