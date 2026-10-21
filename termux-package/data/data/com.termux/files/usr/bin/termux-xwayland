@@ -388,7 +388,7 @@ show_status() {
   elif command -v termux-xwayland-capture >/dev/null 2>&1; then
     printf 'Native Wayland frame capture: helper installed; stream not verified\n'
   else
-    printf 'Native Wayland frame capture: unavailable (native helper not installed)\n'
+    printf 'Native Wayland frame capture: helper not built yet (run termux-xwayland start; inspect logs for missing build dependencies or capture authorization)\n'
   fi
   printf 'FFmpeg capture fallback: disabled\n'
   if [ "$host_found" -eq 1 ]; then return 0; fi
