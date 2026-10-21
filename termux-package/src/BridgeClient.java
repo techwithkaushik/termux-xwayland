@@ -453,6 +453,60 @@ public final class BridgeClient {
             return;
         }
 
+        // Physical mouse buttons are forwarded separately from pointer motion.
+        if (fields.length == 3 && "BUTTON".equals(fields[0])) {
+            if (!fields[2].equals("DOWN") && !fields[2].equals("UP")) {
+                System.err.println("INPUT_REJECTED reason=invalid_button_action");
+                return;
+            }
+            final int button;
+            try {
+                button = Integer.parseInt(fields[1]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_button");
+                return;
+            }
+            if (button < 1 || button > 3) {
+                System.err.println("INPUT_REJECTED reason=invalid_button");
+                return;
+            }
+            runInputCommand(new ProcessBuilder(xdotool,
+                fields[2].equals("DOWN") ? "mousedown" : "mouseup",
+                Integer.toString(button)));
+            return;
+        }
+
+        // Convert Android wheel axes to X11 wheel-button clicks.
+        if (fields.length == 3 && "SCROLL".equals(fields[0])) {
+            final float vertical;
+            final float horizontal;
+            try {
+                vertical = Float.parseFloat(fields[1]);
+                horizontal = Float.parseFloat(fields[2]);
+            } catch (NumberFormatException invalid) {
+                System.err.println("INPUT_REJECTED reason=invalid_scroll");
+                return;
+            }
+            if (!Float.isFinite(vertical) || !Float.isFinite(horizontal)
+                    || Math.abs(vertical) > 100f || Math.abs(horizontal) > 100f) {
+                System.err.println("INPUT_REJECTED reason=scroll_out_of_range");
+                return;
+            }
+            int verticalTicks = Math.min(20, Math.round(Math.abs(vertical)));
+            int horizontalTicks = Math.min(20, Math.round(Math.abs(horizontal)));
+            if (verticalTicks > 0) {
+                runInputCommand(new ProcessBuilder(xdotool, "click", "--repeat",
+                    Integer.toString(verticalTicks), "--delay", "0",
+                    vertical > 0 ? "4" : "5"));
+            }
+            if (horizontalTicks > 0) {
+                runInputCommand(new ProcessBuilder(xdotool, "click", "--repeat",
+                    Integer.toString(horizontalTicks), "--delay", "0",
+                    horizontal > 0 ? "7" : "6"));
+            }
+            return;
+        }
+
         if (fields.length != 3) {
             System.err.println("INPUT_REJECTED reason=invalid_fields");
             return;
