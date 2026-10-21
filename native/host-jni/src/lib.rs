@@ -197,7 +197,6 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
 }
 
 
-
 /// Validate the bounded RGBA8888 wire payload without allocating a second pixel buffer.
 fn validate_rgba_payload(payload: &[u8]) -> Result<(usize, usize, &[u8]), libc::c_int> {
     if payload.len() < 8 {
@@ -205,12 +204,17 @@ fn validate_rgba_payload(payload: &[u8]) -> Result<(usize, usize, &[u8]), libc::
     }
     let width = u16::from_be_bytes([payload[0], payload[1]]) as usize;
     let height = u16::from_be_bytes([payload[2], payload[3]]) as usize;
-    if width == 0 || width > 640 || height == 0 || height > 360
-        || payload[4] != 1 || payload[5..8] != [0, 0, 0]
+    if width == 0
+        || width > 640
+        || height == 0
+        || height > 360
+        || payload[4] != 1
+        || payload[5..8] != [0, 0, 0]
     {
         return Err(libc::EINVAL);
     }
-    let pixel_bytes = width.checked_mul(height)
+    let pixel_bytes = width
+        .checked_mul(height)
         .and_then(|n| n.checked_mul(4))
         .ok_or(libc::EOVERFLOW)?;
     if payload.len() != 8 + pixel_bytes {
@@ -242,10 +246,22 @@ struct NativeRect {
 #[cfg(target_os = "android")]
 #[link(name = "android")]
 extern "C" {
-    fn ANativeWindow_fromSurface(env: *mut jni::sys::JNIEnv, surface: jni::sys::jobject) -> *mut std::ffi::c_void;
+    fn ANativeWindow_fromSurface(
+        env: *mut jni::sys::JNIEnv,
+        surface: jni::sys::jobject,
+    ) -> *mut std::ffi::c_void;
     fn ANativeWindow_release(window: *mut std::ffi::c_void);
-    fn ANativeWindow_setBuffersGeometry(window: *mut std::ffi::c_void, width: libc::c_int, height: libc::c_int, format: libc::c_int) -> libc::c_int;
-    fn ANativeWindow_lock(window: *mut std::ffi::c_void, buffer: *mut NativeWindowBuffer, dirty: *mut NativeRect) -> libc::c_int;
+    fn ANativeWindow_setBuffersGeometry(
+        window: *mut std::ffi::c_void,
+        width: libc::c_int,
+        height: libc::c_int,
+        format: libc::c_int,
+    ) -> libc::c_int;
+    fn ANativeWindow_lock(
+        window: *mut std::ffi::c_void,
+        buffer: *mut NativeWindowBuffer,
+        dirty: *mut NativeRect,
+    ) -> libc::c_int;
     fn ANativeWindow_unlockAndPost(window: *mut std::ffi::c_void) -> libc::c_int;
 }
 
@@ -262,8 +278,7 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
 ) -> jni::sys::jint {
     init_logger();
     let result = (|| -> Result<(), libc::c_int> {
-        let mut env = unsafe { jni::JNIEnv::from_raw(raw_env) }
-            .map_err(|_| libc::EINVAL)?;
+        let mut env = unsafe { jni::JNIEnv::from_raw(raw_env) }.map_err(|_| libc::EINVAL)?;
         let array = unsafe { jni::objects::JByteArray::from_raw(raw_payload) };
         let length = env.get_array_length(&array).map_err(|_| libc::EINVAL)? as usize;
         // 640 x 360 RGBA plus the fixed 8-byte header.
@@ -286,16 +301,19 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
         }
         let release = |window| unsafe { ANativeWindow_release(window) };
         // WINDOW_FORMAT_RGBA_8888 is 1 in Android's native_window.h.
-        let geometry = unsafe {
-            ANativeWindow_setBuffersGeometry(window, width as i32, height as i32, 1)
-        };
+        let geometry =
+            unsafe { ANativeWindow_setBuffersGeometry(window, width as i32, height as i32, 1) };
         if geometry != 0 {
             release(window);
             return Err(if geometry < 0 { -geometry } else { libc::EIO });
         }
         let mut buffer = NativeWindowBuffer {
-            width: 0, height: 0, stride: 0, format: 0,
-            bits: std::ptr::null_mut(), reserved: [0; 6],
+            width: 0,
+            height: 0,
+            stride: 0,
+            format: 0,
+            bits: std::ptr::null_mut(),
+            reserved: [0; 6],
         };
         let locked = unsafe { ANativeWindow_lock(window, &mut buffer, std::ptr::null_mut()) };
         if locked != 0 {
@@ -304,8 +322,10 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
         }
 
         let copy_result = (|| -> Result<(), libc::c_int> {
-            if buffer.bits.is_null() || buffer.width < width as i32
-                || buffer.height < height as i32 || buffer.stride < width as i32
+            if buffer.bits.is_null()
+                || buffer.width < width as i32
+                || buffer.height < height as i32
+                || buffer.stride < width as i32
                 || buffer.format != 1
             {
                 return Err(libc::EINVAL);
@@ -354,7 +374,10 @@ mod tests {
         frame[4] = 1;
         let (width, height, pixels) = validate_rgba_payload(&frame).unwrap();
         assert_eq!((width, height, pixels.len()), (2, 3, 24));
-        assert_eq!(validate_rgba_payload(&frame[..frame.len() - 1]).unwrap_err(), libc::EMSGSIZE);
+        assert_eq!(
+            validate_rgba_payload(&frame[..frame.len() - 1]).unwrap_err(),
+            libc::EMSGSIZE
+        );
     }
 
     #[test]
