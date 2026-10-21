@@ -341,7 +341,13 @@ class MainActivity : Activity() {
                     socket.soTimeout = 1500
                     socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
                     val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.US_ASCII)
-                    writer.write("STATUS $sessionId\n")
+                    // Display.getRealMetrics reports actual pixels rather than dp; Termux's
+                    // shell user cannot reliably query this on Android 10/MIUI.
+                    @Suppress("DEPRECATION")
+                    val metrics = android.util.DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay.getRealMetrics(metrics)
+                    writer.write("STATUS $sessionId ${metrics.widthPixels} ${metrics.heightPixels}\n")
                     writer.flush()
                     response = BufferedReader(
                         InputStreamReader(socket.getInputStream(), Charsets.US_ASCII)
