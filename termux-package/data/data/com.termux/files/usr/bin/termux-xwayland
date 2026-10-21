@@ -176,6 +176,11 @@ start_server() {
   command -v "$WESTON_BIN" >/dev/null 2>&1 || fail "Weston is not installed. Run: pkg install weston"
   rm -f "$RUNTIME_DIR/$WAYLAND_SOCKET"
   local weston_args=(--backend=headless-backend.so --socket="$WAYLAND_SOCKET" --idle-time=0 --log="$LOG_FILE" --no-config)
+  # Weston 16 headless defaults to the no-op renderer, which does not render a
+  # framebuffer or service renderer capture tasks. Force software rendering so
+  # the output has real pixels and the capture protocol can receive size/format
+  # events. This is CPU-only and intentionally uses a modest 640x360 output.
+  weston_args+=(--use-pixman)
   # TEMPORARY DEVELOPMENT MODE: Weston --debug broadly authorizes privileged capture.
   # Remove this once the managed host is verified and a narrow compositor authority exists.
   weston_args+=(--debug)
