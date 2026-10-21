@@ -125,6 +125,7 @@ public final class BridgeClient {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Process capture = activeFrameCapture;
             if (capture != null) capture.destroy();
+            stopNativeInput();
         }, "termux-xwayland-capture-cleanup"));
         // ActivityThread/ContextImpl may construct Handlers during initialization.
         // Prepare the main looper before constructing any Android app context.
@@ -463,6 +464,7 @@ public final class BridgeClient {
                 Process capture = activeFrameCapture;
                 if (capture != null) capture.destroy();
                 activeFrameCapture = null;
+                stopNativeInput();
             }
         }
     }
