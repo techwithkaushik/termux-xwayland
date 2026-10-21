@@ -273,8 +273,12 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
         let mut signed_bytes = vec![0_i8; length];
         env.get_byte_array_region(&array, 0, &mut signed_bytes)
             .map_err(|_| libc::EINVAL)?;
-        let payload: Vec<u8> = signed_bytes.into_iter().map(|byte| byte as u8).collect();
-        let (width, height, pixels) = validate_rgba_payload(&payload)?;
+        // JNI exposes jbyte as signed i8; reinterpret the same allocation as
+        // bytes instead of allocating/copying a second frame-sized Vec.
+        let payload = unsafe {
+            std::slice::from_raw_parts(signed_bytes.as_ptr().cast::<u8>(), signed_bytes.len())
+        };
+        let (width, height, pixels) = validate_rgba_payload(payload)?;
 
         let window = unsafe { ANativeWindow_fromSurface(raw_env, raw_surface) };
         if window.is_null() {
