@@ -364,7 +364,9 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 }
                 val dx = x - lastTouchX
                 val dy = y - lastTouchY
-                if (now - lastMoveAt < 16L) return true
+                // Do not impose a 16 ms software throttle on pointer motion.
+                // The Termux-side native XTest helper coalesces/flushes events
+                // without launching a new xdotool process for every move.
                 lastMoveAt = now
                 when (touchMode) {
                     0 -> {
