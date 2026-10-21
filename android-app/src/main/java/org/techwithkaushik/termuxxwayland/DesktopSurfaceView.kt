@@ -165,7 +165,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     }
 
 
-        override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val name = xdotoolKeyName(keyCode) ?: return super.onKeyDown(keyCode, event)
         inputEventListener?.invoke("KEY $name DOWN".toByteArray(Charsets.US_ASCII))
         return true
