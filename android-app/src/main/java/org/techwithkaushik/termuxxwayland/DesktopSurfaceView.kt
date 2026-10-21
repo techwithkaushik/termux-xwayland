@@ -42,6 +42,10 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var touchMoved = false
+    private var lastCentroidX = 0f
+    private var lastCentroidY = 0f
+    private var lastTapAt = 0L
+    private var tapCount = 0
     private val pointerPrefs by lazy {
         context.getSharedPreferences("termux_xwayland_preferences", Context.MODE_PRIVATE)
     }
@@ -313,6 +317,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 touchStartY = y
                 lastTouchX = x
                 lastTouchY = y
+                lastCentroidX = x
+                lastCentroidY = y
                 touchMoved = false
                 when (touchMode) {
                     0 -> Unit // Trackpad: relative motion and tap-to-click.
@@ -333,18 +339,40 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 if (index < 0) return true
                 val x = event.getX(index)
                 val y = event.getY(index)
+                val now = android.os.SystemClock.uptimeMillis()
+                if (kotlin.math.abs(x - touchStartX) > 7f || kotlin.math.abs(y - touchStartY) > 7f) touchMoved = true
+                // Match Termux:X11's trackpad semantics: one finger moves the pointer
+                // relatively, while two fingers scroll instead of moving the pointer.
+                if (touchMode == 0 && event.pointerCount >= 2) {
+                    var cx = 0f
+                    var cy = 0f
+                    for (i in 0 until event.pointerCount) {
+                        cx += event.getX(i)
+                        cy += event.getY(i)
+                    }
+                    cx /= event.pointerCount
+                    cy /= event.pointerCount
+                    val scrollX = (cx - lastCentroidX) / resources.displayMetrics.density
+                    val scrollY = (cy - lastCentroidY) / resources.displayMetrics.density
+                    if (now - lastMoveAt >= 16L && (kotlin.math.abs(scrollX) >= 1f || kotlin.math.abs(scrollY) >= 1f)) {
+                        sendInput("SCROLL ${-scrollY / 3f} ${-scrollX / 3f}")
+                        lastMoveAt = now
+                    }
+                    lastCentroidX = cx
+                    lastCentroidY = cy
+                    return true
+                }
                 val dx = x - lastTouchX
                 val dy = y - lastTouchY
-                if (kotlin.math.abs(x - touchStartX) > 7f || kotlin.math.abs(y - touchStartY) > 7f) {
-                    touchMoved = true
-                }
-                val now = android.os.SystemClock.uptimeMillis()
                 if (now - lastMoveAt < 8L) return true
                 lastMoveAt = now
                 when (touchMode) {
                     0 -> {
                         if (touchMoved && (dx != 0f || dy != 0f)) {
-                            sendInput("REL ${kotlin.math.round(dx * pointerSpeed).toInt()} ${kotlin.math.round(dy * pointerSpeed).toInt()}")
+                            val bounds = contentBounds()
+                            val scaleX = if (bounds.width() > 0f) (frameWidthForInput() / bounds.width()) else 1f
+                            val scaleY = if (bounds.height() > 0f) (frameHeightForInput() / bounds.height()) else 1f
+                            sendInput("REL ${kotlin.math.round(dx * scaleX * pointerSpeed).toInt()} ${kotlin.math.round(dy * scaleY * pointerSpeed).toInt()}")
                         }
                     }
                     else -> sendPointer("MOVE", x, y)
@@ -369,7 +397,13 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                     val x = event.getX(index)
                     val y = event.getY(index)
                     when (touchMode) {
-                        0 -> if (!touchMoved) sendInput("CLICK 1")
+                        0 -> if (!touchMoved) {
+                            val now = android.os.SystemClock.uptimeMillis()
+                            tapCount = if (now - lastTapAt <= android.view.ViewConfiguration.getDoubleTapTimeout()) tapCount + 1 else 1
+                            lastTapAt = now
+                            sendInput("CLICK ${if (tapCount >= 2) 1 else 1}")
+                            if (tapCount >= 2) tapCount = 0
+                        }
                         1 -> if (!touchMoved) {
                             sendPointer("MOVE", x, y, allowOutsideCapture = true)
                             sendInput("CLICK 1")
@@ -444,6 +478,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         runCatching {
             inputEventListener?.invoke(value.toByteArray(Charsets.US_ASCII))
         }
+    }
+
+    private fun frameWidthForInput(): Float = synchronized(frameLock) {
+        (latestFrame?.width ?: 640).toFloat()
+    }
+
+    private fun frameHeightForInput(): Float = synchronized(frameLock) {
+        (latestFrame?.height ?: 360).toFloat()
     }
 
     private fun contentBounds(): android.graphics.RectF {
