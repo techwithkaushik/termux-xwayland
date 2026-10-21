@@ -41,6 +41,9 @@ check_grep '"org.techwithkaushik.termuxxwayland.debug"' "$script" "debug host pa
 check_grep '"$SYSTEM_PM" path' "$script" "Android package detection command"
 check_grep 'TERMUX_OPEN="${TERMUX_XWAYLAND_OPEN:-${PREFIX:-/data/data/com.termux/files/usr}/bin/termux-open}"' "$script" "Termux open command default"
 check_grep '"$TERMUX_OPEN" "termuxxwayland://start"' "$script" "Android host deep-link launch"
+check_grep 'start_compositor' "$script" "compositor lifecycle"
+check_grep '--backend=headless --renderer=pixman' "$script" "known-compatible compositor bootstrap"
+check_grep 'stop_compositor' "$script" "compositor stop lifecycle"
 
 if grep -q 'allow-external-apps' "$script" || grep -q 'RUN_COMMAND' "$script"; then
   echo "FAIL: companion must not depend on RUN_COMMAND or allow-external-apps." >&2
@@ -98,14 +101,29 @@ cat > "$mock_open" <<'MOCK_OPEN'
 printf '%s\n' "$*" >> "$MOCK_OPEN_LOG"
 MOCK_OPEN
 chmod +x "$mock_pm" "$mock_open"
-cli_env=(env TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" MOCK_OPEN_LOG="$open_log")
+# Stub Weston creates a real Unix socket so the lifecycle test remains safe on CI.
+fake_weston="$cli_tmp/weston"
+cat > "$fake_weston" <<'MOCK_WESTON'
+#!/usr/bin/env bash
+python3 - "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" <<'PY'
+import socket, sys, time
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(sys.argv[1])
+server.listen(1)
+time.sleep(120)
+PY
+MOCK_WESTON
+fake_xwayland="$cli_tmp/Xwayland"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$fake_xwayland"
+chmod +x "$fake_weston" "$fake_xwayland"
+cli_env=(env PATH="$cli_tmp:$PATH" TERMUX_XWAYLAND_WESTON="$fake_weston" TERMUX_XWAYLAND_XWAYLAND="$fake_xwayland" TERMUX_XWAYLAND_RUNTIME_BASE="$cli_tmp" TERMUX_XWAYLAND_PM="$mock_pm" TERMUX_XWAYLAND_OPEN="$mock_open" MOCK_OPEN_LOG="$open_log")
 
 status_output="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host: installed (' <<<"$status_output" || {
   echo "FAIL: status should detect a mock installed host" >&2; exit 1;
 }
-grep -Fq 'Live compositor/stream: not implemented yet' <<<"$status_output" || {
-  echo "FAIL: status must not claim compositor streaming exists" >&2; exit 1;
+grep -Fq 'Android frame/input transport: not integrated' <<<"$status_output" || {
+  echo "FAIL: status must clearly report the missing Android stream" >&2; exit 1;
 }
 
 "${cli_env[@]}" bash "$script" start >/dev/null
@@ -119,10 +137,24 @@ fi
 if MOCK_OPEN_FAIL=yes "${cli_env[@]}" bash "$script" start >/dev/null 2>&1; then
   echo "FAIL: start should report a failed deep-link launch" >&2; exit 1
 fi
-stop_status=0
-"${cli_env[@]}" bash "$script" stop >/dev/null 2>&1 || stop_status=$?
-[[ "$stop_status" -eq 3 ]] || {
-  echo "FAIL: stop should clearly return exit code 3 while session control is unimplemented" >&2; exit 1;
+start_output="$("${cli_env[@]}" bash "$script" start)"
+grep -Fq 'Wayland compositor ready' <<<"$start_output" || {
+  echo "FAIL: start should wait for compositor readiness" >&2; exit 1;
+}
+grep -Fq 'No desktop was started' <<<"$start_output" || {
+  echo "FAIL: start must not auto-launch a desktop environment" >&2; exit 1;
+}
+grep -Fxq 'termuxxwayland://start' "$open_log" || {
+  echo "FAIL: start must open the registered host deep link" >&2; exit 1;
+}
+status_output="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland compositor: running' <<<"$status_output" || {
+  echo "FAIL: status should detect the running compositor" >&2; exit 1;
+}
+"${cli_env[@]}" bash "$script" stop >/dev/null
+status_output="$("${cli_env[@]}" bash "$script" status)"
+grep -Fq 'Wayland compositor: stopped' <<<"$status_output" || {
+  echo "FAIL: stop should shut down the compositor" >&2; exit 1;
 }
 
 echo "PASS: Termux companion package structure, shell syntax, and DEB build checks passed."
