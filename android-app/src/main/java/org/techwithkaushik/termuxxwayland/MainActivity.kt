@@ -73,6 +73,9 @@ class MainActivity : Activity() {
             val local = service as? BridgeSessionService.BridgeBinder ?: return
             localBridgeBinder = local
             Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
+            statusTitle.text = "Session connected"
+            statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
+            binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
             local.frameListener = { frame ->
                 if (binderFrameCount == 0L) {
