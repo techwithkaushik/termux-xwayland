@@ -196,9 +196,172 @@ pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nati
     errno
 }
 
+
+
+/// Validate the bounded RGBA8888 wire payload without allocating a second pixel buffer.
+fn validate_rgba_payload(payload: &[u8]) -> Result<(usize, usize, &[u8]), libc::c_int> {
+    if payload.len() < 8 {
+        return Err(libc::EINVAL);
+    }
+    let width = u16::from_be_bytes([payload[0], payload[1]]) as usize;
+    let height = u16::from_be_bytes([payload[2], payload[3]]) as usize;
+    if width == 0 || width > 640 || height == 0 || height > 360
+        || payload[4] != 1 || payload[5..8] != [0, 0, 0]
+    {
+        return Err(libc::EINVAL);
+    }
+    let pixel_bytes = width.checked_mul(height)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or(libc::EOVERFLOW)?;
+    if payload.len() != 8 + pixel_bytes {
+        return Err(libc::EMSGSIZE);
+    }
+    Ok((width, height, &payload[8..]))
+}
+
+#[cfg(target_os = "android")]
+#[repr(C)]
+struct NativeWindowBuffer {
+    width: libc::c_int,
+    height: libc::c_int,
+    stride: libc::c_int,
+    format: libc::c_int,
+    bits: *mut std::ffi::c_void,
+    reserved: [u32; 6],
+}
+
+#[cfg(target_os = "android")]
+#[repr(C)]
+struct NativeRect {
+    left: libc::c_int,
+    top: libc::c_int,
+    right: libc::c_int,
+    bottom: libc::c_int,
+}
+
+#[cfg(target_os = "android")]
+#[link(name = "android")]
+extern "C" {
+    fn ANativeWindow_fromSurface(env: *mut jni::sys::JNIEnv, surface: jni::sys::jobject) -> *mut std::ffi::c_void;
+    fn ANativeWindow_release(window: *mut std::ffi::c_void);
+    fn ANativeWindow_setBuffersGeometry(window: *mut std::ffi::c_void, width: libc::c_int, height: libc::c_int, format: libc::c_int) -> libc::c_int;
+    fn ANativeWindow_lock(window: *mut std::ffi::c_void, buffer: *mut NativeWindowBuffer, dirty: *mut NativeRect) -> libc::c_int;
+    fn ANativeWindow_unlockAndPost(window: *mut std::ffi::c_void) -> libc::c_int;
+}
+
+/// Native Surface presentation for bounded RGBA8888 bridge frames.
+/// The Android compositor owns final composition; this copies rows into an
+/// ANativeWindow buffer and never constructs a Java Bitmap.
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_techwithkaushik_termuxxwayland_NativeBridge_nativeRenderRgba(
+    raw_env: *mut jni::sys::JNIEnv,
+    _receiver: jni::sys::jobject,
+    raw_surface: jni::sys::jobject,
+    raw_payload: jni::sys::jbyteArray,
+) -> jni::sys::jint {
+    init_logger();
+    let result = (|| -> Result<(), libc::c_int> {
+        let mut env = unsafe { jni::JNIEnv::from_raw(raw_env) }
+            .map_err(|_| libc::EINVAL)?;
+        let array = unsafe { jni::objects::JByteArray::from_raw(raw_payload) };
+        let length = env.get_array_length(&array).map_err(|_| libc::EINVAL)? as usize;
+        // 640 x 360 RGBA plus the fixed 8-byte header.
+        if !(8..=921_608).contains(&length) {
+            return Err(libc::EMSGSIZE);
+        }
+        let mut signed_bytes = vec![0_i8; length];
+        env.get_byte_array_region(&array, 0, &mut signed_bytes)
+            .map_err(|_| libc::EINVAL)?;
+        let payload: Vec<u8> = signed_bytes.into_iter().map(|byte| byte as u8).collect();
+        let (width, height, pixels) = validate_rgba_payload(&payload)?;
+
+        let window = unsafe { ANativeWindow_fromSurface(raw_env, raw_surface) };
+        if window.is_null() {
+            return Err(libc::ENODEV);
+        }
+        let release = |window| unsafe { ANativeWindow_release(window) };
+        // WINDOW_FORMAT_RGBA_8888 is 1 in Android's native_window.h.
+        let geometry = unsafe {
+            ANativeWindow_setBuffersGeometry(window, width as i32, height as i32, 1)
+        };
+        if geometry != 0 {
+            release(window);
+            return Err(if geometry < 0 { -geometry } else { libc::EIO });
+        }
+        let mut buffer = NativeWindowBuffer {
+            width: 0, height: 0, stride: 0, format: 0,
+            bits: std::ptr::null_mut(), reserved: [0; 6],
+        };
+        let locked = unsafe { ANativeWindow_lock(window, &mut buffer, std::ptr::null_mut()) };
+        if locked != 0 {
+            release(window);
+            return Err(if locked < 0 { -locked } else { libc::EIO });
+        }
+
+        let copy_result = (|| -> Result<(), libc::c_int> {
+            if buffer.bits.is_null() || buffer.width < width as i32
+                || buffer.height < height as i32 || buffer.stride < width as i32
+                || buffer.format != 1
+            {
+                return Err(libc::EINVAL);
+            }
+            let destination = buffer.bits.cast::<u8>();
+            for row in 0..height {
+                let source_offset = row * width * 4;
+                let destination_offset = row * buffer.stride as usize * 4;
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        pixels.as_ptr().add(source_offset),
+                        destination.add(destination_offset),
+                        width * 4,
+                    );
+                }
+            }
+            Ok(())
+        })();
+        let posted = unsafe { ANativeWindow_unlockAndPost(window) };
+        release(window);
+        copy_result?;
+        if posted != 0 {
+            return Err(if posted < 0 { -posted } else { libc::EIO });
+        }
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => 0,
+        Err(errno) => {
+            warn!("Native Surface frame presentation failed; errno={errno}");
+            -errno
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_rgba_frame_dimensions_and_payload_length() {
+        let mut frame = vec![0_u8; 8 + 2 * 3 * 4];
+        frame[0..2].copy_from_slice(&2_u16.to_be_bytes());
+        frame[2..4].copy_from_slice(&3_u16.to_be_bytes());
+        frame[4] = 1;
+        let (width, height, pixels) = validate_rgba_payload(&frame).unwrap();
+        assert_eq!((width, height, pixels.len()), (2, 3, 24));
+        assert_eq!(validate_rgba_payload(&frame[..frame.len() - 1]).unwrap_err(), libc::EMSGSIZE);
+    }
+
+    #[test]
+    fn rejects_oversized_or_invalid_rgba_frames() {
+        let mut frame = vec![0_u8; 8 + 641 * 1 * 4];
+        frame[0..2].copy_from_slice(&641_u16.to_be_bytes());
+        frame[2..4].copy_from_slice(&1_u16.to_be_bytes());
+        frame[4] = 1;
+        assert_eq!(validate_rgba_payload(&frame).unwrap_err(), libc::EINVAL);
+        assert_eq!(validate_rgba_payload(&[0; 7]).unwrap_err(), libc::EINVAL);
+    }
 
     #[test]
     fn rejects_negative_descriptor() {
