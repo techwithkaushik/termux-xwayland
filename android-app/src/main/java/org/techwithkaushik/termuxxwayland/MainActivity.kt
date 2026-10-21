@@ -91,8 +91,18 @@ class MainActivity : Activity() {
 
         override fun onServiceDisconnected(name: ComponentName) {
             localBridgeBinder?.frameListener = null
-            if (::previewImage.isInitialized) previewImage.inputEventListener = null
+            if (::previewImage.isInitialized) {
+                previewImage.inputEventListener = null
+                previewImage.clearFrame()
+                previewImage.visibility = View.GONE
+            }
+            if (::desktopProofDescription.isInitialized) {
+                desktopProofDescription.text =
+                    "NO LIVE DESKTOP FRAME • Binder service disconnected. Previous pixels are cleared and are not treated as live."
+                desktopProofDescription.setTextColor(Color.rgb(185, 28, 28))
+            }
             localBridgeBinder = null
+            binderFrameCount = 0L
         }
     }
     private lateinit var connectButton: Button
