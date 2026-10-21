@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-The native binary currently provides a **single-client authenticated abstract Unix-domain socket smoke test** and sends one synthetic RGBA frame. On the target Android 10 device, the Android app reports `EACCES` when connecting to this socket across app UIDs. The handshake and synthetic frame therefore have **not** been verified on that device. This prototype does not provide a working cross-app transport or compositor.
+The native Rust bridge still provides a **single-client authenticated abstract Unix-domain socket smoke test** and sends one synthetic RGBA frame; on the target Android 10 device, cross-UID connection returns `EACCES`. Separately, the Termux CLI now manages a Weston headless/Pixman process with XWayland requested. This starts a real compositor process but does not yet export its surfaces to Android or provide the production cross-app transport.
 
 The accepted IPC decision and constraints are documented in [ADR 0001](adr/0001-cross-app-ipc.md). Do not continue treating the abstract socket as the default cross-UID path.
 
@@ -21,7 +21,7 @@ Implementation contract and acceptance tests: [Termux companion integration cont
 3. Verify a supported authorization mechanism and Binder/file-descriptor handoff with the actual Termux installation and signing keys on Android 10. Do not assume a signature permission authorizes unrelated certificates.
 4. Add bounded, bidirectional streaming and lifecycle tests. Real compositor work begins only after device acceptance; no shell polling or temporary-file frame transport.
 
-The initial Termux DEB package lives under `termux-package/`. Build it with `bash termux-package/build-deb.sh`, install the generated `.deb` inside Termux using `dpkg -i`, then run `termux-xwayland status` and `termux-xwayland start`. See [termux-deb-install.md](termux-deb-install.md). It currently detects/launches the Android host only; no real session streaming is implemented.
+The initial Termux DEB package lives under `termux-package/`. Build it with `bash termux-package/build-deb.sh`, install the generated `.deb` inside Termux using `dpkg -i`, then run `termux-xwayland status` and `termux-xwayland start`. See [termux-deb-install.md](termux-deb-install.md). It starts/stops the headless compositor, reports its socket/log state, and launches the Android host. No Android frame/input streaming is implemented.
 
 The earlier same-certificate Binder APK was only a feasibility experiment and is not part of the supported setup. Do not install or distribute a separate companion APK. The remaining design blocker is an explicitly authorized channel between the existing Termux environment and the Android host that supports descriptor handoff and a persistent bounded stream without RUN_COMMAND, TCP fallback, root, or SELinux changes.
 
