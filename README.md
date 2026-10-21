@@ -2,7 +2,7 @@
 
 A standalone Android display host for graphical sessions launched from Termux. The goal is to let users start graphical sessions in Termux and view them in this app, including X11 applications through XWayland and native Wayland applications.
 
-> **Status: compositor bootstrap implemented; no real desktop rendering yet on Android.** The Termux CLI can start/stop Weston with its headless Pixman backend and request XWayland startup without automatically opening a desktop environment. This is a session-lifecycle milestone, not the final Android renderer: Weston currently renders headlessly, the Android app still has a synthetic RGBA test-frame path, and the target Android 10 device rejected the prototype cross-UID abstract socket with EACCES. Real compositor-surface export, authorized persistent frame/input transport, GPU-backed Android presentation and visible X11/Wayland clients are not yet implemented. Do not run xfce4-session expecting it to appear in the Android app.
+> **Status: compositor bootstrap implemented; no real desktop rendering yet on Android.** The Termux CLI can start/stop Weston with its headless Pixman backend and request XWayland startup without automatically opening a desktop environment. This is a session-lifecycle milestone, not the final Android renderer: Weston currently renders headlessly, the Android app still has a synthetic RGBA test frame path, and the target Android 10 device rejected the prototype cross-UID abstract socket with EACCES. Real compositor-surface export, authorized persistent frame/input transport, GPU-backed Android presentation and visible X11/Wayland clients are not yet implemented. Do not run xfce4-session expecting it to appear in the Android app.
 
 ## Current implementation
 
@@ -12,7 +12,7 @@ A standalone Android display host for graphical sessions launched from Termux. T
 - Termux integration: flow is **Termux app → Termux-side companion package/CLI → Termux-XWayland Android host**. No dependency on Termux RUN_COMMAND or `allow-external-apps=true`. The CLI manages the local compositor process; authorized Android FD/stream transport is still not implemented.
 - Session handshake: fresh 256-bit token supplied through TERMUX_XWAYLAND_TOKEN_HEX; token values are never printed by the server.
 - Protocol: versioned 12-byte envelope, 16 MiB maximum payload, validation for magic/version/type/reserved bits and payload length.
-- Keep scope honest: the CLI now launches a real Weston process in headless/Pixman mode, but the Android app still receives only a synthetic frame in the current bridge prototype. This is not yet a working Android desktop renderer.
+- Keep scope honest: the CLI now launches a real Weston process in headless/Pixman mode, but the Android app currently receives only a synthetic frame in the current bridge prototype. This is not yet a working Android desktop renderer.
 - Architecture targets remain armeabi-v7a and arm64-v8a; Android 10 compatibility must be verified on-device.
 
 ## Optional X11 capture diagnostic
