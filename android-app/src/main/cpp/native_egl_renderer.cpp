@@ -175,6 +175,12 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeInitialize(
         destroy(r);
         return 0;
     }
+    // Like Termux:X11's native renderer, do not force a blocking one-vsync
+    // wait for every incoming frame. The Android compositor still presents
+    // Surface buffers; the producer should not add an extra 16 ms queue delay.
+    if (eglSwapInterval(r->display, 0) != EGL_TRUE) {
+        LOGW("eglSwapInterval(0) unsupported; driver default pacing remains active: 0x%x", eglGetError());
+    }
     if (!initializeGl(r)) {
         destroy(r);
         return 0;
