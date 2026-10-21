@@ -103,8 +103,11 @@ static void capture_format(void *data, struct weston_capture_source_v1 *source, 
         shm_format = WL_SHM_FORMAT_ARGB8888;
         break;
     default:
-        txw_log("WARN", "unsupported_capture_format",
+        txw_log("ERROR", "unsupported_capture_format",
                 "drm_format=0x%08x", drm_format);
+        s->failed = 1;
+        snprintf(s->failure, sizeof(s->failure),
+                 "unsupported DRM capture format 0x%08x", drm_format);
         return;
     }
 
