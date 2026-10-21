@@ -54,6 +54,7 @@ class MainActivity : Activity() {
     private lateinit var statusTitle: TextView
     private lateinit var statusDescription: TextView
     private lateinit var binderStatusDescription: TextView
+    private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
     private var binderServiceBound = false
     private var binderFrameCount = 0L
@@ -77,7 +78,12 @@ class MainActivity : Activity() {
                     binderFrameCount++
                     if (::binderStatusDescription.isInitialized) {
                         binderStatusDescription.text =
-                            "Live Wayland frames received over Binder FD: $binderFrameCount. Input forwarding uses xdotool."
+                            "Binder FD: authenticated • real frame count: $binderFrameCount"
+                    }
+                    if (::desktopProofDescription.isInitialized) {
+                        desktopProofDescription.text =
+                            "LIVE DESKTOP VERIFIED • received real pixel frame ${frame.width}×${frame.height} over the production Binder FD stream. Frames received: $binderFrameCount."
+                        desktopProofDescription.setTextColor(Color.rgb(21, 128, 61))
                     }
                 }
             }
@@ -290,7 +296,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(4))
         }
         statusDescription = label(
-            "No bridge session is active. The app can render a synthetic test pattern; desktop compositor integration is not implemented yet.",
+            "Server status, Binder connectivity and desktop pixels are verified separately. A running Weston process alone does not mean the screen is streaming.",
             13, muted, false
         )
         status.addView(statusTitle)
@@ -307,6 +313,11 @@ class MainActivity : Activity() {
         status.addView(previewImage, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
         ).apply { topMargin = dp(12) })
+        desktopProofDescription = label(
+            "NO LIVE DESKTOP FRAME • The app has not received real compositor pixels yet. Binder PING/PONG and a running server are not screen proof. This preview stays hidden until the production Binder FD delivers an actual frame.",
+            13, Color.rgb(185, 28, 28), true
+        ).apply { setPadding(0, dp(10), 0, dp(2)) }
+        status.addView(desktopProofDescription)
         content.addView(status, margins(top = 22, bottom = 16))
 
         content.addView(label("Legacy AF_UNIX diagnostic", 20, ink, true).apply {
@@ -451,7 +462,9 @@ class MainActivity : Activity() {
                 if (frameMessage.kind != BridgeMessageKind.FRAME) {
                     throw IllegalStateException("Expected a test frame after authentication")
                 }
-                val testFrame = decodeTestFrame(frameMessage.payload)
+                // This legacy socket diagnostic receives a synthetic test frame.
+                // Never render it in the desktop preview or count it as desktop proof.
+                decodeTestFrame(frameMessage.payload)
 
                 // A successful authenticated handshake proves Android -> Termux;
                 // PING/PONG verifies traffic in both directions over this socket.
@@ -477,11 +490,14 @@ class MainActivity : Activity() {
                     } else {
                         "Connected (same UID)"
                     }
-                    previewImage.setFrame(testFrame)
-                    previewImage.visibility = View.VISIBLE
+                    previewImage.clearFrame()
+                    previewImage.visibility = View.GONE
+                    desktopProofDescription.text =
+                        "NO LIVE DESKTOP FRAME • Legacy socket test passed, but its synthetic test image is deliberately not rendered as a desktop."
+                    desktopProofDescription.setTextColor(Color.rgb(185, 28, 28))
                     statusDescription.text = String.format(
                         java.util.Locale.US,
-                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\nPING/PONG round trip: %.2f ms\nInitial frame received. Waiting for subsequent FRAME messages; the current bridge still sends only a synthetic frame.",
+                        "Termux peer UID: %d (kernel-verified) • Android app UID: %d\nPING/PONG round trip: %.2f ms\nDiagnostic transport passed. This does not prove that Weston desktop pixels are streaming.",
                         kernelPeerUid, androidUid, roundTripMs
                     )
                 }
@@ -491,17 +507,10 @@ class MainActivity : Activity() {
                             val message = BridgeProtocol.read(sessionSocket.getInputStream())
                             when (message.kind) {
                                 BridgeMessageKind.FRAME -> {
-                                    val bitmap = decodeTestFrame(message.payload)
-                                    runOnUiThread {
-                                        if (activeSocket === sessionSocket) {
-                                            previewImage.setFrame(bitmap)
-                                            statusTitle.text = "Frame received"
-                                            statusDescription.text =
-                                                "Receiving bridge frames. Desktop capture is not yet wired into the Termux server."
-                                        } else {
-                                            bitmap.recycle()
-                                        }
-                                    }
+                                    // This socket is the legacy synthetic-frame diagnostic, not
+                                    // the production Binder FD desktop stream. Consume and validate
+                                    // its payload but never display it as if it were the real desktop.
+                                    decodeTestFrame(message.payload)
                                 }
                                 BridgeMessageKind.PONG -> {
                                     if (message.payload.isNotEmpty()) {
