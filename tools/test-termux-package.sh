@@ -209,7 +209,7 @@ active_status="$("${cli_env[@]}" bash "$script" status)"
 grep -Fq 'Android host detection: active (host polling server status)' <<<"$active_status" || {
   echo "FAIL: status should record host polling" >&2; exit 1;
 }
-grep -Fq 'Native Wayland frame capture: unavailable (native helper not installed)' <<<"$active_status" || {
+grep -Fq 'Native Wayland frame capture: helper not built yet' <<<"$active_status" || {
   echo "FAIL: status must not claim desktop streaming exists" >&2; exit 1;
 }
 
