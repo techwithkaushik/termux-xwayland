@@ -53,9 +53,30 @@ public final class BridgeClient {
     private static final int INPUT = 4;
     private static final int RESIZE = 5;
     private static final int CLIPBOARD = 6;
-    private static final int FRAME_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
-    private static final int FRAME_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
+    // Weston/XWayland can run at the phone's native resolution, but transporting
+    // a full 1080x2400 RGBA image for every frame creates ~10 MB packets and
+    // guarantees stale frames on low-memory/ARM devices. Keep the desktop's
+    // actual coordinates separate from a bounded, aspect-preserving stream.
+    private static final int DISPLAY_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
+    private static final int DISPLAY_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
+    private static final int[] STREAM_DIMENSIONS = streamDimensions(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    private static final int FRAME_WIDTH = STREAM_DIMENSIONS[0];
+    private static final int FRAME_HEIGHT = STREAM_DIMENSIONS[1];
     private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
+    private static int[] streamDimensions(int width, int height) {
+        final long maxPixels = 640L * 360L;
+        long pixels = (long) width * height;
+        if (pixels <= maxPixels) return new int[] { width, height };
+        double scale = Math.sqrt((double) maxPixels / (double) pixels);
+        int streamWidth = Math.max(1, (int) Math.floor(width * scale));
+        int streamHeight = Math.max(1, (int) Math.floor(height * scale));
+        while ((long) streamWidth * streamHeight > maxPixels) {
+            if ((double) streamWidth / streamHeight > (double) width / height) streamWidth--;
+            else streamHeight--;
+        }
+        return new int[] { streamWidth, streamHeight };
+    }
+
     private static volatile Process activeFrameCapture;
     private static volatile Process activeNativeInput;
     private static BufferedWriter nativeInputWriter;
@@ -517,8 +538,8 @@ public final class BridgeClient {
             } else if ("MOVE".equals(op) && fields.length == 3) {
                 float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
                 if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;
-                int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (FRAME_WIDTH - 1)));
-                int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (FRAME_HEIGHT - 1)));
+                int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+                int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
                 command = "MOVE " + x + " " + y;
             } else if ("BUTTON".equals(op) && fields.length == 3 &&
                     ("DOWN".equals(fields[2]) || "UP".equals(fields[2]))) {
@@ -550,8 +571,8 @@ public final class BridgeClient {
                         return false;
                     }
                     process = new ProcessBuilder(helper, "--display", display,
-                            "--width", Integer.toString(FRAME_WIDTH),
-                            "--height", Integer.toString(FRAME_HEIGHT))
+                            "--width", Integer.toString(DISPLAY_WIDTH),
+                            "--height", Integer.toString(DISPLAY_HEIGHT))
                             .redirectError(ProcessBuilder.Redirect.INHERIT).start();
                     activeNativeInput = process;
                     nativeInputWriter = new BufferedWriter(new OutputStreamWriter(
@@ -737,8 +758,8 @@ public final class BridgeClient {
             System.err.println("INPUT_REJECTED reason=coordinates_out_of_range");
             return;
         }
-        int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (FRAME_WIDTH - 1)));
-        int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (FRAME_HEIGHT - 1)));
+        int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+        int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
         ProcessBuilder command = new ProcessBuilder(xdotool, "mousemove", Integer.toString(x), Integer.toString(y));
         if ("DOWN".equals(action)) {
             command.command().add("mousedown");
@@ -796,7 +817,8 @@ public final class BridgeClient {
             System.out.println("FRAME_CAPTURE_STARTED epoch_seconds="
                 + (System.currentTimeMillis() / 1000L)
                 + " backend=native-wayland display=" + display
-                + " size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT);
+                + " size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT
+                + " display_size=" + DISPLAY_WIDTH + "x" + DISPLAY_HEIGHT + " max_stream_pixels=230400");
             System.out.flush();
             return process;
         } catch (IOException error) {
