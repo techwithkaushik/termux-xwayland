@@ -53,8 +53,18 @@ GLuint compileShader(GLenum type, const char* source) {
 }
 
 bool makeCurrent(Renderer* r) {
-    return r && r->display != EGL_NO_DISPLAY && r->surface != EGL_NO_SURFACE &&
-           eglMakeCurrent(r->display, r->surface, r->surface, r->context) == EGL_TRUE;
+    if (!r || r->display == EGL_NO_DISPLAY || r->surface == EGL_NO_SURFACE ||
+        r->context == EGL_NO_CONTEXT) {
+        LOGE("makeCurrent rejected invalid EGL handles");
+        return false;
+    }
+    if (eglMakeCurrent(r->display, r->surface, r->surface, r->context) != EGL_TRUE) {
+        const EGLint error = eglGetError();
+        LOGE("eglMakeCurrent failed: 0x%x (BAD_SURFACE=0x%x CONTEXT_LOST=0x%x)",
+             error, EGL_BAD_SURFACE, EGL_CONTEXT_LOST);
+        return false;
+    }
+    return true;
 }
 
 bool initializeGl(Renderer* r) {
@@ -159,7 +169,12 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     JNIEnv* env, jobject /* thiz */, jlong handle, jintArray javaPixels, jint width, jint height) {
     auto* r = reinterpret_cast<Renderer*>(handle);
     if (!r || !javaPixels || width <= 0 || height <= 0 ||
-        static_cast<jlong>(width) * height > 16777216LL || !makeCurrent(r)) return JNI_FALSE;
+        static_cast<jlong>(width) * height > 16777216LL) {
+        LOGE("nativeRender rejected invalid input handle=%p width=%d height=%d",
+             static_cast<void*>(r), width, height);
+        return JNI_FALSE;
+    }
+    if (!makeCurrent(r)) return JNI_FALSE;
 
     const jsize length = env->GetArrayLength(javaPixels);
     const jlong required = static_cast<jlong>(width) * height;
@@ -181,7 +196,10 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     EGLint surfaceWidth = 0, surfaceHeight = 0;
     eglQuerySurface(r->display, r->surface, EGL_WIDTH, &surfaceWidth);
     eglQuerySurface(r->display, r->surface, EGL_HEIGHT, &surfaceHeight);
-    if (surfaceWidth <= 0 || surfaceHeight <= 0) return JNI_FALSE;
+    if (surfaceWidth <= 0 || surfaceHeight <= 0) {
+        LOGE("eglQuerySurface returned invalid size %dx%d", surfaceWidth, surfaceHeight);
+        return JNI_FALSE;
+    }
     glViewport(0, 0, surfaceWidth, surfaceHeight);
     glClearColor(0.f, 0.f, 0.f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -215,6 +233,12 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
+    const GLenum glError = glGetError();
+    if (glError != GL_NO_ERROR) {
+        LOGE("OpenGL draw/upload failed: 0x%x frame=%dx%d surface=%dx%d",
+             glError, width, height, surfaceWidth, surfaceHeight);
+        return JNI_FALSE;
+    }
     if (eglSwapBuffers(r->display, r->surface) != EGL_TRUE) {
         LOGE("eglSwapBuffers failed: 0x%x", eglGetError());
         return JNI_FALSE;
