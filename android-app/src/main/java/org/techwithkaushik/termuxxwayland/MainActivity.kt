@@ -447,12 +447,7 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
             }
             actions.addView(actionButton("⚙  Settings") {
-                runCatching {
-                    startActivity(Intent(
-                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:$packageName")
-                    ))
-                }.onFailure { Log.w("TermuxXWayland", "Could not open app settings", it) }
+                startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 rightMargin = dp(8)
             })
