@@ -23,7 +23,7 @@ termux-xwayland start
 termux-xwayland status
 ```
 
-termux-xwayland start starts Weston, opens the host, starts the direct socket client and waits for authenticated PING/PONG. If XWayland and ffmpeg are available, it also starts frame capture. termux-xwayland x11 COMMAND launches an X11 client using the display reported by Weston. termux-xwayland status reports the socket heartbeat and recent frame capture separately. termux-xwayland stop closes the client and stops the monitor and Weston.
+termux-xwayland start starts Weston/XWayland, opens the Android host, starts the direct socket client and waits for authenticated PING/PONG. The host remains READY/idle: it does not auto-launch a desktop environment or GUI application. Later run `termux-xwayland app xterm` for one app, or `termux-xwayland desktop startxfce4` for an explicit desktop session. If XWayland and ffmpeg are available, it also starts frame capture. `termux-xwayland app COMMAND` or `termux-xwayland x11 COMMAND` launches an X11 client; `termux-xwayland desktop COMMAND` explicitly launches a desktop session. No desktop starts automatically. The x11 command using the display reported by Weston. termux-xwayland status reports the socket heartbeat and recent frame capture separately. termux-xwayland stop closes the client and stops the monitor and Weston.
 
 ## Security and limitations
 
