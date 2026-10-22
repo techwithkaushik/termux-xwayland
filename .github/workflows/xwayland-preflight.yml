@@ -9,6 +9,7 @@ on:
       - "tools/probe-xwayland-source.sh"
       - "tools/fetch-xwayland-source.sh"
       - "tools/audit-xwayland-meson-options.sh"
+      - "tools/build-xwayland-android.sh"
       - "tools/generate-android-meson-cross-file.py"
       - "tools/tests/**"
       - "docs/XWAYLAND_REPLACEMENT.md"
@@ -44,6 +45,7 @@ jobs:
           bash -n tools/probe-xwayland-source.sh
           bash -n tools/fetch-xwayland-source.sh
           bash -n tools/audit-xwayland-meson-options.sh
+          bash -n tools/build-xwayland-android.sh
           python3 -m py_compile tools/generate-android-meson-cross-file.py tools/tests/test_generate_android_meson_cross_file.py
           python3 -m unittest discover -s tools/tests -v
 
