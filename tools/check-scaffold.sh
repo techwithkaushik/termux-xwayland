@@ -22,7 +22,7 @@ grep -q 'eglSwapBuffers' android-app/src/main/cpp/native_egl_renderer.cpp
 grep -q 'externalNativeBuild' android-app/build.gradle.kts
 grep -q 'nativeRender' android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
 grep -q 'pendingDesktopFrame.set(null)' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'termux_xwayland_preferences' android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
+grep -q 'termux_xwayland_preferences' android-app/src/main/java/org/techwithkaushik/termuxxwayland/TermuxXWaylandPreferenceDataStore.kt
 test -f native/input/termux-xwayland-input.c
 test -f tools/build-native-input.sh
 bash -n tools/build-native-input.sh
