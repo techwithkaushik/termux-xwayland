@@ -252,6 +252,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::previewImage.isInitialized) previewImage.refreshDisplayPreferences()
+        applyUiPreferences()
     }
 
     override fun onStart() {
@@ -557,18 +558,18 @@ class MainActivity : Activity() {
         ))
 
         // Persistent top controls remain reachable while a desktop frame is visible.
-        val topControls = LinearLayout(this).apply {
+        desktopTopControls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setBackgroundColor(Color.argb(175, 12, 16, 24))
         }
-        topControls.addView(actionButton("⚙") {
+        desktopTopControls.addView(actionButton("⚙") {
             startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
         }, LinearLayout.LayoutParams(dp(44), dp(42)))
-        topControls.addView(actionButton("▦") { showDisplaysDialog() },
+        desktopTopControls.addView(actionButton("▦") { showDisplaysDialog() },
             LinearLayout.LayoutParams(dp(44), dp(42)))
-        topControls.addView(actionButton("⌨") {
+        desktopTopControls.addView(actionButton("⌨") {
             keyboardBar.visibility = if (keyboardBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             if (keyboardBar.visibility == View.VISIBLE) {
                 keyboardInput.requestFocus()
@@ -581,20 +582,20 @@ class MainActivity : Activity() {
             }
         }, LinearLayout.LayoutParams(dp(44), dp(42)))
         val topSpacer = View(this)
-        topControls.addView(topSpacer, LinearLayout.LayoutParams(0, 1, 1f))
-        topControls.addView(TextView(this).apply {
+        desktopTopControls.addView(topSpacer, LinearLayout.LayoutParams(0, 1, 1f))
+        desktopTopControls.addView(TextView(this).apply {
             text = "XWayland"
             textSize = 12f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
         })
-        desktopRoot.addView(topControls, FrameLayout.LayoutParams(
+        desktopRoot.addView(desktopTopControls, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP
         ))
 
         // Mouse helper follows the familiar L/M/R overlay. Button packets use the
         // same documented input protocol as the existing Termux bridge.
-        val mouseControls = LinearLayout(this).apply {
+        mouseControls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(5), dp(3), dp(5), dp(3))
@@ -630,14 +631,14 @@ class MainActivity : Activity() {
 
         // Extra-key strip: compact keys send the same KEY name/action packets as the
         // on-screen keyboard input connection. It does not alter rendering.
-        val extraKeys = LinearLayout(this).apply {
+        extraKeysBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(4), dp(2), dp(4), dp(2))
             setBackgroundColor(Color.argb(205, 12, 16, 24))
         }
         fun extraKey(label: String, key: String) {
-            extraKeys.addView(actionButton(label) {
+            extraKeysBar.addView(actionButton(label) {
                 previewImage.inputEventListener?.invoke(("KEY " + key + " DOWN").toByteArray(Charsets.US_ASCII))
                 previewImage.inputEventListener?.invoke(("KEY " + key + " UP").toByteArray(Charsets.US_ASCII))
                 previewImage.requestFocus()
@@ -654,7 +655,7 @@ class MainActivity : Activity() {
         extraKey("↓", "Down")
         extraKey("←", "Left")
         extraKey("→", "Right")
-        desktopRoot.addView(extraKeys, FrameLayout.LayoutParams(
+        desktopRoot.addView(extraKeysBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
         ).apply { bottomMargin = dp(0) })
 
@@ -704,6 +705,53 @@ class MainActivity : Activity() {
 
     private lateinit var keyboardBar: LinearLayout
     private lateinit var keyboardInput: EditText
+    private lateinit var extraKeysBar: LinearLayout
+    private lateinit var mouseControls: LinearLayout
+    private lateinit var mouseToggleButton: Button
+    private lateinit var desktopTopControls: LinearLayout
+
+    /**
+     * Re-apply visual-only preferences after returning from Preferences.
+     * These controls are intentionally separate from compositor/rendering state.
+     */
+    private fun applyUiPreferences() {
+        if (!::mouseControls.isInitialized || !::extraKeysBar.isInitialized ||
+            !::mouseToggleButton.isInitialized || !::keyboardBar.isInitialized) return
+        val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+        val showMouse = prefs.getBoolean("mouse_helper", false)
+        mouseControls.visibility = if (showMouse) View.VISIBLE else View.GONE
+        mouseToggleButton.text = if (showMouse) "×" else "🖱"
+        val showExtraKeys = prefs.getBoolean("additional_keyboard", true)
+        extraKeysBar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+        val opacity = prefs.getInt("extra_key_bar_opacity", 100).coerceIn(1, 100) / 100f
+        extraKeysBar.alpha = opacity
+        val position = prefs.getString("extra_key_bar_position", "bottom")
+        val extraParams = extraKeysBar.layoutParams as? FrameLayout.LayoutParams
+        if (extraParams != null) {
+            extraParams.gravity = when (position) {
+                "top" -> Gravity.TOP
+                "left" -> Gravity.START or Gravity.CENTER_VERTICAL
+                "right" -> Gravity.END or Gravity.CENTER_VERTICAL
+                else -> Gravity.BOTTOM
+            }
+            if (position == "left" || position == "right") {
+                extraParams.width = dp(44)
+                extraParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+            } else {
+                extraParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                extraParams.height = dp(44)
+            }
+            extraKeysBar.layoutParams = extraParams
+        }
+        val resizeForKeyboard = prefs.getBoolean("resize_for_keyboard", false)
+        // Resizing is a rendering/compositor behavior; keep the preference visible
+        // but do not simulate it here.
+        keyboardBar.contentDescription = if (resizeForKeyboard) {
+            "Text input toolbar; display resizing preference enabled"
+        } else {
+            "Text input toolbar"
+        }
+    }
 
     private fun sendKeyboardText() {
         val text = keyboardInput.text?.toString().orEmpty()
