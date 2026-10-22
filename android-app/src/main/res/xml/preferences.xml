@@ -113,7 +113,7 @@
             <SeekBarPreference app:key="extra_key_bar_opacity" app:title="Opacity of extra keys bar, %"
                 app:min="1" android:max="100" app:seekBarIncrement="1" app:showSeekBarValue="true" app:defaultValue="100" />
             <EditTextPreference app:key="extra_keys_config" app:title="Extra keys config"
-                app:summary="Configure the additional key row, like Termux extra-keys." />
+                app:summary="JSON rows, e.g. [[&quot;ESC&quot;,&quot;TAB&quot;,&quot;CTRL&quot;,&quot;ALT&quot;],[&quot;LEFT&quot;,&quot;DOWN&quot;,&quot;UP&quot;,&quot;RIGHT&quot;]]. Changes apply when you return to the host." />
         </PreferenceScreen>
 
         <Preference app:key="version" app:title="Version" app:summary="Termux:XWayland UI port" />
