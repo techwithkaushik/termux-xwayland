@@ -10,6 +10,10 @@ test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessi
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/BridgeSessionReceiver.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurfaceView.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
+test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopCursorOverlay.kt
+grep -q 'cursorOverlay.updatePointer' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'Show keyboard' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'KeyEvent.KEYCODE_F12' android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurfaceView.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/ExitSessionReceiver.kt
 test -f android-app/src/main/cpp/CMakeLists.txt
