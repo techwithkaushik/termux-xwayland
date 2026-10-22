@@ -9,6 +9,7 @@ API="24"
 NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
 PREFIX=""
 SOURCE_DIR="$ROOT_DIR/build/third_party/xwayland-24.1.14"
+SOURCE_EXPLICIT=0
 BUILD_DIR=""
 FONT_PATH="${TERMUX_PREFIX:-}/share/fonts"
 
@@ -28,9 +29,9 @@ Options:
   --font-path DIR    Runtime font directory (default: $TERMUX_PREFIX/share/fonts)
   -h, --help         Show this help
 
-This script does not build dependencies. It fails if the staged prefix or
-required pkg-config metadata is missing. It never modifies the legacy Xlorie
-target.
+The target prefix must contain the dependencies from Termux's XWayland recipe,
+built for the selected ABI. This script does not build dependencies and never
+modifies the legacy Xlorie target.
 USAGE
 }
 
@@ -40,7 +41,7 @@ while (($#)); do
         --api) API="${2:?missing value for --api}"; shift 2 ;;
         --ndk) NDK="${2:?missing value for --ndk}"; shift 2 ;;
         --prefix) PREFIX="${2:?missing value for --prefix}"; shift 2 ;;
-        --source) SOURCE_DIR="${2:?missing value for --source}"; shift 2 ;;
+        --source) SOURCE_DIR="${2:?missing value for --source}"; SOURCE_EXPLICIT=1; shift 2 ;;
         --build-dir) BUILD_DIR="${2:?missing value for --build-dir}"; shift 2 ;;
         --font-path) FONT_PATH="${2:?missing value for --font-path}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -66,6 +67,10 @@ for tool in python3 meson ninja pkg-config; do
 done
 
 if [[ ! -f "$SOURCE_DIR/meson.build" || ! -f "$SOURCE_DIR/hw/xwayland/meson.build" ]]; then
+    if (( SOURCE_EXPLICIT )); then
+        echo "ERROR: --source does not contain a valid standalone XWayland source tree: $SOURCE_DIR" >&2
+        exit 2
+    fi
     bash "$ROOT_DIR/tools/fetch-xwayland-source.sh" "$ROOT_DIR/build/third_party"
 fi
 [[ -f "$SOURCE_DIR/meson.build" && -f "$SOURCE_DIR/hw/xwayland/meson.build" ]] || {
@@ -86,6 +91,13 @@ if [[ -z "$FONT_PATH" || "$FONT_PATH" == "/share/fonts" ]]; then
     echo "ERROR: set TERMUX_PREFIX or pass --font-path to the runtime font directory" >&2
     exit 2
 fi
+
+# Match the compiler/linker adjustments in the upstream Termux XWayland recipe.
+# Keep caller-provided flags, while adding the Termux-specific compatibility flags.
+CFLAGS="${CFLAGS:+$CFLAGS }-fcommon -fPIC -DFNDELAY=O_NDELAY -Wno-int-to-pointer-cast -Wno-implicit-function-declaration"
+CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }-fcommon -fPIC -I$PREFIX/include/libdrm"
+LDFLAGS="${LDFLAGS:+$LDFLAGS }-landroid-shmem"
+export CFLAGS CPPFLAGS LDFLAGS
 
 meson setup "$BUILD_DIR" "$SOURCE_DIR" \
     --cross-file "$CROSS_FILE" \
