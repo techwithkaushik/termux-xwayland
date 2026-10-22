@@ -37,6 +37,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.appcompat.widget.AppCompatImageButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -485,72 +486,67 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         connectionPanel.addView(logo, LinearLayout.LayoutParams(dp(130), dp(130)))
-        connectionPanel.addView(TextView(this).apply {
-            text = "Termux:XWayland"
-            textSize = 21f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(4), 0, dp(8))
-        })
+        connectionPanel.addView(View(this), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(20)
+        ))
         statusTitle = TextView(this).apply {
-            text = "Waiting for Termux"
-            textSize = 16f
+            text = "Not connected"
+            textSize = 20f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setPadding(dp(8), dp(4), dp(8), dp(4))
         }
         connectionPanel.addView(statusTitle, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+        connectionPanel.addView(View(this), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(20)
+        ))
         statusDescription = TextView(this).apply {
-            text = "Run termux-xwayland start in Termux. The host will wait for the desktop session."
+            text = "Run termux-xwayland start in Termux"
             textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(Color.LTGRAY)
-            setPadding(dp(12), 0, dp(12), dp(18))
+            visibility = View.GONE
         }
-        connectionPanel.addView(statusDescription, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
         binderStatusDescription = TextView(this).apply {
             text = "Binder transport: waiting"
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(Color.GRAY)
-            setPadding(dp(8), 0, dp(8), dp(14))
+            visibility = View.GONE
         }
-        connectionPanel.addView(binderStatusDescription, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
         desktopProofDescription = TextView(this).apply {
             text = "No desktop frame received yet"
             textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(Color.GRAY)
-            setPadding(dp(8), 0, dp(8), dp(12))
+            visibility = View.GONE
         }
-        connectionPanel.addView(desktopProofDescription, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        fun addMainAction(label: String, click: () -> Unit) {
-            actions.addView(actionButton(label, click), LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-            ).apply {
-                leftMargin = dp(3)
-                rightMargin = dp(3)
+        fun addMainIcon(drawable: Int, description: String, click: () -> Unit) {
+            val button = AppCompatImageButton(this).apply {
+                setImageResource(drawable)
+                imageTintList = android.content.res.ColorStateList.valueOf(Color.LTGRAY)
+                setBackgroundResource(androidx.appcompat.R.drawable.abc_btn_default_mtrl_shape)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = description
+                setOnClickListener { click() }
+            }
+            actions.addView(button, LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+                leftMargin = dp(2)
+                rightMargin = dp(2)
             })
         }
-        addMainAction("⚙\nPreferences") {
+        addMainIcon(R.drawable.ic_extra_key_settings, "Preferences") {
             startActivity(Intent(this, PreferencesActivity::class.java))
         }
-        addMainAction("▦\nDisplays") { showDisplaysDialog() }
-        addMainAction("?\nHelp") { showHelpDialog() }
-        addMainAction("⏻\nExit") {
+        addMainIcon(R.drawable.lorie_ic_displays, "Displays") { showDisplaysDialog() }
+        addMainIcon(R.drawable.lorie_ic_help, "Help") { showHelpDialog() }
+        addMainIcon(R.drawable.lorie_ic_exit, "Exit") {
             android.app.AlertDialog.Builder(this)
                 .setTitle("Exit Termux:XWayland?")
                 .setMessage("Close this Android host window? The Termux server may continue running.")
@@ -559,7 +555,7 @@ class MainActivity : Activity() {
                 .show()
         }
         connectionPanel.addView(actions, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         desktopRoot.addView(connectionPanel, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
