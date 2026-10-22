@@ -35,6 +35,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -470,13 +471,11 @@ class MainActivity : Activity() {
             setPadding(dp(24), dp(24), dp(24), dp(24))
             setBackgroundColor(Color.BLACK)
         }
-        val logo = TextView(this).apply {
-            text = "X"
-            textSize = 92f
-            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            contentDescription = "X11 logo"
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_x11_icon)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Termux:X11 logo"
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         connectionPanel.addView(logo, LinearLayout.LayoutParams(dp(130), dp(130)))
         connectionPanel.addView(TextView(this).apply {
@@ -735,6 +734,17 @@ class MainActivity : Activity() {
                     }
                 }
                 buttonFocus()
+            }
+            val arrowIcon = when (key) {
+                "Up" -> R.drawable.ic_extra_key_arrow_up
+                "Down" -> R.drawable.ic_extra_key_arrow_down
+                "Left" -> R.drawable.ic_extra_key_arrow_left
+                "Right" -> R.drawable.ic_extra_key_arrow_right
+                else -> 0
+            }
+            if (arrowIcon != 0) {
+                button.text = ""
+                button.setCompoundDrawablesRelativeWithIntrinsicBounds(null, getDrawable(arrowIcon), null, null)
             }
             button.contentDescription = "$label key"
             button.setOnLongClickListener {
