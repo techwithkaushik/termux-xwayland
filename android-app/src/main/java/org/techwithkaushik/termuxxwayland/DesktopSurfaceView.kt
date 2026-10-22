@@ -396,15 +396,14 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                // Three-finger gesture exposes Android IME, following Termux:X11-style desktop input behavior.
-                if (event.pointerCount >= 3) {
-                    requestFocus()
-                    post {
-                        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-                        imm.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-                    }
+                maxTouchPointers = maxOf(maxTouchPointers, event.pointerCount)
+                if (event.pointerCount == 2) {
+                    multiTouchStartX = (event.getX(0) + event.getX(1)) / 2f
+                    multiTouchStartY = (event.getY(0) + event.getY(1)) / 2f
+                    lastCentroidX = multiTouchStartX
+                    lastCentroidY = multiTouchStartY
                 }
-                // Keep the original finger as the primary pointer; a second finger must not release the mouse button.
+                // Interpret multi-finger taps on release; do not trigger the IME merely by touching.
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -417,7 +416,7 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 if (kotlin.math.abs(x - touchStartX) > 7f || kotlin.math.abs(y - touchStartY) > 7f) touchMoved = true
                 // Match Termux:X11's trackpad semantics: one finger moves the pointer
                 // relatively, while two fingers scroll instead of moving the pointer.
-                if (touchMode == 0 && event.pointerCount >= 2) {
+                if (event.pointerCount >= 2) {
                     var cx = 0f
                     var cy = 0f
                     for (i in 0 until event.pointerCount) {
@@ -426,9 +425,13 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                     }
                     cx /= event.pointerCount
                     cy /= event.pointerCount
+                    if (kotlin.math.abs(cx - multiTouchStartX) > 12f || kotlin.math.abs(cy - multiTouchStartY) > 12f) {
+                        multiTouchMoved = true
+                    }
                     val scrollX = (cx - lastCentroidX) / resources.displayMetrics.density
                     val scrollY = (cy - lastCentroidY) / resources.displayMetrics.density
-                    if (now - lastMoveAt >= 16L && (kotlin.math.abs(scrollX) >= 1f || kotlin.math.abs(scrollY) >= 1f)) {
+                    if (touchMode == 0 && multiTouchMoved && now - lastMoveAt >= 16L &&
+                        (kotlin.math.abs(scrollX) >= 1f || kotlin.math.abs(scrollY) >= 1f)) {
                         sendInput("SCROLL ${-scrollY / 3f} ${-scrollX / 3f}")
                         lastMoveAt = now
                     }
@@ -468,8 +471,13 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
             MotionEvent.ACTION_POINTER_UP -> {
                 if (event.getPointerId(event.actionIndex) == activePointerId) {
                     if (touchMode == 2) sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex), allowOutsideCapture = true)
-                    pointerCaptured = false
-                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    if (touchMode == 0 && event.pointerCount > 1) {
+                        val replacementIndex = if (event.actionIndex == 0) 1 else 0
+                        activePointerId = event.getPointerId(replacementIndex)
+                    } else {
+                        pointerCaptured = false
+                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                    }
                 }
                 return true
             }
@@ -481,12 +489,18 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                     val x = event.getX(index)
                     val y = event.getY(index)
                     when (touchMode) {
-                        0 -> if (!touchMoved) {
-                            val now = android.os.SystemClock.uptimeMillis()
-                            tapCount = if (now - lastTapAt <= android.view.ViewConfiguration.getDoubleTapTimeout()) tapCount + 1 else 1
-                            lastTapAt = now
-                            sendInput("CLICK ${if (tapCount >= 2) 1 else 1}")
-                            if (tapCount >= 2) tapCount = 0
+                        0 -> if (!touchMoved && !multiTouchMoved) {
+                            if (maxTouchPointers >= 2) {
+                                val button = if (maxTouchPointers >= 3) 2 else 3
+                                sendInput("CLICK " + button)
+                                tapCount = 0
+                            } else {
+                                val now = android.os.SystemClock.uptimeMillis()
+                                tapCount = if (now - lastTapAt <= android.view.ViewConfiguration.getDoubleTapTimeout()) tapCount + 1 else 1
+                                lastTapAt = now
+                                sendInput("CLICK 1")
+                                if (tapCount >= 2) tapCount = 0
+                            }
                         }
                         1 -> if (!touchMoved) {
                             sendPointer("MOVE", x, y, allowOutsideCapture = true)
