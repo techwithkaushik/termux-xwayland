@@ -9,10 +9,11 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 XSERVER_DIR="$ROOT_DIR/lorie/src/main/cpp/xserver"
 REQUIRE_DEPS=0
 HOST_DEPS_ONLY=0
+ALLOW_LEGACY_SOURCE=0
 
 usage() {
     cat <<'USAGE'
-Usage: tools/probe-xwayland-source.sh [--require-deps] [--host-deps-only]
+Usage: tools/probe-xwayland-source.sh [--require-deps] [--host-deps-only] [--allow-legacy-source]
 
 By default, checks that the X server submodule contains the upstream XWayland
 Meson backend and reports common host tools/dependencies. With --host-deps-only,
@@ -21,6 +22,7 @@ reports only host tools/dependencies. It does not build or modify files.
 Options:
   --require-deps  Exit non-zero if a required tool or dependency is missing.
   --host-deps-only Skip the legacy submodule check and report host tools/deps only.
+  --allow-legacy-source Treat the known legacy gitlink as a warning; the pinned standalone release is validated separately.
 USAGE
 }
 
@@ -28,6 +30,7 @@ for arg in "$@"; do
     case "$arg" in
         --require-deps) REQUIRE_DEPS=1 ;;
         --host-deps-only) HOST_DEPS_ONLY=1 ;;
+        --allow-legacy-source) ALLOW_LEGACY_SOURCE=1 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; usage >&2; exit 2 ;;
     esac
@@ -46,9 +49,12 @@ if (( ! HOST_DEPS_ONLY )); then
 
     if [[ -f "$XSERVER_DIR/hw/xwayland/meson.build" && -f "$XSERVER_DIR/meson.build" ]]; then
         ok "upstream XWayland Meson backend exists in the pinned X server source"
+    elif (( ALLOW_LEGACY_SOURCE )); then
+        echo "WARNING: the legacy xserver gitlink does not contain the standalone XWayland Meson backend." >&2
+        echo "This is an expected migration blocker; the pinned standalone XWayland release is validated by fetch-xwayland-source.sh." >&2
     else
         echo "ERROR: expected hw/xwayland/meson.build and top-level meson.build were not found." >&2
-        echo "This source revision cannot be used as the XWayland backend without updating the source pin." >&2
+        echo "The legacy gitlink is not the standalone XWayland source; use the pinned release fetch/build path or pass --allow-legacy-source for diagnostics." >&2
         exit 2
     fi
 
