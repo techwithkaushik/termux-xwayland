@@ -53,9 +53,8 @@ jobs:
           python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py
           python3 -m unittest discover -s tools/tests -v
 
-      - name: Diagnose legacy X server gitlink (known blocker)
-        continue-on-error: true
-        run: bash tools/probe-xwayland-source.sh
+      - name: Diagnose legacy X server gitlink (expected migration blocker)
+        run: bash tools/probe-xwayland-source.sh --allow-legacy-source
 
       - name: Fetch pinned official standalone XWayland release
         run: bash tools/fetch-xwayland-source.sh build/third_party
