@@ -99,7 +99,7 @@ class MainActivity : Activity() {
             localBridgeBinder = local
             if (::connectionPanel.isInitialized && binderFrameCount == 0L) connectionPanel.visibility = View.VISIBLE
             Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
-            statusTitle.text = "Session connected"
+            statusTitle.text = "Not connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
             previewImage.visibility = View.VISIBLE
@@ -593,6 +593,7 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
         })
+        desktopTopControls.visibility = View.GONE
         desktopRoot.addView(desktopTopControls, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP
         ))
@@ -600,20 +601,23 @@ class MainActivity : Activity() {
         // Mouse helper follows the familiar L/M/R overlay. Button packets use the
         // same documented input protocol as the existing Termux bridge.
         mouseControls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            alpha = 0.7f
+            setBackgroundResource(R.drawable.mouse_buttons)
+        }
+        val mouseButtonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(5), dp(3), dp(5), dp(3))
-            alpha = 0.88f
-            setBackgroundColor(Color.argb(185, 18, 24, 35))
         }
         fun mouseButton(label: String, button: Int, weight: Float = 1f) {
-            mouseControls.addView(actionButton(label) {
+            mouseButtonsRow.addView(actionButton(label) {
                 previewImage.inputEventListener?.invoke(("BUTTON " + button + " DOWN").toByteArray(Charsets.US_ASCII))
                 previewImage.inputEventListener?.invoke(("BUTTON " + button + " UP").toByteArray(Charsets.US_ASCII))
                 previewImage.requestFocus()
-            }, LinearLayout.LayoutParams(0, dp(42), weight).apply {
-                leftMargin = dp(2)
-                rightMargin = dp(2)
+            }, LinearLayout.LayoutParams(if (label == "M") dp(48) else dp(96), dp(48)).apply {
+                leftMargin = dp(1)
+                rightMargin = dp(1)
             })
         }
         val dragHandle = TextView(this).apply {
@@ -646,27 +650,33 @@ class MainActivity : Activity() {
                 else -> false
             }
         }
-        mouseControls.addView(dragHandle, LinearLayout.LayoutParams(dp(28), dp(42)))
         mouseButton("L", 1, 2f)
         mouseButton("M", 2)
         mouseButton("R", 3, 2f)
-        mouseToggleButton = actionButton("🖱") {
+        mouseControls.addView(mouseButtonsRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)
+        ))
+        dragHandle.text = "⌖"
+        dragHandle.textSize = 24f
+        dragHandle.setBackgroundResource(R.drawable.mouse_buttons)
+        mouseControls.addView(dragHandle, LinearLayout.LayoutParams(dp(40), dp(40)))
+        mouseToggleButton = actionButton("X") {
             val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
             val nextVisible = mouseControls.visibility != View.VISIBLE
             prefs.edit().putBoolean("mouse_helper", nextVisible).apply()
             mouseControls.visibility = if (nextVisible) View.VISIBLE else View.GONE
-            mouseToggleButton.text = if (nextVisible) "×" else "🖱"
+            mouseToggleButton.text = if (nextVisible) "X" else "×"
         }
         mouseToggleButton.contentDescription = "Show or hide mouse click helper"
-        desktopRoot.addView(mouseToggleButton, FrameLayout.LayoutParams(dp(44), dp(42), Gravity.BOTTOM or Gravity.END).apply {
-            bottomMargin = dp(62)
-            marginEnd = dp(8)
+        desktopRoot.addView(mouseToggleButton, FrameLayout.LayoutParams(dp(44), dp(32), Gravity.TOP or Gravity.START).apply {
+            topMargin = dp(4)
+            marginStart = dp(4)
         })
         mouseControls.visibility = if (getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
             .getBoolean("mouse_helper", false)) View.VISIBLE else View.GONE
         desktopRoot.addView(mouseControls, FrameLayout.LayoutParams(
-            dp(220), dp(48), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        ).apply { bottomMargin = dp(62) })
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = dp(42) })
 
         // Extra-key strip: compact keys send the same KEY name/action packets as the
         // on-screen keyboard input connection. It does not alter rendering.
@@ -678,7 +688,7 @@ class MainActivity : Activity() {
         }
         populateExtraKeysBar()
         desktopRoot.addView(extraKeysBar, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(38), Gravity.BOTTOM
         ).apply { bottomMargin = dp(0) })
 
         // Text-input toolbar based on upstream's back-button + single-line editor.
@@ -718,8 +728,8 @@ class MainActivity : Activity() {
         keyboardBar.addView(actionButton("Send") { sendKeyboardText() },
             LinearLayout.LayoutParams(dp(64), dp(44)))
         desktopRoot.addView(keyboardBar, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(50), Gravity.BOTTOM
-        ).apply { bottomMargin = dp(44) })
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
+        ).apply { bottomMargin = dp(38) })
 
         connectionPanel.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
         return desktopRoot
