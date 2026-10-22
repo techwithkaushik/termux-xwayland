@@ -59,7 +59,7 @@ def main() -> int:
                 magic = library.open("rb").read(4)
             except OSError:
                 magic = b""
-            if magic == b"\\x7fELF":
+            if magic == b"\x7fELF":
                 failures.append(f"{library}: readelf failed: {result.stderr.strip()}")
             continue
         checked += 1
