@@ -1,0 +1,74 @@
+name: XWayland Android package build
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Termux target architecture"
+        type: choice
+        required: true
+        default: arm
+        options:
+          - arm
+          - aarch64
+      force_dependencies:
+        description: "Force rebuilding all dependency packages (very slow)"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xwayland-termux-build-${{ inputs.arch }}
+  cancel-in-progress: false
+
+jobs:
+  build-xwayland:
+    name: Build XWayland for Termux ${{ inputs.arch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout official Termux package recipes and build system
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-packages
+          ref: master
+          path: termux-packages
+          fetch-depth: 1
+
+      - name: Verify the official XWayland recipe baseline
+        working-directory: termux-packages
+        run: |
+          test -f x11-packages/xwayland/build.sh
+          grep -q 'TERMUX_PKG_VERSION="24.1.14"' x11-packages/xwayland/build.sh
+          grep -q 'TERMUX_PKG_SHA256=4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a' x11-packages/xwayland/build.sh
+          echo "Using the official Termux XWayland 24.1.14 recipe."
+
+      - name: Build upstream XWayland with official Termux cross-build system
+        working-directory: termux-packages
+        env:
+          TERMUX_ARCH: ${{ inputs.arch }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${{ inputs.force_dependencies }}" == "true" ]]; then
+            ./scripts/run-docker.sh ./build-package.sh -a "$TERMUX_ARCH" -F x11-packages/xwayland
+          else
+            # Reuse published Termux dependency packages; build XWayland itself from source.
+            ./scripts/run-docker.sh ./build-package.sh -a "$TERMUX_ARCH" -i -f x11-packages/xwayland
+          fi
+
+      - name: Upload built XWayland package
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xwayland-termux-${{ inputs.arch }}
+          path: termux-packages/output/*.deb
+          if-no-files-found: error
+          retention-days: 14
