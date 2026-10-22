@@ -39,7 +39,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: termux/termux-packages
-          ref: master
+          # Pin the package recipes/build scripts so this workflow is reproducible.
+          ref: facb27bc85ef36fd1120d4ae990fbd59e134fc61
           path: termux-packages
           fetch-depth: 1
 
