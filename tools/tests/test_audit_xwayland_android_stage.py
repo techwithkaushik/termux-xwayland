@@ -10,7 +10,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "audit-xwayland-android-stage.py"
 MODULES = (
     "libdrm", "epoxy", "pciaccess", "pixman-1", "wayland-client",
     "wayland-protocols", "x11", "xau", "xcvt", "xfont2", "xinerama",
-    "xkbfile", "xshmfence", "openssl",
+    "xkbfile", "xshmfence", "libcrypto", "libssl",
 )
 
 
@@ -52,7 +52,7 @@ class AndroidStageAuditTest(unittest.TestCase):
         self.write_modules()
         result = self.run_audit()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Validated 14 required pkg-config modules", result.stdout)
+        self.assertIn("Validated 15 required pkg-config modules", result.stdout)
 
     def test_rejects_missing_required_module(self):
         self.write_modules()
