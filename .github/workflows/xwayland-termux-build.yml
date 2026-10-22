@@ -75,7 +75,7 @@ jobs:
           packages=(output/xwayland_*.deb)
           if (( ${#packages[@]} != 1 )); then
             echo "ERROR: expected exactly one xwayland_*.deb package, found ${#packages[@]}" >&2
-            printf 'Found: %s\\n' "${packages[@]}" >&2
+            printf 'Found: %s\n' "${packages[@]}" >&2
             exit 1
           fi
 
@@ -93,7 +93,7 @@ jobs:
             echo "ERROR: unexpected package name: $package_name" >&2
             exit 1
           }
-          dpkg-deb --contents "$package" | grep -Eq '/bin/Xwayland
+          dpkg-deb --contents "$package" | grep -Eq "/bin/Xwayland$" || {
             echo "ERROR: package does not contain the Xwayland executable" >&2
             exit 1
           }
