@@ -6,6 +6,7 @@ on:
       - termux-x11-port
     paths:
       - ".github/workflows/xwayland-preflight.yml"
+      - ".github/workflows/xwayland-termux-build.yml"
       - "tools/probe-xwayland-source.sh"
       - "tools/fetch-xwayland-source.sh"
       - "tools/audit-xwayland-meson-options.sh"
