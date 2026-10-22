@@ -100,7 +100,7 @@ def main() -> int:
     wrapper = output.with_name("android-pkg-config")
     wrapper.write_text(
         "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
-        "unset PKG_CONFIG_PATH\n"
+        "unset PKG_CONFIG_PATH PKG_CONFIG_SYSROOT_DIR\n"
         f"export PKG_CONFIG_LIBDIR={shlex.quote(os.pathsep.join(map(str, libdirs)))}\n"
         f"exec {shlex.quote(pkg_config)} \"$@\"\n",
         encoding="utf-8",
