@@ -12,7 +12,7 @@ test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurf
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopCursorOverlay.kt
 grep -q 'cursorOverlay.updatePointer' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'Show keyboard' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'actionButton("⌨")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'KeyEvent.KEYCODE_F12' android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurfaceView.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/ExitSessionReceiver.kt
@@ -67,8 +67,8 @@ grep -q 'no FFmpeg fallback' README.md
 grep -q 'weston_capture_v1' README.md
 # The desktop host UI is immersive; disconnected state exposes Settings and Exit, while PiP is automatic on leave.
 grep -q 'Not connected' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'actionButton("⚙  Settings")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'actionButton("⏻  Exit")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -Fq 'addMainAction("⚙\\nPreferences")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -Fq 'addMainAction("⏻\\nExit")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 ! grep -q 'actionButton("PiP")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'enterDesktopPictureInPicture' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'supportsPictureInPicture="true"' android-app/src/main/AndroidManifest.xml
