@@ -71,7 +71,7 @@ class AndroidStageAuditTest(unittest.TestCase):
         self.write_modules()
         module = self.pc_dir / "x11.pc"
         module.write_text(
-            module.read_text(encoding="utf-8") + "Cflags: -isystem /usr/include\\n",
+            module.read_text(encoding="utf-8") + "Cflags: -isystem /usr/include" + chr(10),
             encoding="utf-8",
         )
         result = self.run_audit()
