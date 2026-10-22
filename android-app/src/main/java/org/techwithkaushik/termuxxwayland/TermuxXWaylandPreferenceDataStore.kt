@@ -28,7 +28,7 @@ internal class TermuxXWaylandPreferenceDataStore(context: Context) : PreferenceD
     override fun getString(key: String, defValue: String?): String? {
         val default = defValue ?: return values.getInt(key, 0).toString()
         return when (key) {
-            "resolution_mode", "display_filter", "orientation", "idle_timeout",
+            "resolution_mode", "display_filter", "display_scale", "pointer_speed", "orientation", "idle_timeout",
             "touch_mode", "pointer_transform", "swipe_up", "swipe_down",
             "back_action", "notification_tap" -> values.getInt(key, default.toIntOrNull() ?: 0).toString()
             else -> values.getString(key, default)
