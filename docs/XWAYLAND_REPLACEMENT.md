@@ -12,7 +12,7 @@ Replace the current Lorie-specific X.Org server build with a genuine upstream XW
 - The `.gitmodules` entry points `lorie/src/main/cpp/xserver` to `https://gitlab.freedesktop.org/xorg/xserver.git`; `termux-x11-port` pins it at `65d790bd208ec380b196eb98f144abb0b32e334d`.
 - CI on 2026-10-22 confirmed that this pinned gitlink does not contain top-level `meson.build` or `hw/xwayland/meson.build`. It cannot directly provide the Meson-based XWayland backend.
 - The official standalone XWayland release archive `xwayland-24.1.14.tar.xz` is available from the X.Org release directory. The repository now has `tools/fetch-xwayland-source.sh`, which fetches this pinned release over HTTPS, checks archive paths, extracts it under `build/third_party/xwayland-24.1.14`, and validates the version and required Meson files.
-- The source fetch script currently does **not** verify the release's detached cryptographic signature. The workflow reports the archive SHA-256 for audit, but a hash calculated after download is not an authenticity check. Signature verification should be added before treating the source-fetch pipeline as production hardened.
+- The source fetch script verifies the archive against the fixed SHA-256 `4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a`, taken from the official Termux XWayland 24.1.14 package recipe, before extraction. Detached OpenPGP release-signature verification is still not configured, so the checksum trust root remains the reviewed repository pin.
 - The current Android native build is CMake-based, while upstream XWayland uses Meson. The integration must explicitly bridge this build-system boundary.
 
 ## Target architecture
@@ -51,8 +51,8 @@ The script downloads source into `build/third_party`; it does not modify the exi
 
 ### Stage 1 — establish a genuine upstream build
 
-1. Validate the pinned standalone XWayland source and add release-signature verification.
-2. Audit the exact 24.1.14 Meson options and dependency requirements against the Termux Android package recipe.
+1. Validate the pinned standalone XWayland source; checksum verification is implemented, while detached release-signature verification remains outstanding.
+2. Use the official Termux XWayland 24.1.14 recipe as the concrete dependency/options baseline: `libandroid-shmem`, `libdrm`, `libepoxy`, `libpciaccess`, `libpixman`, `libwayland`, `libwayland-protocols`, `libx11`, `libxau`, `libxcvt`, `libxfont2`, `libxinerama`, `libxkbfile`, `libxshmfence`, OpenGL, OpenSSL, `xkeyboard-config`, `xorg-protocol-txt`, and `xorg-xkbcomp`; use the Termux Wayland cross-scanner. The recipe disables glamor and configures the other XWayland features explicitly.
 3. Build target-ABI Wayland client/protocol and X server dependencies with the Android NDK; never use host libraries for an Android target.
 4. Add an Android Meson cross file and a separate, explicit XWayland build target without deleting the working Lorie target.
 5. Build for supported Android ABIs in CI.
@@ -90,7 +90,8 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 
 ## Validation checklist
 
-- [ ] Standalone release signature is verified against a trusted X.Org signing key.
+- [x] Archive SHA-256 is checked against the official Termux 24.1.14 package recipe.
+- [ ] Detached release signature is verified against a trusted X.Org signing key.
 - [ ] Android Meson cross-build succeeds for target ABI(s).
 - [ ] Compositor connection and XWayland startup handshake succeed.
 - [ ] X11 socket becomes ready and a minimal client connects.
@@ -101,4 +102,4 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 
 ## Current status
 
-The legacy gitlink source check failed for the expected reason. A separate, version-pinned standalone XWayland 24.1.14 source-fetch/structure-validation path has been added to CI, but its run has not yet been verified. No Android native build or device runtime test has been claimed. Next: verify the new workflow, add cryptographic release verification, then implement the Android Meson cross-build and target-ABI dependency graph.
+The legacy gitlink source check failed for the expected reason. A separate, version-pinned standalone XWayland 24.1.14 source-fetch/structure-validation path has been added to CI, including a fixed SHA-256 check from the official Termux package recipe. The workflow now runs for relevant pull-request changes (or manual dispatch), not for every push to the feature branch, avoiding duplicate push-plus-PR runs. The updated workflow run is not yet verified. No Android native build or device runtime test has been claimed. Next: verify the new workflow, add detached signature verification, then implement the Android Meson cross-build and target-ABI dependency graph.
