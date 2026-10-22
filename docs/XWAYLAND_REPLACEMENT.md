@@ -51,7 +51,7 @@ python3 tools/generate-android-meson-cross-file.py \\
   --output "$PWD/build/meson/armeabi-v7a.ini"
 ```
 
-The cross-file generator validates the NDK toolchain and target staging prefix, writes an Android Meson cross file, and creates an isolated `pkg-config` wrapper that only searches the supplied staging prefix. The staging prefix must contain dependencies already built for the selected ABI. This is configuration scaffolding, not an XWayland cross-build.
+The cross-file generator validates the NDK toolchain and target staging prefix, writes an Android Meson cross file, and creates an isolated `pkg-config` wrapper that only searches the supplied staging prefix and avoids applying the NDK sysroot a second time to staged dependency paths. The staging prefix must contain dependencies already built for the selected ABI. This is configuration scaffolding, not an XWayland cross-build.
 
 The script downloads source into `build/third_party`; it does not modify the existing native target. The release archive should be excluded from commits/build outputs as appropriate.
 
