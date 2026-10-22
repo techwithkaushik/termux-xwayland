@@ -30,11 +30,21 @@ Wayland compositor (Weston or another compatible compositor)
 Android native display/output integration
 ```
 
+## First implementation change: source/dependency preflight
+
+The branch now includes `tools/probe-xwayland-source.sh`. Run it from a checkout with submodules initialized:
+
+```sh
+bash tools/probe-xwayland-source.sh
+```
+
+Use `bash tools/probe-xwayland-source.sh --require-deps` to return a failing exit code if host tools or host pkg-config dependencies are missing. This is deliberately a read-only preflight: host libraries are not accepted as evidence of Android ABI compatibility, and the existing `Xlorie` target remains untouched until the Android Meson cross-build is established.
+
 ## Migration stages
 
 ### Stage 1 — establish a genuine upstream build
 
-1. Record the X server submodule URL and pinned commit used by this branch.
+1. Run the new preflight script and record the X server submodule URL and pinned commit used by this branch.
 2. Select a compatible upstream XWayland/X server revision and inspect its `hw/xwayland` Meson options and dependencies.
 3. Verify which dependencies are already vendored and which need Termux/Android-compatible builds.
 4. Add a separate, explicit XWayland build target without deleting the working Lorie target yet.
