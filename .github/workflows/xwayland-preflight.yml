@@ -63,7 +63,5 @@ jobs:
       - name: Audit Termux Meson option compatibility
         run: bash tools/audit-xwayland-meson-options.sh build/third_party/xwayland-24.1.14
 
-      - name: Record host dependency probe (informational)
-        continue-on-error: true
-        run: |
-          bash tools/probe-xwayland-source.sh --require-deps
+      - name: Report host dependency availability (informational)
+        run: bash tools/probe-xwayland-source.sh --host-deps-only
