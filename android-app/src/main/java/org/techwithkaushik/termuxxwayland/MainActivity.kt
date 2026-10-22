@@ -99,6 +99,9 @@ class MainActivity : Activity() {
             localBridgeBinder = local
             if (::connectionPanel.isInitialized && binderFrameCount == 0L) connectionPanel.visibility = View.VISIBLE
             if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.GONE
+            if (::extraKeysBar.isInitialized) extraKeysBar.visibility = View.GONE
+            if (::mouseControls.isInitialized) mouseControls.visibility = View.GONE
+            if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.GONE
             Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
             statusTitle.text = "Not connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
@@ -135,6 +138,7 @@ class MainActivity : Activity() {
             }
             if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.GONE
             if (::extraKeysBar.isInitialized) extraKeysBar.visibility = View.GONE
+            if (::mouseControls.isInitialized) mouseControls.visibility = View.GONE
             if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.GONE
             if (::desktopProofDescription.isInitialized) {
                 desktopProofDescription.text =
