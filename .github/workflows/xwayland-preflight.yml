@@ -1,0 +1,58 @@
+name: XWayland source preflight
+
+on:
+  pull_request:
+    branches:
+      - termux-x11-port
+    paths:
+      - ".github/workflows/xwayland-preflight.yml"
+      - "tools/probe-xwayland-source.sh"
+      - "docs/XWAYLAND_REPLACEMENT.md"
+      - ".gitmodules"
+      - "lorie/src/main/cpp/xserver"
+  push:
+    branches:
+      - xwayland/replace-xorg
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xwayland-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-preflight:
+    name: Validate upstream XWayland source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository and nested submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install host inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes meson ninja-build pkg-config
+
+      - name: Check preflight script syntax
+        run: bash -n tools/probe-xwayland-source.sh
+
+      - name: Inspect pinned X server source
+        run: bash tools/probe-xwayland-source.sh
+
+      - name: Verify XWayland Meson target is in the source tree
+        run: |
+          test -f lorie/src/main/cpp/xserver/meson.build
+          test -f lorie/src/main/cpp/xserver/hw/xwayland/meson.build
+          grep -q "project(" lorie/src/main/cpp/xserver/meson.build
+          printf 'Pinned X server commit: '
+          git -C lorie/src/main/cpp/xserver rev-parse HEAD
+
+      - name: Record host dependency probe (informational)
+        continue-on-error: true
+        run: |
+          bash tools/probe-xwayland-source.sh --require-deps
