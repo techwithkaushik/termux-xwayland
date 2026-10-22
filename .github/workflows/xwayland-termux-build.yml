@@ -100,7 +100,7 @@ jobs:
             echo "ERROR: unexpected package name: $package_name" >&2
             exit 1
           }
-          dpkg-deb --contents "$package" | grep -Eq "/bin/Xwayland$" || {
+          dpkg-deb --contents "$package" | grep -E "/bin/Xwayland$" > /dev/null || {
             echo "ERROR: package does not contain the Xwayland executable" >&2
             exit 1
           }
