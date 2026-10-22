@@ -4,7 +4,7 @@
 
 The Termux DEB contains the Java app_process client and manages Weston/XWayland. The client requests native Weston output capture and forwards RGBA frames over the authenticated Binder-transferred FD. Actual frame delivery still depends on the installed Weston capture protocol and its authorization policy.
 
-The stream is capped at 1280×720 worth of pixels per frame while preserving the display aspect ratio. This prevents a phone-sized output (for example 1080×2400) from creating a 10 MB packet per frame. The Android renderer keeps the newest frame rather than building a stale-frame queue. Pointer movement prefers a persistent native XTest helper; when its optional development dependencies are unavailable, the xdotool fallback remains enabled.
+The stream is capped at 1280×720 worth of pixels per frame while preserving the display aspect ratio. This prevents a phone-sized output (for example 1080×2400) from creating a roughly 10 MB packet per frame; the higher-detail 1280×720 pixel budget can still use about 3.7 MB per frame. The Android renderer keeps the newest frame rather than building a stale-frame queue. Pointer movement prefers a persistent native XTest helper; when its optional development dependencies are unavailable, the xdotool fallback remains enabled.
 
 Termux:X11 is the reference for the performance target: it keeps the X server and native rendering pipeline in the same app process and uses native EGL/GLES presentation, rather than transporting a complete RGBA desktop image for every frame. The current bridge is still a copied-frame path, not zero-copy. Measure frame FPS and pointer latency on the target Android 10 device before claiming real-time performance.
 
