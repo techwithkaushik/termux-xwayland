@@ -439,6 +439,12 @@ class MainActivity : Activity() {
                 statusDescription.text = "Run termux-xwayland start in Termux. The host will open when the Wayland socket is ready."
             }
         }
+        // Match upstream Termux:X11's disconnected stub: transport diagnostics
+        // stay internal until the first real desktop frame arrives.
+        statusTitle.text = "Not connected"
+        statusDescription.visibility = View.GONE
+        binderStatusDescription.visibility = View.GONE
+        desktopProofDescription.visibility = View.GONE
         if (::binderStatusDescription.isInitialized) {
             val binderState = getSharedPreferences("termux_binder_session", MODE_PRIVATE)
                 .getString("state", "disconnected")
