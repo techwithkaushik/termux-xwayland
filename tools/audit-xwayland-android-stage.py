@@ -29,7 +29,8 @@ REQUIRED_MODULES = (
     "xinerama",
     "xkbfile",
     "xshmfence",
-    "openssl",
+    "libcrypto",
+    "libssl",
 )
 
 
