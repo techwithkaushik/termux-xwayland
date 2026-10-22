@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory app:title="Output">
+        <ListPreference
+            app:key="resolution_mode"
+            app:title="Display resolution mode"
+            app:summary="Choose how the desktop output is fitted to the Android display."
+            app:entries="@array/display_resolution_modes"
+            app:entryValues="@array/display_resolution_mode_values"
+            app:defaultValue="0" />
+        <SeekBarPreference
+            app:key="display_scale"
+            app:title="Display scale"
+            app:summary="Scale factor in percent."
+            app:min="30"
+            app:max="300"
+            app:seekBarIncrement="10"
+            app:defaultValue="100"
+            app:showSeekBarValue="true" />
+        <ListPreference
+            app:key="display_filter"
+            app:title="Display filtering mode"
+            app:entries="@array/display_filter_modes"
+            app:entryValues="@array/display_filter_mode_values"
+            app:defaultValue="0" />
+        <SwitchPreferenceCompat
+            app:key="adjust_resolution"
+            app:title="Adjust resolution to fit orientation"
+            app:defaultValue="false" />
+        <SwitchPreferenceCompat
+            app:key="display_stretch"
+            app:title="Stretch to fill display"
+            app:defaultValue="false" />
+        <SwitchPreferenceCompat
+            app:key="resize_for_keyboard"
+            app:title="Resize screen while keyboard is open"
+            app:defaultValue="false" />
+        <SwitchPreferenceCompat
+            app:key="pip_mode"
+            app:title="Picture-in-picture mode"
+            app:defaultValue="false" />
+        <SwitchPreferenceCompat
+            app:key="fullscreen"
+            app:title="Fullscreen / immersive mode"
+            app:defaultValue="true" />
+        <ListPreference
+            app:key="orientation"
+            app:title="Screen orientation"
+            app:entries="@array/screen_orientations"
+            app:entryValues="@array/screen_orientation_values"
+            app:defaultValue="0" />
+        <ListPreference
+            app:key="idle_timeout"
+            app:title="Screen idle timeout"
+            app:entries="@array/idle_timeouts"
+            app:entryValues="@array/idle_timeout_values"
+            app:defaultValue="0" />
+    </PreferenceCategory>
+
+    <PreferenceScreen app:key="pointer_preferences" app:title="Pointer">
+        <PreferenceCategory app:title="Touch and pointer">
+            <ListPreference
+                app:key="touch_mode"
+                app:title="Touchscreen input mode"
+                app:entries="@array/touch_modes"
+                app:entryValues="@array/touch_mode_values"
+                app:defaultValue="0" />
+            <SwitchPreferenceCompat app:key="scale_touchpad" app:title="Apply display scale factor to touchpad" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="stylus_click_override" app:title="Show stylus click options" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="stylus_mouse" app:title="Enable stylus mouse mode" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="stylus_button_modifier" app:title="Stylus button contact modifier mode" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="mouse_helper" app:title="Show mouse click helper overlay" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="pointer_capture" app:title="Capture external pointer devices when possible" app:defaultValue="false" />
+            <ListPreference
+                app:key="pointer_transform"
+                app:title="Transform captured pointer movements"
+                app:entries="@array/pointer_transforms"
+                app:entryValues="@array/pointer_transform_values"
+                app:defaultValue="4" />
+            <SeekBarPreference app:key="pointer_speed" app:title="Captured pointer speed factor (%)" app:min="1" app:max="300" app:defaultValue="100" app:showSeekBarValue="true" />
+            <SwitchPreferenceCompat app:key="tap_to_move" app:title="Enable tap-to-move for touchpads" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="ignore_gamepad" app:title="Ignore gamepad input events" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="zoom_follows_cursor" app:title="Pan to follow cursor while zoomed in" app:defaultValue="true" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen app:key="keyboard_preferences" app:title="Keyboard">
+        <PreferenceCategory app:title="Keyboard">
+            <SwitchPreferenceCompat app:key="additional_keyboard" app:title="Show additional keyboard" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="ime_with_external" app:title="Show software keyboard with external keyboard" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="prefer_scancodes" app:title="Prefer scancodes when possible" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="scancode_workaround" app:title="Hardware keyboard scancodes workaround" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="intercept_shortcuts" app:title="Intercept system shortcuts (DeX)" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="pause_intercept_esc" app:title="Pause key intercepting with Esc" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="filter_meta" app:title="Filter intercepted Win/Meta key" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="character_input" app:title="Enforce character-based input" app:defaultValue="false" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen app:key="other_preferences" app:title="Other">
+        <PreferenceCategory app:title="Other">
+            <SwitchPreferenceCompat app:key="clipboard_sharing" app:title="Clipboard sharing" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="separate_displays" app:title="Store preferences for secondary displays separately" app:defaultValue="false" />
+            <ListPreference app:key="swipe_up" app:title="Three-finger swipe up" app:entries="@array/gesture_actions" app:entryValues="@array/gesture_action_values" app:defaultValue="0" />
+            <ListPreference app:key="swipe_down" app:title="Three-finger swipe down" app:entries="@array/gesture_actions" app:entryValues="@array/gesture_action_values" app:defaultValue="2" />
+            <ListPreference app:key="back_action" app:title="Back button" app:entries="@array/back_actions" app:entryValues="@array/back_action_values" app:defaultValue="0" />
+            <ListPreference app:key="notification_tap" app:title="Notification tap" app:entries="@array/notification_actions" app:entryValues="@array/notification_action_values" app:defaultValue="0" />
+        </PreferenceCategory>
+        <Preference app:title="About these settings" app:summary="Settings requiring compositor-level or native input integration only take effect once their handlers are connected." />
+    </PreferenceScreen>
+</PreferenceScreen>
