@@ -249,6 +249,11 @@ class MainActivity : Activity() {
         }.onFailure { Log.w("TermuxXWayland", "Could not enter picture-in-picture", it) }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::previewImage.isInitialized) previewImage.refreshDisplayPreferences()
+    }
+
     override fun onStart() {
         super.onStart()
         if (!binderServiceBound) {
@@ -474,6 +479,24 @@ class MainActivity : Activity() {
             }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.END).apply {
                 topMargin = dp(12)
                 marginEnd = dp(12)
+            })
+            // Settings stays available above the live desktop, not only on the disconnected screen.
+            addView(TextView(this@MainActivity).apply {
+                text = "⚙"
+                textSize = 23f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setBackgroundColor(Color.argb(190, 24, 34, 49))
+                contentDescription = "Open display and input preferences"
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
+                }
+            }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.START).apply {
+                topMargin = dp(12)
+                marginStart = dp(12)
             })
         }
         connectionPanel = LinearLayout(this).apply {
