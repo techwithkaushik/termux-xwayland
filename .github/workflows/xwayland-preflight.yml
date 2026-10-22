@@ -43,6 +43,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes binutils meson ninja-build pkg-config
 
+      - name: Validate workflow YAML syntax
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path); puts "Valid YAML: #{path}" }' \\
+            .github/workflows/xwayland-preflight.yml \\
+            .github/workflows/xwayland-termux-build.yml
+
       - name: Check shell script syntax
         run: |
           bash -n tools/probe-xwayland-source.sh
