@@ -592,19 +592,17 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
         val mode = prefs.getInt("resolution_mode", 0).coerceIn(0, 3)
         val stretch = prefs.getBoolean("display_stretch", false)
         val fitScale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
-        val scale = when {
-            mode == 2 || stretch -> kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
-                .let { base -> if (mode == 2 || stretch) base else base }
-            mode == 3 -> kotlin.math.min(
+        if (mode == 2 || stretch) {
+            return android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+        }
+
+        val scale = when (mode) {
+            3 -> kotlin.math.min(
                 1f,
                 kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
             )
-            mode == 1 -> fitScale * prefs.getInt("display_scale", 100).coerceIn(30, 300) / 100f
+            1 -> fitScale * prefs.getInt("display_scale", 100).coerceIn(30, 300) / 100f
             else -> fitScale
-        }
-
-        if (mode == 2 || stretch) {
-            return android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
         }
         val drawWidth = frameWidth * scale
         val drawHeight = frameHeight * scale
