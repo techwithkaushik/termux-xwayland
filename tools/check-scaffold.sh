@@ -68,8 +68,11 @@ grep -q 'no FFmpeg fallback' README.md
 grep -q 'weston_capture_v1' README.md
 # The desktop host UI is immersive; disconnected state exposes Settings and Exit, while PiP is automatic on leave.
 grep -q 'Not connected' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -Fq 'addMainAction("⚙\nPreferences")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -Fq 'addMainAction("⏻\nExit")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -Fq 'addMainIcon(R.drawable.ic_extra_key_settings, "Preferences")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -Fq 'addMainIcon(R.drawable.lorie_ic_displays, "Displays")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -Fq 'addMainIcon(R.drawable.lorie_ic_help, "Help")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -Fq 'addMainIcon(R.drawable.lorie_ic_exit, "Exit")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+test -f android-app/src/main/res/drawable/mouse_buttons.xml
 ! grep -q 'actionButton("PiP")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'enterDesktopPictureInPicture' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'supportsPictureInPicture="true"' android-app/src/main/AndroidManifest.xml
