@@ -38,7 +38,7 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
             libdir = prefix / "lib"
             libdir.mkdir()
             malformed = libdir / "libtruncated.so"
-            malformed.write_bytes(b"\\x7fELF" + b"truncated")
+            malformed.write_bytes(b"\x7fELF" + b"truncated")
             result = subprocess.run(
                 [shutil.which("python3") or "python3", str(SCRIPT),
                  "--prefix", str(prefix), "--abi", "armeabi-v7a"],
