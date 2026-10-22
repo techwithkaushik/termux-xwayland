@@ -459,6 +459,26 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
+            // Keep an explicit software-keyboard control visible in immersive mode.
+            addView(TextView(this@MainActivity).apply {
+                text = "⌨"
+                textSize = 23f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setBackgroundColor(Color.argb(190, 24, 34, 49))
+                contentDescription = "Show keyboard"
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    previewImage.requestFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showSoftInput(previewImage, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(12)
+                marginEnd = dp(12)
+            })
         }
         connectionPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
