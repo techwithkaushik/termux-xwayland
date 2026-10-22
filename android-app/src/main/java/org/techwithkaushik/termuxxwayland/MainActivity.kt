@@ -77,6 +77,7 @@ class MainActivity : Activity() {
     private lateinit var binderStatusDescription: TextView
     private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
+    private lateinit var cursorOverlay: DesktopCursorOverlay
     private lateinit var headingContainer: LinearLayout
     private lateinit var connectionPanel: LinearLayout
     private lateinit var desktopRoot: FrameLayout
@@ -98,6 +99,8 @@ class MainActivity : Activity() {
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
             previewImage.visibility = View.VISIBLE
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
+            previewImage.cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
+            previewImage.requestFocus()
             // Never retain pixels from an earlier Binder session. Until the new
             // server sends a frame, the desktop surface stays empty/black.
             pendingDesktopFrame.set(null)
@@ -119,6 +122,8 @@ class MainActivity : Activity() {
             pendingDesktopFrame.set(null)
             if (::previewImage.isInitialized) {
                 previewImage.inputEventListener = null
+                previewImage.cursorPositionListener = null
+                cursorOverlay.resetPointer()
                 previewImage.clearFrame()
                 previewImage.visibility = View.VISIBLE
             }
@@ -439,11 +444,18 @@ class MainActivity : Activity() {
             contentDescription = "Live Linux desktop"
             setBackgroundColor(Color.TRANSPARENT)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
+            cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
         }
+        cursorOverlay = DesktopCursorOverlay(this)
         desktopRoot = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             fitsSystemWindows = false
             addView(previewImage, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            // SurfaceView renders below this transparent overlay; the pointer stays crisp.
+            addView(cursorOverlay, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
