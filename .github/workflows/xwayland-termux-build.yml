@@ -1,6 +1,13 @@
 name: XWayland Android package build
 
 on:
+  # GitHub only exposes the manual Run workflow button when this workflow exists on the default branch.
+  # This scoped push trigger lets the draft feature branch run the first ARM package build without changing the default branch.
+  push:
+    branches:
+      - xwayland/replace-xorg
+    paths:
+      - ".github/workflows/xwayland-termux-build.yml"
   workflow_dispatch:
     inputs:
       arch:
