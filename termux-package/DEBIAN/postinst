@@ -1,7 +1,0 @@
-#!/data/data/com.termux/files/usr/bin/bash
-set -u
-printf '\nTermux-XWayland companion package installed.\n'
-printf 'Check the Android host with: termux-xwayland status\n'
-printf 'Open the display host with: termux-xwayland start\n'
-printf 'Development mode temporarily enables Weston --debug for privileged capture testing. On first start, the package attempts to build the native capture helper; install clang, pkg-config, wayland and matching Weston capture protocol XML if the build probe reports missing dependencies. Debug mode is broad and must be removed before production.\n\n'
-exit 0
