@@ -23,9 +23,6 @@ struct Renderer {
     GLint position = -1;
     GLint texCoord = -1;
     GLint sampler = -1;
-    GLint cursor = -1;
-    GLint frameSize = -1;
-    GLint cursorVisible = -1;
     int lastWidth = 0;
     int lastHeight = 0;
     uint64_t renderedFrames = 0;
@@ -36,16 +33,7 @@ const char* kVertexShader =
     "void main(){ gl_Position=vec4(aPosition,0.0,1.0); vTexCoord=aTexCoord; }";
 const char* kFragmentShader =
     "precision mediump float; varying vec2 vTexCoord; uniform sampler2D uTexture;"
-    "uniform vec2 uCursor; uniform vec2 uFrameSize; uniform float uCursorVisible;"
-    "void main(){ vec4 c=texture2D(uTexture,vTexCoord);"
-    "if(uCursorVisible>0.5){ vec2 p=(vTexCoord-uCursor)*uFrameSize;"
-    "float ox=1.0-step(2.5,abs(p.x)); float oy=1.0-step(2.5,abs(p.y));"
-    "float lx=1.0-step(12.0,abs(p.x)); float ly=1.0-step(12.0,abs(p.y));"
-    "float outer=max(ox*ly,oy*lx);"
-    "float ix=1.0-step(0.9,abs(p.x)); float iy=1.0-step(0.9,abs(p.y));"
-    "float ilx=1.0-step(10.0,abs(p.x)); float ily=1.0-step(10.0,abs(p.y));"
-    "float inner=max(ix*ily,iy*ilx); c=mix(c,vec4(0.0,0.0,0.0,1.0),outer);"
-    "c=mix(c,vec4(1.0,1.0,1.0,1.0),inner); } gl_FragColor=c; }";
+    "void main(){ gl_FragColor=texture2D(uTexture,vTexCoord); }";
 
 GLuint compileShader(GLenum type, const char* source) {
     GLuint shader = glCreateShader(type);
@@ -105,9 +93,6 @@ bool initializeGl(Renderer* r) {
     r->position = glGetAttribLocation(r->program, "aPosition");
     r->texCoord = glGetAttribLocation(r->program, "aTexCoord");
     r->sampler = glGetUniformLocation(r->program, "uTexture");
-    r->cursor = glGetUniformLocation(r->program, "uCursor");
-    r->frameSize = glGetUniformLocation(r->program, "uFrameSize");
-    r->cursorVisible = glGetUniformLocation(r->program, "uCursorVisible");
     glGenTextures(1, &r->texture);
     glBindTexture(GL_TEXTURE_2D, r->texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -269,9 +254,6 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     }
     env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(arrayBytes), JNI_ABORT);
     glUniform1i(r->sampler, 0);
-    glUniform2f(r->cursor, std::max(0.f, std::min(1.f, cursorX)), std::max(0.f, std::min(1.f, cursorY)));
-    glUniform2f(r->frameSize, static_cast<float>(width), static_cast<float>(height));
-    glUniform1f(r->cursorVisible, cursorVisible == JNI_TRUE ? 1.f : 0.f);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vertices);
