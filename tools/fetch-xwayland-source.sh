@@ -2,12 +2,13 @@
 set -Eeuo pipefail
 
 # Fetch a version-pinned standalone upstream XWayland release archive.
-# This is intentionally separate from the legacy xserver git submodule: that
-# pinned revision does not contain the Meson/XWayland backend.
+# The legacy xserver gitlink in this repository does not contain the required
+# Meson/XWayland backend at its current pinned revision.
 readonly VERSION="24.1.14"
 readonly BASE_URL="https://xorg.freedesktop.org/releases/individual/xserver"
 DEST_DIR="${1:-build/third_party}"
 readonly ARCHIVE="xwayland-${VERSION}.tar.xz"
+readonly ARCHIVE_PATH="${DEST_DIR}/${ARCHIVE}"
 readonly SOURCE_DIR="${DEST_DIR}/xwayland-${VERSION}"
 
 for tool in curl tar sha256sum; do
@@ -32,10 +33,10 @@ if tar -tf "$tmp_archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
     exit 1
 fi
 
-rm -rf "$SOURCE_DIR"
-tar -xf "$tmp_archive" -C "$DEST_DIR"
-rm -f "$tmp_archive"
+mv "$tmp_archive" "$ARCHIVE_PATH"
 trap - EXIT
+rm -rf "$SOURCE_DIR"
+tar -xf "$ARCHIVE_PATH" -C "$DEST_DIR"
 
 if [[ ! -f "$SOURCE_DIR/meson.build" || ! -f "$SOURCE_DIR/hw/xwayland/meson.build" ]]; then
     echo "ERROR: XWayland ${VERSION} archive lacks required Meson files" >&2
@@ -49,5 +50,5 @@ fi
 
 printf 'Verified source layout: %s\n' "$SOURCE_DIR"
 printf 'Pinned release archive SHA-256: '
-sha256sum "$DEST_DIR/$ARCHIVE" 2>/dev/null || true
+sha256sum "$ARCHIVE_PATH"
 echo "NOTE: HTTPS and source-layout/version checks are used here; cryptographic release-signature verification is not yet configured."
