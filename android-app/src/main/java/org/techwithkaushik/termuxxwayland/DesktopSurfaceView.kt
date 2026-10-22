@@ -373,6 +373,10 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 lastCentroidX = x
                 lastCentroidY = y
                 touchMoved = false
+                maxTouchPointers = 1
+                multiTouchMoved = false
+                multiTouchStartX = x
+                multiTouchStartY = y
                 when (touchMode) {
                     0 -> {
                         // The remote cursor plane is absent from some headless captures.
