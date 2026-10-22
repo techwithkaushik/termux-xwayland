@@ -2,8 +2,9 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- UI port of Termux:X11 preferences. Native/compositor effects are intentionally
-         wired in later; keep the upstream option set and recognizable screen structure. -->
+    <!-- UI structure and preference options adapted from Termux:X11 (GPL-3.0-or-later).
+         Upstream: https://github.com/termux/termux-x11
+         Rendering/compositor effects are intentionally deferred to a later phase. -->
     <PreferenceScreen app:key="main" app:title="Preferences">
         <PreferenceScreen app:key="output_preferences" app:title="Output">
             <ListPreference app:key="resolution_mode" app:title="Display resolution mode"
@@ -28,7 +29,7 @@
             <SwitchPreferenceCompat app:key="pip_mode" app:title="PIP mode"
                 app:summary="Show the app in picture-in-picture mode when Home or Recents is pressed." app:defaultValue="false" />
             <SwitchPreferenceCompat app:key="fullscreen" app:title="Fullscreen"
-                app:summary="Toggle immersive mode in your device display." app:defaultValue="true" />
+                app:summary="Toggle immersive mode in your device display." app:defaultValue="false" />
             <ListPreference app:key="orientation" app:title="Screen orientation"
                 app:entries="@array/screen_orientations" app:entryValues="@array/screen_orientation_values" app:defaultValue="0" />
             <SwitchPreferenceCompat app:key="hide_cutout" app:title="Hide display cutout (if any)" app:defaultValue="false" />
