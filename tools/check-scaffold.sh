@@ -12,7 +12,8 @@ test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurf
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/NativeEglRenderer.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopCursorOverlay.kt
 grep -q 'cursorOverlay.updatePointer' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
-grep -q 'actionButton("⌨")' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'R.drawable.ic_x11_icon' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
+grep -q 'iconActionButton(R.drawable.ic_extra_key_keyboard' android-app/src/main/java/org/techwithkaushik/termuxxwayland/MainActivity.kt
 grep -q 'KeyEvent.KEYCODE_F12' android-app/src/main/java/org/techwithkaushik/termuxxwayland/DesktopSurfaceView.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/PreferencesActivity.kt
 test -f android-app/src/main/java/org/techwithkaushik/termuxxwayland/ExitSessionReceiver.kt

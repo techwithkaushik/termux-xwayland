@@ -627,21 +627,6 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             contentDescription = "Drag mouse helper"
             setPadding(dp(4), 0, dp(4), 0)
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> true
-                    MotionEvent.ACTION_MOVE -> {
-                        val dx = event.x - lastMouseDragX
-                        val dy = event.y - lastMouseDragY
-                        mouseControls.translationX = (mouseControls.translationX + dx)
-                            .coerceIn(-mouseControls.left.toFloat(), (desktopRoot.width - mouseControls.right).toFloat())
-                        mouseControls.translationY = (mouseControls.translationY + dy)
-                            .coerceIn(-mouseControls.top.toFloat(), (desktopRoot.height - mouseControls.bottom).toFloat())
-                        true
-                    }
-                    else -> false
-                }
-            }
         }
         dragHandle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
