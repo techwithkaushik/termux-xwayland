@@ -122,6 +122,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
     }
 
+    /** Re-render the newest frame after returning from Preferences. */
+    fun refreshDisplayPreferences() {
+        synchronized(frameLock) {
+            frameVersion++
+            frameLock.notifyAll()
+        }
+    }
+
     private fun startRenderThread() {
         if (renderThread?.isAlive == true) return
         val thread = Thread({
@@ -177,7 +185,20 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         // Do not hold frameLock while JNI/GPU work runs: the incoming
                         // frame callback must be able to replace stale frames immediately.
                         if (surfaceReady && nativeHandle != 0L &&
-                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height, cursor.first, cursor.second, true)) {
+                            NativeEglRenderer.nativeRender(
+                                nativeHandle,
+                                frame.pixels,
+                                frame.pixelOffset,
+                                frame.width,
+                                frame.height,
+                                cursor.first,
+                                cursor.second,
+                                true,
+                                pointerPrefs.getInt("resolution_mode", 0).coerceIn(0, 3),
+                                pointerPrefs.getInt("display_scale", 100).coerceIn(30, 300),
+                                pointerPrefs.getInt("display_filter", 0).coerceIn(0, 1),
+                                pointerPrefs.getBoolean("display_stretch", false)
+                            )) {
                             synchronized(frameLock) { renderedVersion = version }
                             if (!firstFrameDrawnLogged) {
                                 firstFrameDrawnLogged = true
