@@ -726,6 +726,10 @@ class MainActivity : Activity() {
         }
         keyboardBar.addView(actionButton("←") {
             keyboardBar.visibility = View.GONE
+            val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+            extraKeysBar.visibility = if (
+                prefs.getBoolean("additional_keyboard", true) && binderFrameCount > 0L
+            ) View.VISIBLE else View.GONE
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                 .hideSoftInputFromWindow(keyboardInput.windowToken, 0)
             previewImage.requestFocus()
