@@ -6,6 +6,7 @@
 #include <android/log.h>
 #include <algorithm>
 #include <cstdint>
+#include <chrono>
 #include <vector>
 
 #define LOG_TAG "TermuxXWaylandEGL"
@@ -26,6 +27,11 @@ struct Renderer {
     int lastWidth = 0;
     int lastHeight = 0;
     uint64_t renderedFrames = 0;
+    uint64_t metricFrames = 0;
+    double arrayAcquireMsTotal = 0.0;
+    double textureUploadMsTotal = 0.0;
+    double drawSubmitMsTotal = 0.0;
+    double swapMsTotal = 0.0;
 };
 
 const char* kVertexShader =
@@ -209,7 +215,9 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
         return JNI_FALSE;
     }
 
+    const auto arrayAcquireStart = std::chrono::steady_clock::now();
     const jbyte* arrayBytes = env->GetByteArrayElements(javaPixels, nullptr);
+    const auto arrayAcquireEnd = std::chrono::steady_clock::now();
     if (!arrayBytes) return JNI_FALSE;
     const jbyte* rgba = arrayBytes + pixelOffset;
     // The frame codec preserves wire RGBA8888 bytes, so GLES can upload
@@ -245,6 +253,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, r->texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    const auto textureUploadStart = std::chrono::steady_clock::now();
     if (r->lastWidth != width || r->lastHeight != height) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, reinterpret_cast<const GLvoid*>(rgba));
         r->lastWidth = width;
@@ -252,15 +261,18 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     } else {
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, reinterpret_cast<const GLvoid*>(rgba));
     }
+    const auto textureUploadEnd = std::chrono::steady_clock::now();
     env->ReleaseByteArrayElements(javaPixels, const_cast<jbyte*>(arrayBytes), JNI_ABORT);
     glUniform1i(r->sampler, 0);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vertices);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vertices + 2);
+    const auto drawSubmitStart = std::chrono::steady_clock::now();
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
+    const auto drawSubmitEnd = std::chrono::steady_clock::now();
     // glGetError may synchronize with the driver. Sample periodically rather
     // than forcing a potential GPU/CPU stall on every high-resolution frame.
     ++r->renderedFrames;
@@ -272,9 +284,31 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
             return JNI_FALSE;
         }
     }
+    const auto swapStart = std::chrono::steady_clock::now();
     if (eglSwapBuffers(r->display, r->surface) != EGL_TRUE) {
         LOGE("eglSwapBuffers failed: 0x%x", eglGetError());
         return JNI_FALSE;
+    }
+    const auto swapEnd = std::chrono::steady_clock::now();
+    const auto ms = [](auto duration) {
+        return std::chrono::duration<double, std::milli>(duration).count();
+    };
+    r->arrayAcquireMsTotal += ms(arrayAcquireEnd - arrayAcquireStart);
+    r->textureUploadMsTotal += ms(textureUploadEnd - textureUploadStart);
+    r->drawSubmitMsTotal += ms(drawSubmitEnd - drawSubmitStart);
+    r->swapMsTotal += ms(swapEnd - swapStart);
+    ++r->metricFrames;
+    if (r->metricFrames == 120) {
+        const double n = static_cast<double>(r->metricFrames);
+        LOGI("render_stage_avg_ms frames=%llu size=%dx%d array_access=%.3f texture_upload_submit=%.3f draw_submit=%.3f egl_swap=%.3f note=CPU_wall_time_not_GPU_completion",
+             static_cast<unsigned long long>(r->metricFrames), width, height,
+             r->arrayAcquireMsTotal / n, r->textureUploadMsTotal / n,
+             r->drawSubmitMsTotal / n, r->swapMsTotal / n);
+        r->metricFrames = 0;
+        r->arrayAcquireMsTotal = 0.0;
+        r->textureUploadMsTotal = 0.0;
+        r->drawSubmitMsTotal = 0.0;
+        r->swapMsTotal = 0.0;
     }
     return JNI_TRUE;
 }
