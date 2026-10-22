@@ -583,7 +583,29 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
             frameWidth = frame?.width ?: 640
             frameHeight = frame?.height ?: 360
         }
-        val scale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+
+        // Keep input hit-testing in the same coordinate space as native_egl_renderer.cpp.
+        // Previously touch input always assumed "Fit", even when the renderer was
+        // stretched, zoomed, or pixel-perfect. That made clicks drift away from the
+        // visible target whenever a non-default output mode was selected.
+        val prefs = pointerPrefs
+        val mode = prefs.getInt("resolution_mode", 0).coerceIn(0, 3)
+        val stretch = prefs.getBoolean("display_stretch", false)
+        val fitScale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+        val scale = when {
+            mode == 2 || stretch -> kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+                .let { base -> if (mode == 2 || stretch) base else base }
+            mode == 3 -> kotlin.math.min(
+                1f,
+                kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+            )
+            mode == 1 -> fitScale * prefs.getInt("display_scale", 100).coerceIn(30, 300) / 100f
+            else -> fitScale
+        }
+
+        if (mode == 2 || stretch) {
+            return android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+        }
         val drawWidth = frameWidth * scale
         val drawHeight = frameHeight * scale
         val left = (width - drawWidth) / 2f
