@@ -84,8 +84,9 @@ fi
 CROSS_DIR="$ROOT_DIR/build/meson-cross/$ABI"
 CROSS_FILE="$CROSS_DIR/android-cross.ini"
 mkdir -p "$CROSS_DIR"
-# Fail early if the staging prefix accidentally contains host-architecture libraries.
+# Fail early if the staging prefix contains host-architecture libraries or stale .pc paths.
 python3 "$ROOT_DIR/tools/check-xwayland-android-prefix.py" --prefix "$PREFIX" --abi "$ABI"
+python3 "$ROOT_DIR/tools/audit-xwayland-android-stage.py" --prefix "$PREFIX" --abi "$ABI"
 python3 "$ROOT_DIR/tools/generate-android-meson-cross-file.py" \
     --abi "$ABI" --api "$API" --ndk "$NDK" --prefix "$PREFIX" --output "$CROSS_FILE"
 
