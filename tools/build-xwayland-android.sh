@@ -58,8 +58,8 @@ esac
 }
 [[ -n "$PREFIX" ]] || { echo "ERROR: --prefix is required" >&2; exit 2; }
 [[ -n "$NDK" ]] || { echo "ERROR: pass --ndk or set ANDROID_NDK_HOME" >&2; exit 2; }
-PREFIX="$(cd -- "$PREFIX" && pwd)"
 [[ -d "$PREFIX" ]] || { echo "ERROR: staging prefix not found: $PREFIX" >&2; exit 2; }
+PREFIX="$(cd -- "$PREFIX" && pwd)"
 
 for tool in python3 meson ninja pkg-config; do
     command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: required tool missing: $tool" >&2; exit 127; }
@@ -76,8 +76,9 @@ fi
 if [[ -z "$BUILD_DIR" ]]; then
     BUILD_DIR="$ROOT_DIR/build/meson/$ABI"
 fi
-CROSS_FILE="$BUILD_DIR/android-cross.ini"
-mkdir -p "$BUILD_DIR"
+CROSS_DIR="$ROOT_DIR/build/meson-cross/$ABI"
+CROSS_FILE="$CROSS_DIR/android-cross.ini"
+mkdir -p "$CROSS_DIR"
 python3 "$ROOT_DIR/tools/generate-android-meson-cross-file.py" \
     --abi "$ABI" --api "$API" --ndk "$NDK" --prefix "$PREFIX" --output "$CROSS_FILE"
 
