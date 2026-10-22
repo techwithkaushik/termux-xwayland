@@ -427,7 +427,7 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                             trackpadCursorY = (trackpadCursorY + desktopDy * bounds.height() / frameHeightForInput())
                                 .coerceIn(bounds.top, bounds.bottom)
                             updateRenderCursor(trackpadCursorX, trackpadCursorY)
-                        cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
+                            cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
                         }
                     }
                     else -> sendPointer("MOVE", x, y)
