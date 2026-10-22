@@ -8,9 +8,17 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / "check-xwayland-android-prefix.py"
 
 
-@unittest.skipUnless(shutil.which("cc") and (shutil.which("readelf") or shutil.which("llvm-readelf")),
-                     "host C compiler and readelf are required")
+@unittest.skipUnless(shutil.which("cc") and shutil.which("ar") and
+                     (shutil.which("readelf") or shutil.which("llvm-readelf")),
+                     "host C compiler, ar and readelf are required")
 class PrefixArchitectureCheckTest(unittest.TestCase):
+    def run_guard(self, prefix):
+        return subprocess.run(
+            [shutil.which("python3") or "python3", str(SCRIPT),
+             "--prefix", str(prefix), "--abi", "armeabi-v7a"],
+            text=True, capture_output=True, check=False,
+        )
+
     def test_rejects_host_elf_library_in_arm_staging_prefix(self):
         with tempfile.TemporaryDirectory() as temp:
             prefix = Path(temp)
@@ -24,11 +32,30 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
                 text=True, capture_output=True, check=False,
             )
             self.assertEqual(build.returncode, 0, build.stderr)
-            result = subprocess.run(
-                [shutil.which("python3") or "python3", str(SCRIPT),
-                 "--prefix", str(prefix), "--abi", "armeabi-v7a"],
+            result = self.run_guard(prefix)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unexpected ELF machine", result.stderr)
+
+    def test_rejects_host_static_archive_in_arm_staging_prefix(self):
+        with tempfile.TemporaryDirectory() as temp:
+            prefix = Path(temp)
+            libdir = prefix / "lib"
+            libdir.mkdir()
+            source = prefix / "tiny.c"
+            source.write_text("int xwayland_archive_fixture(void) { return 1; }\n", encoding="utf-8")
+            object_file = prefix / "tiny.o"
+            compile_result = subprocess.run(
+                ["cc", "-c", str(source), "-o", str(object_file)],
                 text=True, capture_output=True, check=False,
             )
+            self.assertEqual(compile_result.returncode, 0, compile_result.stderr)
+            archive = libdir / "libfixture.a"
+            archive_result = subprocess.run(
+                ["ar", "rcs", str(archive), str(object_file)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(archive_result.returncode, 0, archive_result.stderr)
+            result = self.run_guard(prefix)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unexpected ELF machine", result.stderr)
 
@@ -39,11 +66,7 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
             libdir.mkdir()
             malformed = libdir / "libtruncated.so"
             malformed.write_bytes(b"\x7fELF" + b"truncated")
-            result = subprocess.run(
-                [shutil.which("python3") or "python3", str(SCRIPT),
-                 "--prefix", str(prefix), "--abi", "armeabi-v7a"],
-                text=True, capture_output=True, check=False,
-            )
+            result = self.run_guard(prefix)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("readelf failed", result.stderr)
 
@@ -65,11 +88,7 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
             )
             self.assertEqual(build.returncode, 0, build.stderr)
             (libdir / "liboutside.so").symlink_to(external_library)
-            result = subprocess.run(
-                [shutil.which("python3") or "python3", str(SCRIPT),
-                 "--prefix", str(prefix), "--abi", "armeabi-v7a"],
-                text=True, capture_output=True, check=False,
-            )
+            result = self.run_guard(prefix)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("resolves outside staging prefix", result.stderr)
 
