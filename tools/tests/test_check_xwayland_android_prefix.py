@@ -55,7 +55,7 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
             libdir.mkdir(parents=True)
             external_source = root / "outside.c"
             external_source.write_text(
-                "int outside_prefix_fixture(void) { return 1; }\\n",
+                "int outside_prefix_fixture(void) { return 1; }\n",
                 encoding="utf-8",
             )
             external_library = root / "liboutside.so"
