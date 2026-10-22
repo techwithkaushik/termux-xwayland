@@ -9,6 +9,9 @@ Replace the current Lorie-specific X.Org server build with the upstream XWayland
 - `lorie/src/main/cpp/CMakeLists.txt` includes `recipes/xserver.cmake`.
 - `recipes/xserver.cmake` assembles X.Org server core libraries (DIX, MI, FB, DRI3, EXA, Present, and extensions) and links them into the Lorie Android native implementation.
 - The current Android rendering path includes Lorie-specific screen setup and EGL/GLES rendering. That path must not be assumed to be the XWayland backend.
+- The `.gitmodules` entry points `lorie/src/main/cpp/xserver` to `https://gitlab.freedesktop.org/xorg/xserver.git`; the `termux-x11-port` tree pins that submodule at `65d790bd208ec380b196eb98f144abb0b32e334d`.
+- The current top-level native build is CMake-based, while upstream X server/XWayland uses Meson. The integration must explicitly bridge this build-system boundary rather than assuming CMake's existing source lists build `hw/xwayland`.
+- Upstream Meson configuration identifies `wayland-client`, `wayland-protocols`, and `libxcvt` as XWayland dependencies; enabling glamor also brings additional graphics dependencies. Android/Termux availability and ABI compatibility must be proven before choosing options.
 - A real XWayland build needs the upstream `hw/xwayland` backend, its Meson configuration, Wayland client/protocol dependencies, and a compatible Wayland compositor connection.
 
 ## Target architecture
