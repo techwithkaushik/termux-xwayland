@@ -12,6 +12,19 @@ internal object NativeEglRenderer {
     }
 
     external fun nativeInitialize(surface: Surface): Long
-    external fun nativeRender(handle: Long, pixels: ByteArray, pixelOffset: Int, width: Int, height: Int, cursorX: Float, cursorY: Float, cursorVisible: Boolean): Boolean
+    external fun nativeRender(
+        handle: Long,
+        pixels: ByteArray,
+        pixelOffset: Int,
+        width: Int,
+        height: Int,
+        cursorX: Float,
+        cursorY: Float,
+        cursorVisible: Boolean,
+        scaleMode: Int,
+        scalePercent: Int,
+        filterMode: Int,
+        stretchToFit: Boolean
+    ): Boolean
     external fun nativeRelease(handle: Long)
 }
