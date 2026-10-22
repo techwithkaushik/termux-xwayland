@@ -30,6 +30,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     @Volatile private var renderThread: Thread? = null
     private data class PixelFrame(val pixels: ByteArray, val width: Int, val height: Int, val pixelOffset: Int)
     private var latestFrame: PixelFrame? = null
+    private var renderCursorX = 0.5f
+    private var renderCursorY = 0.5f
     private var frameVersion = 0L
     private var renderedVersion = -1L
     private var firstFrameDrawnLogged = false
@@ -160,11 +162,12 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                             }
                         }
                         if (!surfaceReady || Thread.currentThread().isInterrupted) null
-                        else Pair(latestFrame, frameVersion)
+                        else Triple(latestFrame, frameVersion, Pair(renderCursorX, renderCursorY))
                     } ?: break
 
                     val frame = snapshot.first
                     val version = snapshot.second
+                    val cursor = snapshot.third
                     if (frame == null || !holder.surface.isValid) {
                         synchronized(frameLock) { renderedVersion = version }
                         continue
@@ -174,7 +177,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         // Do not hold frameLock while JNI/GPU work runs: the incoming
                         // frame callback must be able to replace stale frames immediately.
                         if (surfaceReady && nativeHandle != 0L &&
-                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height)) {
+                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height, cursor.first, cursor.second, true)) {
                             synchronized(frameLock) { renderedVersion = version }
                             if (!firstFrameDrawnLogged) {
                                 firstFrameDrawnLogged = true
@@ -354,6 +357,7 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                             trackpadCursorX = bounds.centerX()
                             trackpadCursorY = bounds.centerY()
                         }
+                        updateRenderCursor(trackpadCursorX, trackpadCursorY)
                         cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
                     } // Trackpad: relative motion and tap-to-click.
                     1 -> sendPointer("MOVE", x, y) // Simulated touchscreen: absolute pointer, tap-to-click.
@@ -363,8 +367,15 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                // Keep the original finger as the primary pointer; a second finger
-                // must not accidentally release or re-press the desktop mouse button.
+                // Three-finger gesture exposes Android IME, following Termux:X11-style desktop input behavior.
+                if (event.pointerCount >= 3) {
+                    requestFocus()
+                    post {
+                        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                        imm.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
+                // Keep the original finger as the primary pointer; a second finger must not release the mouse button.
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -415,7 +426,8 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                                 .coerceIn(bounds.left, bounds.right)
                             trackpadCursorY = (trackpadCursorY + desktopDy * bounds.height() / frameHeightForInput())
                                 .coerceIn(bounds.top, bounds.bottom)
-                            cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
+                            updateRenderCursor(trackpadCursorX, trackpadCursorY)
+                        cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
                         }
                     }
                     else -> sendPointer("MOVE", x, y)
@@ -510,11 +522,23 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
         if (!insideContent && !allowOutsideCapture) return false
         if (bounds.width() <= 0f || bounds.height() <= 0f) return false
 
+        updateRenderCursor(x, y)
         cursorPositionListener?.invoke(x, y)
         val normalizedX = ((x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
         val normalizedY = ((y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
         sendInput("$action $normalizedX $normalizedY")
         return true
+    }
+
+    private fun updateRenderCursor(x: Float, y: Float) {
+        val bounds = contentBounds()
+        if (bounds.width() <= 0f || bounds.height() <= 0f) return
+        synchronized(frameLock) {
+            renderCursorX = ((x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
+            renderCursorY = ((y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
+            frameVersion++
+            frameLock.notifyAll()
+        }
     }
 
     private fun sendInput(value: String) {

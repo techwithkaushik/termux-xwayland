@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include <X11/Xlib.h>
+#include <X11/keysym.h>
 #include <X11/extensions/XTest.h>
 #include <errno.h>
 #include <math.h>
@@ -61,7 +62,7 @@ int main(int argc, char **argv) {
             while ((ch = getchar()) != '\n' && ch != EOF) {}
             continue;
         }
-        char op[12] = {0}, action[8] = {0};
+        char op[12] = {0}, action[8] = {0}, keyname[48] = {0};
         int a = 0, b = 0;
         if (sscanf(line, "%11s", op) != 1) continue;
         if (!strcmp(op, "REL")) {
@@ -72,6 +73,14 @@ int main(int argc, char **argv) {
             if (sscanf(line, "%*s %d %d", &a, &b) != 2) continue;
             if (a < 0 || a >= width || b < 0 || b >= height) continue;
             XTestFakeMotionEvent(dpy, DefaultScreen(dpy), a, b, CurrentTime);
+        } else if (!strcmp(op, "KEY")) {
+            if (sscanf(line, "%*s %47s %7s", keyname, action) != 2) continue;
+            if (strcmp(action, "DOWN") && strcmp(action, "UP")) continue;
+            KeySym symbol = XStringToKeysym(keyname);
+            if (symbol == NoSymbol) continue;
+            KeyCode code = XKeysymToKeycode(dpy, symbol);
+            if (code == 0) continue;
+            XTestFakeKeyEvent(dpy, code, !strcmp(action, "DOWN"), CurrentTime);
         } else if (!strcmp(op, "BUTTON")) {
             if (sscanf(line, "%*s %d %7s", &a, action) != 2) continue;
             if (a < 1 || a > 3 || (strcmp(action, "DOWN") && strcmp(action, "UP"))) continue;

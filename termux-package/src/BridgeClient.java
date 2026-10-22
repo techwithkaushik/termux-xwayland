@@ -64,7 +64,9 @@ public final class BridgeClient {
     private static final int FRAME_HEIGHT = STREAM_DIMENSIONS[1];
     private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
     private static int[] streamDimensions(int width, int height) {
-        final long maxPixels = 1280L * 720L;
+        // Near-native text clarity without sending a full 10 MB 1080x2400 frame.
+        // A 1080x2400 output becomes about 966x2146; a 720x1600 output stays native.
+        final long maxPixels = 1920L * 1080L;
         long pixels = (long) width * height;
         if (pixels <= maxPixels) return new int[] { width, height };
         double scale = Math.sqrt((double) maxPixels / (double) pixels);
@@ -530,7 +532,7 @@ public final class BridgeClient {
         String[] fields = rawEvent.trim().split("\\s+");
         if (fields.length == 0) return false;
         String op = fields[0];
-        if (!("REL".equals(op) || "MOVE".equals(op) || "DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op) || "BUTTON".equals(op) || "CLICK".equals(op))) return false;
+        if (!("REL".equals(op) || "MOVE".equals(op) || "DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op) || "BUTTON".equals(op) || "CLICK".equals(op) || "KEY".equals(op))) return false;
         final String command;
         try {
             if ("REL".equals(op) && fields.length == 3) {
@@ -544,6 +546,8 @@ public final class BridgeClient {
                 int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
                 int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
                 command = "MOVE " + x + " " + y;
+            } else if ("KEY".equals(op) && fields.length == 3 && ("DOWN".equals(fields[2]) || "UP".equals(fields[2])) && fields[1].matches("[A-Za-z0-9_+.-]{1,32}")) {
+                command = "KEY " + fields[1] + " " + fields[2];
             } else if (("DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op)) && fields.length == 3) {
                 float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
                 if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;

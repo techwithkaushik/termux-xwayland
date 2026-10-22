@@ -446,7 +446,7 @@ class MainActivity : Activity() {
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
             cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
         }
-        cursorOverlay = DesktopCursorOverlay(this)
+        cursorOverlay = DesktopCursorOverlay(this).apply { visibility = View.GONE }
         desktopRoot = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             fitsSystemWindows = false
@@ -454,11 +454,7 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
-            // SurfaceView renders below this transparent overlay; the pointer stays crisp.
-            addView(cursorOverlay, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            ))
+            // Pointer is composited directly by the native EGL renderer over the XWayland frame.
             // Keep an explicit software-keyboard control visible in immersive mode.
             addView(TextView(this@MainActivity).apply {
                 text = "⌨"
