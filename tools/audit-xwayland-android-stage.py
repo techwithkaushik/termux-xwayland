@@ -112,15 +112,25 @@ def main() -> int:
         except ValueError as exc:
             failures.append(f"{module}: malformed pkg-config flags: {exc}")
             continue
-        for token in tokens:
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
             path_value = None
-            if token.startswith(("-I", "-L")) and len(token) > 2:
+            flag = token
+            if token in ("-I", "-L", "-isystem"):
+                if index + 1 < len(tokens):
+                    index += 1
+                    path_value = tokens[index]
+            elif token.startswith(("-I", "-L")) and len(token) > 2:
                 path_value = token[2:]
             elif token.startswith("-isystem") and len(token) > 8:
                 path_value = token[8:]
             if path_value and Path(path_value).is_absolute():
                 if not under(Path(path_value), allowed_roots):
-                    failures.append(f"{module}: compiler/linker flag escapes target roots: {token}")
+                    failures.append(
+                        f"{module}: compiler/linker flag escapes target roots: {flag} {path_value}"
+                    )
+            index += 1
 
     if failures:
         print(f"ERROR: {len(failures)} staging-prefix audit problem(s):", file=sys.stderr)
