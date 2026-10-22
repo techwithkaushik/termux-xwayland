@@ -67,7 +67,7 @@ internal class DesktopCursorOverlay(context: Context) : View(context) {
             lineTo(x + 17f * density, y + 14f * density)
             close()
         }
-        canvas.drawPath(path, outline)
         canvas.drawPath(path, fill)
+        canvas.drawPath(path, outline)
     }
 }
