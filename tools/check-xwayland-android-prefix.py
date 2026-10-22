@@ -6,7 +6,6 @@ This is a safety preflight, not a dependency-completeness check or a build test.
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
@@ -39,7 +38,8 @@ def main() -> int:
         parser.error("readelf or llvm-readelf is required")
     candidates = sorted(
         path for path in libdir.rglob("*")
-        if path.is_file() and (".so" == path.suffix or ".so." in path.name)
+        if (path.is_file() or path.is_symlink())
+        and (".so" == path.suffix or ".so." in path.name)
     )
     if not candidates:
         parser.error(f"no shared libraries (*.so or *.so.*) found under {libdir}")
@@ -48,6 +48,24 @@ def main() -> int:
     failures: list[str] = []
     checked = 0
     for library in candidates:
+        if library.is_symlink():
+            try:
+                resolved = library.resolve(strict=True)
+            except OSError as exc:
+                failures.append(f"{library}: broken shared-library symlink: {exc}")
+                continue
+            try:
+                resolved.relative_to(prefix)
+            except ValueError:
+                failures.append(
+                    f"{library}: shared-library symlink resolves outside staging prefix: {resolved}"
+                )
+                continue
+
+        if not library.is_file():
+            failures.append(f"{library}: shared-library path is not a regular file")
+            continue
+
         result = subprocess.run(
             [readelf, "-h", str(library)],
             text=True, capture_output=True, check=False,
