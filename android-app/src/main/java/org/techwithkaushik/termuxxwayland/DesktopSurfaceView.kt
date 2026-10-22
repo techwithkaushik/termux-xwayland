@@ -44,6 +44,10 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var touchMoved = false
+    private var maxTouchPointers = 1
+    private var multiTouchMoved = false
+    private var multiTouchStartX = 0f
+    private var multiTouchStartY = 0f
     private var lastCentroidX = 0f
     private var lastCentroidY = 0f
     private var trackpadCursorX = -1f
