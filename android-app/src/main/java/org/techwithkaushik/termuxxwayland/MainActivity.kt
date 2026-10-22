@@ -591,8 +591,15 @@ class MainActivity : Activity() {
         desktopTopControls.addView(iconActionButton(R.drawable.lorie_ic_displays, "Displays") { showDisplaysDialog() },
             LinearLayout.LayoutParams(dp(44), dp(42)))
         desktopTopControls.addView(iconActionButton(R.drawable.ic_extra_key_keyboard, "Toggle text input") {
-            keyboardBar.visibility = if (keyboardBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            if (keyboardBar.visibility == View.VISIBLE) {
+            val showTextInput = keyboardBar.visibility != View.VISIBLE
+            keyboardBar.visibility = if (showTextInput) View.VISIBLE else View.GONE
+            // The upstream toolbar occupies one bottom lane: text-input and
+            // extra-key controls must never overlap each other.
+            extraKeysBar.visibility = if (showTextInput) View.GONE else {
+                val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+                if (prefs.getBoolean("additional_keyboard", true) && binderFrameCount > 0L) View.VISIBLE else View.GONE
+            }
+            if (showTextInput) {
                 keyboardInput.requestFocus()
                 (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                     .showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT)
