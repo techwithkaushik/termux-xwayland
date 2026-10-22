@@ -46,11 +46,11 @@ class CrossFileGeneratorTest(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_generator(self, abi):
+    def run_generator(self, abi, api=24):
         return subprocess.run(
             [
                 sys.executable, str(SCRIPT),
-                "--abi", abi, "--api", "24",
+                "--abi", abi, "--api", str(api),
                 "--ndk", str(self.root / "ndk"),
                 "--prefix", str(self.prefix),
                 "--output", str(self.output),
@@ -69,6 +69,21 @@ class CrossFileGeneratorTest(unittest.TestCase):
                 self.assertIn("needs_exe_wrapper = true", config)
                 self.assertIn(str(self.bin_dir.parent / "sysroot"), config)
                 self.assertTrue((self.output.parent / "android-pkg-config").is_file())
+
+    def test_uses_requested_android_api_level(self):
+        result = self.run_generator("armeabi-v7a", api=26)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = self.output.read_text(encoding="utf-8")
+        self.assertIn("armv7a-linux-androideabi26-clang", config)
+        self.assertIn("armv7a-linux-androideabi26-clang++", config)
+
+    def test_pkg_config_wrapper_isolated_from_host_environment(self):
+        result = self.run_generator("arm64-v8a")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        wrapper = (self.output.parent / "android-pkg-config").read_text(encoding="utf-8")
+        self.assertIn("unset PKG_CONFIG_PATH PKG_CONFIG_SYSROOT_DIR", wrapper)
+        self.assertIn(str(self.prefix / "lib/pkgconfig"), wrapper)
+        self.assertIn(str(self.prefix / "share/pkgconfig"), wrapper)
 
     def test_rejects_missing_target_pkg_config_metadata(self):
         (self.prefix / "lib/pkgconfig").rmdir()
