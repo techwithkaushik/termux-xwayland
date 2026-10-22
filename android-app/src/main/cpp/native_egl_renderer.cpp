@@ -25,6 +25,7 @@ struct Renderer {
     GLint sampler = -1;
     int lastWidth = 0;
     int lastHeight = 0;
+    int lastFilterMode = -1;
     uint64_t renderedFrames = 0;
 };
 
@@ -191,7 +192,7 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeInitialize(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
-    JNIEnv* env, jobject /* thiz */, jlong handle, jbyteArray javaPixels, jint pixelOffset, jint width, jint height, jfloat cursorX, jfloat cursorY, jboolean cursorVisible) {
+    JNIEnv* env, jobject /* thiz */, jlong handle, jbyteArray javaPixels, jint pixelOffset, jint width, jint height, jfloat cursorX, jfloat cursorY, jboolean cursorVisible, jint scaleMode, jint scalePercent, jint filterMode, jboolean stretchToFit) {
     auto* r = reinterpret_cast<Renderer*>(handle);
     if (!r || !javaPixels || width <= 0 || height <= 0 ||
         static_cast<jlong>(width) * height > 16777216LL) {
@@ -234,8 +235,40 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
     const float sourceAspect = static_cast<float>(width) / static_cast<float>(height);
     const float targetAspect = static_cast<float>(surfaceWidth) / static_cast<float>(surfaceHeight);
     float x = 1.f, y = 1.f;
-    if (sourceAspect > targetAspect) y = targetAspect / sourceAspect;
-    else x = sourceAspect / targetAspect;
+    const int safeScalePercent = std::clamp(static_cast<int>(scalePercent), 30, 300);
+    const int safeScaleMode = std::clamp(static_cast<int>(scaleMode), 0, 3);
+    if (stretchToFit == JNI_TRUE || safeScaleMode == 2) {
+        // Explicit stretch modes fill the entire native surface.
+        x = 1.f;
+        y = 1.f;
+    } else if (safeScaleMode == 3) {
+        // Keep source pixels square and centered; downscale uniformly only
+        // when the complete source cannot fit on the native surface.
+        const float pixelScale = std::min(
+            1.f,
+            std::min(static_cast<float>(surfaceWidth) / static_cast<float>(width),
+                     static_cast<float>(surfaceHeight) / static_cast<float>(height)));
+        x = static_cast<float>(width) * pixelScale / static_cast<float>(surfaceWidth);
+        y = static_cast<float>(height) * pixelScale / static_cast<float>(surfaceHeight);
+    } else {
+        // Fit preserves the desktop aspect ratio. Scaled applies a bounded
+        // viewport zoom without resampling the CPU-side RGBA frame.
+        if (sourceAspect > targetAspect) y = targetAspect / sourceAspect;
+        else x = sourceAspect / targetAspect;
+        if (safeScaleMode == 1) {
+            const float scale = static_cast<float>(safeScalePercent) / 100.f;
+            x *= scale;
+            y *= scale;
+        }
+    }
+    const int safeFilterMode = std::clamp(static_cast<int>(filterMode), 0, 1);
+    if (r->lastFilterMode != safeFilterMode) {
+        const GLint filter = safeFilterMode == 1 ? GL_NEAREST : GL_LINEAR;
+        glBindTexture(GL_TEXTURE_2D, r->texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+        r->lastFilterMode = safeFilterMode;
+    }
     const GLfloat vertices[] = {
         -x, -y, 0.f, 1.f,  x, -y, 1.f, 1.f,
         -x,  y, 0.f, 0.f,  x,  y, 1.f, 0.f

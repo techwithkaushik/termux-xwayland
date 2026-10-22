@@ -44,6 +44,10 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var touchMoved = false
+    private var maxTouchPointers = 1
+    private var multiTouchMoved = false
+    private var multiTouchStartX = 0f
+    private var multiTouchStartY = 0f
     private var lastCentroidX = 0f
     private var lastCentroidY = 0f
     private var trackpadCursorX = -1f
@@ -122,6 +126,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
     }
 
+    /** Re-render the newest frame after returning from Preferences. */
+    fun refreshDisplayPreferences() {
+        synchronized(frameLock) {
+            frameVersion++
+            frameLock.notifyAll()
+        }
+    }
+
     private fun startRenderThread() {
         if (renderThread?.isAlive == true) return
         val thread = Thread({
@@ -177,7 +189,20 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         // Do not hold frameLock while JNI/GPU work runs: the incoming
                         // frame callback must be able to replace stale frames immediately.
                         if (surfaceReady && nativeHandle != 0L &&
-                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height, cursor.first, cursor.second, true)) {
+                            NativeEglRenderer.nativeRender(
+                                nativeHandle,
+                                frame.pixels,
+                                frame.pixelOffset,
+                                frame.width,
+                                frame.height,
+                                cursor.first,
+                                cursor.second,
+                                true,
+                                pointerPrefs.getInt("resolution_mode", 0).coerceIn(0, 3),
+                                pointerPrefs.getInt("display_scale", 100).coerceIn(30, 300),
+                                pointerPrefs.getInt("display_filter", 0).coerceIn(0, 1),
+                                pointerPrefs.getBoolean("display_stretch", false)
+                            )) {
                             synchronized(frameLock) { renderedVersion = version }
                             if (!firstFrameDrawnLogged) {
                                 firstFrameDrawnLogged = true
@@ -348,6 +373,10 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 lastCentroidX = x
                 lastCentroidY = y
                 touchMoved = false
+                maxTouchPointers = 1
+                multiTouchMoved = false
+                multiTouchStartX = x
+                multiTouchStartY = y
                 when (touchMode) {
                     0 -> {
                         // The remote cursor plane is absent from some headless captures.
@@ -367,15 +396,14 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                // Three-finger gesture exposes Android IME, following Termux:X11-style desktop input behavior.
-                if (event.pointerCount >= 3) {
-                    requestFocus()
-                    post {
-                        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-                        imm.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-                    }
+                maxTouchPointers = maxOf(maxTouchPointers, event.pointerCount)
+                if (event.pointerCount == 2) {
+                    multiTouchStartX = (event.getX(0) + event.getX(1)) / 2f
+                    multiTouchStartY = (event.getY(0) + event.getY(1)) / 2f
+                    lastCentroidX = multiTouchStartX
+                    lastCentroidY = multiTouchStartY
                 }
-                // Keep the original finger as the primary pointer; a second finger must not release the mouse button.
+                // Interpret multi-finger taps on release; do not trigger the IME merely by touching.
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -388,7 +416,7 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                 if (kotlin.math.abs(x - touchStartX) > 7f || kotlin.math.abs(y - touchStartY) > 7f) touchMoved = true
                 // Match Termux:X11's trackpad semantics: one finger moves the pointer
                 // relatively, while two fingers scroll instead of moving the pointer.
-                if (touchMode == 0 && event.pointerCount >= 2) {
+                if (event.pointerCount >= 2) {
                     var cx = 0f
                     var cy = 0f
                     for (i in 0 until event.pointerCount) {
@@ -397,9 +425,13 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                     }
                     cx /= event.pointerCount
                     cy /= event.pointerCount
+                    if (kotlin.math.abs(cx - multiTouchStartX) > 12f || kotlin.math.abs(cy - multiTouchStartY) > 12f) {
+                        multiTouchMoved = true
+                    }
                     val scrollX = (cx - lastCentroidX) / resources.displayMetrics.density
                     val scrollY = (cy - lastCentroidY) / resources.displayMetrics.density
-                    if (now - lastMoveAt >= 16L && (kotlin.math.abs(scrollX) >= 1f || kotlin.math.abs(scrollY) >= 1f)) {
+                    if (touchMode == 0 && multiTouchMoved && now - lastMoveAt >= 16L &&
+                        (kotlin.math.abs(scrollX) >= 1f || kotlin.math.abs(scrollY) >= 1f)) {
                         sendInput("SCROLL ${-scrollY / 3f} ${-scrollX / 3f}")
                         lastMoveAt = now
                     }
@@ -439,8 +471,13 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
             MotionEvent.ACTION_POINTER_UP -> {
                 if (event.getPointerId(event.actionIndex) == activePointerId) {
                     if (touchMode == 2) sendPointer("UP", event.getX(event.actionIndex), event.getY(event.actionIndex), allowOutsideCapture = true)
-                    pointerCaptured = false
-                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    if (touchMode == 0 && event.pointerCount > 1) {
+                        val replacementIndex = if (event.actionIndex == 0) 1 else 0
+                        activePointerId = event.getPointerId(replacementIndex)
+                    } else {
+                        pointerCaptured = false
+                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                    }
                 }
                 return true
             }
@@ -452,12 +489,18 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
                     val x = event.getX(index)
                     val y = event.getY(index)
                     when (touchMode) {
-                        0 -> if (!touchMoved) {
-                            val now = android.os.SystemClock.uptimeMillis()
-                            tapCount = if (now - lastTapAt <= android.view.ViewConfiguration.getDoubleTapTimeout()) tapCount + 1 else 1
-                            lastTapAt = now
-                            sendInput("CLICK ${if (tapCount >= 2) 1 else 1}")
-                            if (tapCount >= 2) tapCount = 0
+                        0 -> if (!touchMoved && !multiTouchMoved) {
+                            if (maxTouchPointers >= 2) {
+                                val button = if (maxTouchPointers >= 3) 2 else 3
+                                sendInput("CLICK " + button)
+                                tapCount = 0
+                            } else {
+                                val now = android.os.SystemClock.uptimeMillis()
+                                tapCount = if (now - lastTapAt <= android.view.ViewConfiguration.getDoubleTapTimeout()) tapCount + 1 else 1
+                                lastTapAt = now
+                                sendInput("CLICK 1")
+                                if (tapCount >= 2) tapCount = 0
+                            }
                         }
                         1 -> if (!touchMoved) {
                             sendPointer("MOVE", x, y, allowOutsideCapture = true)
@@ -562,7 +605,27 @@ KeyEvent.KEYCODE_GRAVE -> "grave"
             frameWidth = frame?.width ?: 640
             frameHeight = frame?.height ?: 360
         }
-        val scale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+
+        // Keep input hit-testing in the same coordinate space as native_egl_renderer.cpp.
+        // Previously touch input always assumed "Fit", even when the renderer was
+        // stretched, zoomed, or pixel-perfect. That made clicks drift away from the
+        // visible target whenever a non-default output mode was selected.
+        val prefs = pointerPrefs
+        val mode = prefs.getInt("resolution_mode", 0).coerceIn(0, 3)
+        val stretch = prefs.getBoolean("display_stretch", false)
+        val fitScale = kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+        if (mode == 2 || stretch) {
+            return android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+        }
+
+        val scale = when (mode) {
+            3 -> kotlin.math.min(
+                1f,
+                kotlin.math.min(width.toFloat() / frameWidth, height.toFloat() / frameHeight)
+            )
+            1 -> fitScale * prefs.getInt("display_scale", 100).coerceIn(30, 300) / 100f
+            else -> fitScale
+        }
         val drawWidth = frameWidth * scale
         val drawHeight = frameHeight * scale
         val left = (width - drawWidth) / 2f

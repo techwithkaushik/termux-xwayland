@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- UI structure and preference options adapted from Termux:X11 (GPL-3.0-or-later).
+         Upstream: https://github.com/termux/termux-x11
+         Rendering/compositor effects are intentionally deferred to a later phase. -->
+    <PreferenceScreen app:key="main" app:title="Preferences">
+        <PreferenceScreen app:key="output_preferences" app:title="Output">
+            <ListPreference app:key="resolution_mode" app:title="Display resolution mode"
+                app:summary="Choose how the desktop output is fitted to the Android display."
+                app:entries="@array/display_resolution_modes" app:entryValues="@array/display_resolution_mode_values"
+                app:defaultValue="0" />
+            <SeekBarPreference app:key="display_scale" app:title="Display scale, %"
+                app:min="30" android:max="300" app:seekBarIncrement="10"
+                app:showSeekBarValue="true" app:defaultValue="100" />
+            <ListPreference app:key="display_resolution_exact" app:title="Display resolution"
+                app:entries="@array/display_resolutions" app:entryValues="@array/display_resolutions"
+                app:defaultValue="1280x1024" />
+            <EditTextPreference app:key="display_resolution_custom" app:title="Custom display resolution"
+                app:summary="Enter a resolution such as 1280x1024." app:defaultValue="1280x1024" />
+            <ListPreference app:key="display_filter" app:title="Display filtering mode"
+                app:entries="@array/display_filter_modes" app:entryValues="@array/display_filter_mode_values"
+                app:defaultValue="0" />
+            <SwitchPreferenceCompat app:key="adjust_resolution" app:title="Adjust the set resolution to fit screen orientation" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="display_stretch" app:title="Stretch to fit display" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="resize_for_keyboard" app:title="Reseed screen while soft keyboard is open"
+                app:summary="The screen size will be adjusted while the soft keyboard is open." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="pip_mode" app:title="PIP mode"
+                app:summary="Show the app in picture-in-picture mode when Home or Recents is pressed." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="fullscreen" app:title="Fullscreen"
+                app:summary="Toggle immersive mode in your device display." app:defaultValue="false" />
+            <ListPreference app:key="orientation" app:title="Screen orientation"
+                app:entries="@array/screen_orientations" app:entryValues="@array/screen_orientation_values" app:defaultValue="0" />
+            <SwitchPreferenceCompat app:key="hide_cutout" app:title="Hide display cutout (if any)" app:defaultValue="false" />
+            <ListPreference app:key="idle_timeout" app:title="Screen idle timeout"
+                app:entries="@array/idle_timeouts" app:entryValues="@array/idle_timeout_values" app:defaultValue="0" />
+        </PreferenceScreen>
+
+        <PreferenceScreen app:key="pointer_preferences" app:title="Pointer">
+            <ListPreference app:key="touch_mode" app:title="Touchscreen input mode"
+                app:entries="@array/touch_modes" app:entryValues="@array/touch_mode_values" app:defaultValue="0" />
+            <SwitchPreferenceCompat app:key="scale_touchpad" app:title="Apply display scale factor to touchpad" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="stylus_click_override" app:title="Show stylus click options"
+                app:summary="Stylus touch override: left, middle or right click (stylus only)." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="stylus_mouse" app:title="Enable stylus mouse mode"
+                app:summary="Use the stylus as a mouse; ignore pressure, angle and tilt." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="stylus_button_modifier" app:title="Stylus button contact modifier mode"
+                app:summary="Send right or middle clicks only when the stylus touches the screen while its button is pressed." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="mouse_helper" app:title="Show mouse click helper overlay"
+                app:summary="Show onscreen mouse buttons usable with the touchpad." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="pointer_capture" app:title="Capture external pointer devices when possible"
+                app:summary="Intercept hardware pointer events. Press Escape to release capture." app:defaultValue="false" />
+            <ListPreference app:key="pointer_transform" app:title="Transform captured pointer movements"
+                app:entries="@array/pointer_transforms" app:entryValues="@array/pointer_transform_values" app:defaultValue="4" />
+            <SeekBarPreference app:key="pointer_speed" app:title="Captured pointer speed factor, %"
+                app:min="1" android:max="300" app:seekBarIncrement="1" app:showSeekBarValue="true" app:defaultValue="100" />
+            <SwitchPreferenceCompat app:key="tap_to_move" app:title="Enable tap-to-move for touchpads" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="ignore_gamepad" app:title="Ignore gamepad input events"
+                app:summary="Prevent gamepad and joystick events from being forwarded to the desktop." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="zoom_follows_cursor" app:title="Pan to follow cursor while zoomed in" app:defaultValue="true" />
+        </PreferenceScreen>
+
+        <PreferenceScreen app:key="keyboard_preferences" app:title="Keyboard">
+            <SwitchPreferenceCompat app:key="additional_keyboard" app:title="Show additional keyboard"
+                app:summary="Show the keyboard with additional keys." app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="additional_keyboard_visible" app:title="Additional keyboard visible"
+                app:isPreferenceVisible="false" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="ime_with_external" app:title="Show IME with external keyboard"
+                app:summary="Show the software keyboard while a hardware keyboard is connected." app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="prefer_scancodes" app:title="Prefer scancodes when possible"
+                app:summary="Let the desktop handle the hardware keyboard layout." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="scancode_workaround" app:title="Hardware keyboard scancodes workaround"
+                app:summary="Fixes scancodes on some devices; may affect multiple layouts." app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="intercept_shortcuts" app:title="Intercept system shortcuts (DeX)"
+                app:summary="Allows interception of system shortcuts on supported devices." app:defaultValue="false" />
+            <Preference app:key="enable_accessibility_service" app:title="Enable Accessibility service for intercepting system shortcuts"
+                app:summary="Open Android Accessibility settings." />
+            <SwitchPreferenceCompat app:key="accessibility_service_auto" app:title="Enable Accessibility service automatically"
+                app:summary="Requires WRITE_SECURE_SETTINGS permission." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="pause_intercept_esc" app:title="Pause key intercepting with Esc key" app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="filter_meta" app:title="Filter out intercepted Win (Meta/Mod4) key"
+                app:summary="Allows DeX shortcuts while intercepting; requires Accessibility service." app:defaultValue="false" />
+            <SwitchPreferenceCompat app:key="character_input" app:title="Enforce character-based input"
+                app:summary="Suppresses suggestions and predictive typing; may affect CJK input." app:defaultValue="false" />
+        </PreferenceScreen>
+
+        <PreferenceScreen app:key="other_preferences" app:title="Other">
+            <SwitchPreferenceCompat app:key="clipboard_sharing" app:title="Clipboard sharing" app:defaultValue="true" />
+            <Preference app:key="request_notification_permission" app:title="Request notification permission" />
+            <PreferenceScreen app:key="user_actions" app:title="Configure response to user actions">
+                <ListPreference app:key="swipe_up" app:title="Three-finger swipe up" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="0" />
+                <ListPreference app:key="swipe_down" app:title="Three-finger swipe down" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="2" />
+                <ListPreference app:key="volume_up_action" app:title="Volume up" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="0" />
+                <ListPreference app:key="volume_down_action" app:title="Volume down" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="0" />
+                <ListPreference app:key="back_action" app:title="Back button" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="1" />
+                <ListPreference app:key="notification_tap" app:title="Notification tap" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="3" />
+                <ListPreference app:key="notification_button_0" app:title="Notification first button" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="3" />
+                <ListPreference app:key="notification_button_1" app:title="Notification second button" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="7" />
+                <ListPreference app:key="media_keys_action" app:title="Media keys" app:entries="@array/user_action_entries" app:entryValues="@array/user_action_values" app:defaultValue="0" />
+            </PreferenceScreen>
+            <SwitchPreferenceCompat app:key="separate_displays" app:title="Store preferences for secondary displays separately"
+                app:summary="Open this screen on the display you want to configure." app:defaultValue="false" />
+        </PreferenceScreen>
+
+        <PreferenceScreen app:key="extra_key_bar_preferences" app:title="Extra key bar preferences">
+            <SwitchPreferenceCompat app:key="adjust_height_for_extra_keys" app:title="Prevent extra keys bar from covering the display" app:defaultValue="true" />
+            <SwitchPreferenceCompat app:key="termux_extra_key_behavior" app:title="Deactivate special keys after each keypress"
+                app:summary="Use a long tap to lock special keys." app:defaultValue="true" />
+            <ListPreference app:key="extra_key_bar_position" app:title="Position"
+                app:entries="@array/extra_key_bar_positions" app:entryValues="@array/extra_key_bar_positions" app:defaultValue="bottom" />
+            <SwitchPreferenceCompat app:key="extra_key_bar_ignore_orientation" app:title="Keep position regardless of device orientation" app:defaultValue="false" />
+            <SeekBarPreference app:key="extra_key_bar_opacity" app:title="Opacity of extra keys bar, %"
+                app:min="1" android:max="100" app:seekBarIncrement="1" app:showSeekBarValue="true" app:defaultValue="100" />
+            <EditTextPreference app:key="extra_keys_config" app:title="Extra keys config"
+                app:summary="JSON rows, e.g. [[&quot;ESC&quot;,&quot;TAB&quot;,&quot;CTRL&quot;,&quot;ALT&quot;],[&quot;LEFT&quot;,&quot;DOWN&quot;,&quot;UP&quot;,&quot;RIGHT&quot;]]. Changes apply when you return to the host." />
+        </PreferenceScreen>
+
+        <Preference app:key="version" app:title="Version" app:summary="Termux:XWayland UI port" />
+    </PreferenceScreen>
+</PreferenceScreen>

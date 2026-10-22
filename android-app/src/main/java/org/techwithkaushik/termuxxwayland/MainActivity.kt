@@ -1,5 +1,7 @@
 package org.techwithkaushik.termuxxwayland
 
+import org.json.JSONArray
+
 
 import android.app.Activity
 import android.app.PictureInPictureParams
@@ -24,6 +26,7 @@ import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.util.Rational
@@ -33,6 +36,8 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.FrameLayout
+import android.widget.ImageView
+import androidx.appcompat.widget.AppCompatImageButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -93,8 +98,12 @@ class MainActivity : Activity() {
             val local = service as? BridgeSessionService.BridgeBinder ?: return
             localBridgeBinder = local
             if (::connectionPanel.isInitialized && binderFrameCount == 0L) connectionPanel.visibility = View.VISIBLE
+            if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.GONE
+            if (::extraKeysBar.isInitialized) extraKeysBar.visibility = View.GONE
+            if (::mouseControls.isInitialized) mouseControls.visibility = View.GONE
+            if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.GONE
             Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
-            statusTitle.text = "Session connected"
+            statusTitle.text = "Not connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
             previewImage.visibility = View.VISIBLE
@@ -127,6 +136,10 @@ class MainActivity : Activity() {
                 previewImage.clearFrame()
                 previewImage.visibility = View.VISIBLE
             }
+            if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.GONE
+            if (::extraKeysBar.isInitialized) extraKeysBar.visibility = View.GONE
+            if (::mouseControls.isInitialized) mouseControls.visibility = View.GONE
+            if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.GONE
             if (::desktopProofDescription.isInitialized) {
                 desktopProofDescription.text =
                     "NO LIVE DESKTOP FRAME • Binder service disconnected. Previous pixels are cleared and are not treated as live."
@@ -249,6 +262,12 @@ class MainActivity : Activity() {
         }.onFailure { Log.w("TermuxXWayland", "Could not enter picture-in-picture", it) }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::previewImage.isInitialized) previewImage.refreshDisplayPreferences()
+        applyUiPreferences()
+    }
+
     override fun onStart() {
         super.onStart()
         if (!binderServiceBound) {
@@ -262,6 +281,12 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         statusPollHandler.removeCallbacks(statusPollRunnable)
+        if (::previewImage.isInitialized) {
+            activeExtraModifiers.toList().forEach { held ->
+                previewImage.inputEventListener?.invoke(("KEY " + held + " UP").toByteArray(Charsets.US_ASCII))
+            }
+        }
+        activeExtraModifiers.clear()
         localBridgeBinder?.frameListener = null
         if (::previewImage.isInitialized) previewImage.inputEventListener = null
         localBridgeBinder = null
@@ -283,7 +308,10 @@ class MainActivity : Activity() {
                         previewImage.setFrame(frame.pixels, frame.width, frame.height, frame.pixelOffset)
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
+                        if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.VISIBLE
+                        if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.VISIBLE
                         binderFrameCount++
+                        if (binderFrameCount == 1L) applyUiPreferences()
                         // Avoid forcing extra TextView layout work on every desktop frame.
                         if (binderFrameCount == 1L || binderFrameCount % 60L == 0L) {
                             if (::binderStatusDescription.isInitialized) {
@@ -415,6 +443,12 @@ class MainActivity : Activity() {
                 statusDescription.text = "Run termux-xwayland start in Termux. The host will open when the Wayland socket is ready."
             }
         }
+        // Match upstream Termux:X11's disconnected stub: transport diagnostics
+        // stay internal until the first real desktop frame arrives.
+        statusTitle.text = "Not connected"
+        statusDescription.visibility = View.GONE
+        binderStatusDescription.visibility = View.GONE
+        desktopProofDescription.visibility = View.GONE
         if (::binderStatusDescription.isInitialized) {
             val binderState = getSharedPreferences("termux_binder_session", MODE_PRIVATE)
                 .getString("state", "disconnected")
@@ -431,8 +465,8 @@ class MainActivity : Activity() {
     }
 
     private fun buildScreen(): View {
-        // Keep legacy status objects initialized for bridge/session diagnostics,
-        // but never attach their text or controls to the desktop host UI.
+        // Termux:X11-inspired host surface. The authenticated Binder/session
+        // implementation remains untouched; this is a UI-only port phase.
         statusTitle = TextView(this)
         statusDescription = TextView(this)
         binderStatusDescription = TextView(this)
@@ -442,78 +476,526 @@ class MainActivity : Activity() {
         previewImage = DesktopSurfaceView(this).apply {
             visibility = View.VISIBLE
             contentDescription = "Live Linux desktop"
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.BLACK)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
             cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
         }
         cursorOverlay = DesktopCursorOverlay(this).apply { visibility = View.GONE }
         desktopRoot = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.BLACK)
             fitsSystemWindows = false
             addView(previewImage, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
-            // Pointer is composited directly by the native EGL renderer over the XWayland frame.
-            // Keep an explicit software-keyboard control visible in immersive mode.
-            addView(TextView(this@MainActivity).apply {
-                text = "⌨"
-                textSize = 23f
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                setBackgroundColor(Color.argb(190, 24, 34, 49))
-                contentDescription = "Show keyboard"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    previewImage.requestFocus()
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showSoftInput(previewImage, InputMethodManager.SHOW_IMPLICIT)
-                }
-            }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(12)
-                marginEnd = dp(12)
-            })
         }
+
+        // Disconnected/status stub: X11-style centered mark and the four familiar actions.
         connectionPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(24), dp(24), dp(24), dp(24))
-            setBackgroundColor(Color.rgb(18, 24, 35))
-            addView(TextView(this@MainActivity).apply {
-                text = "Not connected"
-                textSize = 20f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, dp(24))
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            val actions = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-            }
-            actions.addView(actionButton("⚙  Settings") {
-                startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(8)
-            })
-            actions.addView(actionButton("⏻  Exit") {
-                finishAndRemoveTask()
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = dp(8)
-            })
-            addView(actions, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
+            setBackgroundColor(Color.BLACK)
         }
-        desktopRoot.addView(connectionPanel, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_x11_icon)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Termux:X11 logo"
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        connectionPanel.addView(logo, LinearLayout.LayoutParams(dp(130), dp(130)))
+        connectionPanel.addView(View(this), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(20)
         ))
+        statusTitle = TextView(this).apply {
+            text = "Not connected"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+        }
+        connectionPanel.addView(statusTitle, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        connectionPanel.addView(View(this), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(20)
+        ))
+        statusDescription = TextView(this).apply {
+            text = "Run termux-xwayland start in Termux"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.LTGRAY)
+            visibility = View.GONE
+        }
+        binderStatusDescription = TextView(this).apply {
+            text = "Binder transport: waiting"
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(Color.GRAY)
+            visibility = View.GONE
+        }
+        desktopProofDescription = TextView(this).apply {
+            text = "No desktop frame received yet"
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(Color.GRAY)
+            visibility = View.GONE
+        }
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun addMainIcon(drawable: Int, description: String, click: () -> Unit) {
+            val button = AppCompatImageButton(this).apply {
+                setImageResource(drawable)
+                imageTintList = android.content.res.ColorStateList.valueOf(Color.LTGRAY)
+                setBackgroundResource(androidx.appcompat.R.drawable.abc_btn_default_mtrl_shape)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = description
+                setOnClickListener { click() }
+            }
+            actions.addView(button, LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+                leftMargin = dp(2)
+                rightMargin = dp(2)
+            })
+        }
+        addMainIcon(R.drawable.ic_extra_key_settings, "Preferences") {
+            startActivity(Intent(this, PreferencesActivity::class.java))
+        }
+        addMainIcon(R.drawable.lorie_ic_displays, "Displays") { showDisplaysDialog() }
+        addMainIcon(R.drawable.lorie_ic_help, "Help") { showHelpDialog() }
+        addMainIcon(R.drawable.lorie_ic_exit, "Exit") {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Exit Termux:XWayland?")
+                .setMessage("Close this Android host window? The Termux server may continue running.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Exit") { _, _ -> finishAndRemoveTask() }
+                .show()
+        }
+        connectionPanel.addView(actions, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        desktopRoot.addView(connectionPanel, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        // Persistent top controls remain reachable while a desktop frame is visible.
+        desktopTopControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setBackgroundColor(Color.argb(175, 12, 16, 24))
+        }
+        desktopTopControls.addView(iconActionButton(R.drawable.ic_extra_key_settings, "Preferences") {
+            startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
+        }, LinearLayout.LayoutParams(dp(44), dp(42)))
+        desktopTopControls.addView(iconActionButton(R.drawable.lorie_ic_displays, "Displays") { showDisplaysDialog() },
+            LinearLayout.LayoutParams(dp(44), dp(42)))
+        desktopTopControls.addView(iconActionButton(R.drawable.ic_extra_key_keyboard, "Toggle text input") {
+            val showTextInput = keyboardBar.visibility != View.VISIBLE
+            keyboardBar.visibility = if (showTextInput) View.VISIBLE else View.GONE
+            // The upstream toolbar occupies one bottom lane: text-input and
+            // extra-key controls must never overlap each other.
+            extraKeysBar.visibility = if (showTextInput) View.GONE else {
+                val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+                if (prefs.getBoolean("additional_keyboard", true) && binderFrameCount > 0L) View.VISIBLE else View.GONE
+            }
+            if (showTextInput) {
+                keyboardInput.requestFocus()
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT)
+            } else {
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .hideSoftInputFromWindow(keyboardInput.windowToken, 0)
+                previewImage.requestFocus()
+            }
+        }, LinearLayout.LayoutParams(dp(44), dp(42)))
+        val topSpacer = View(this)
+        desktopTopControls.addView(topSpacer, LinearLayout.LayoutParams(0, 1, 1f))
+        desktopTopControls.addView(TextView(this).apply {
+            text = "XWayland"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+        })
+        desktopTopControls.visibility = View.GONE
+        desktopRoot.addView(desktopTopControls, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP
+        ))
+
+        // Mouse helper follows the familiar L/M/R overlay. Button packets use the
+        // same documented input protocol as the existing Termux bridge.
+        mouseControls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            alpha = 0.7f
+            setBackgroundResource(R.drawable.mouse_buttons)
+        }
+        val mouseButtonsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun mouseButton(label: String, button: Int, weight: Float = 1f) {
+            mouseButtonsRow.addView(actionButton(label) {
+                previewImage.inputEventListener?.invoke(("BUTTON " + button + " DOWN").toByteArray(Charsets.US_ASCII))
+                previewImage.inputEventListener?.invoke(("BUTTON " + button + " UP").toByteArray(Charsets.US_ASCII))
+                previewImage.requestFocus()
+            }, LinearLayout.LayoutParams(if (label == "M") dp(48) else dp(96), dp(48)).apply {
+                leftMargin = dp(1)
+                rightMargin = dp(1)
+            })
+        }
+        val dragHandle = TextView(this).apply {
+            text = "⠿"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Drag mouse helper"
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        dragHandle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastMouseDragX = event.rawX
+                    lastMouseDragY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - lastMouseDragX
+                    val dy = event.rawY - lastMouseDragY
+                    mouseControls.translationX = (mouseControls.translationX + dx)
+                        .coerceIn(-mouseControls.left.toFloat(), (desktopRoot.width - mouseControls.right).toFloat())
+                    mouseControls.translationY = (mouseControls.translationY + dy)
+                        .coerceIn(-mouseControls.top.toFloat(), (desktopRoot.height - mouseControls.bottom).toFloat())
+                    lastMouseDragX = event.rawX
+                    lastMouseDragY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
+        mouseButton("L", 1, 2f)
+        mouseButton("M", 2)
+        mouseButton("R", 3, 2f)
+        mouseControls.addView(mouseButtonsRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)
+        ))
+        dragHandle.text = "⌖"
+        dragHandle.textSize = 24f
+        dragHandle.setBackgroundResource(R.drawable.mouse_buttons)
+        mouseControls.addView(dragHandle, LinearLayout.LayoutParams(dp(40), dp(40)))
+        mouseToggleButton = actionButton("X") {
+            val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+            val nextVisible = mouseControls.visibility != View.VISIBLE
+            prefs.edit().putBoolean("mouse_helper", nextVisible).apply()
+            mouseControls.visibility = if (nextVisible) View.VISIBLE else View.GONE
+            mouseToggleButton.text = if (nextVisible) "X" else "×"
+        }
+        mouseToggleButton.contentDescription = "Show or hide mouse click helper"
+        mouseToggleButton.visibility = View.GONE
+        desktopRoot.addView(mouseToggleButton, FrameLayout.LayoutParams(dp(44), dp(32), Gravity.TOP or Gravity.START).apply {
+            topMargin = dp(4)
+            marginStart = dp(4)
+        })
+        mouseControls.visibility = if (getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+            .getBoolean("mouse_helper", false)) View.VISIBLE else View.GONE
+        desktopRoot.addView(mouseControls, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = dp(42) })
+
+        // Extra-key strip: compact keys send the same KEY name/action packets as the
+        // on-screen keyboard input connection. It does not alter rendering.
+        extraKeysBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+            setBackgroundColor(Color.argb(205, 12, 16, 24))
+        }
+        populateExtraKeysBar()
+        desktopRoot.addView(extraKeysBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(38), Gravity.BOTTOM
+        ).apply { bottomMargin = dp(0) })
+
+        // Text-input toolbar based on upstream's back-button + single-line editor.
+        keyboardBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            setBackgroundColor(Color.rgb(24, 30, 42))
+            visibility = View.GONE
+        }
+        keyboardBar.addView(actionButton("←") {
+            keyboardBar.visibility = View.GONE
+            val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+            extraKeysBar.visibility = if (
+                prefs.getBoolean("additional_keyboard", true) && binderFrameCount > 0L
+            ) View.VISIBLE else View.GONE
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                .hideSoftInputFromWindow(keyboardInput.windowToken, 0)
+            previewImage.requestFocus()
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        keyboardInput = EditText(this).apply {
+            hint = "Type into Linux desktop"
+            setHintTextColor(Color.LTGRAY)
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                    sendKeyboardText()
+                    true
+                } else false
+            }
+        }
+        keyboardBar.addView(keyboardInput, LinearLayout.LayoutParams(
+            0, dp(44), 1f
+        ))
+        keyboardBar.addView(actionButton("Send") { sendKeyboardText() },
+            LinearLayout.LayoutParams(dp(64), dp(44)))
+        desktopRoot.addView(keyboardBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
+        ).apply { bottomMargin = dp(38) })
+
         connectionPanel.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
         return desktopRoot
+    }
+
+    private lateinit var keyboardBar: LinearLayout
+    private lateinit var keyboardInput: EditText
+    private lateinit var extraKeysBar: LinearLayout
+    private lateinit var mouseControls: LinearLayout
+    private lateinit var mouseToggleButton: Button
+    private lateinit var desktopTopControls: LinearLayout
+    private val activeExtraModifiers = linkedSetOf<String>()
+    private var lastMouseDragX = 0f
+    private var lastMouseDragY = 0f
+
+    /**
+     * Re-apply visual-only preferences after returning from Preferences.
+     * These controls are intentionally separate from compositor/rendering state.
+     */
+    private fun populateExtraKeysBar() {
+        if (!::extraKeysBar.isInitialized || !::previewImage.isInitialized) return
+        extraKeysBar.removeAllViews()
+        val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+        val config = prefs.getString("extra_keys_config", "").orEmpty().trim()
+        val defaults = listOf(
+            "Esc" to "Escape", "Tab" to "Tab", "Ctrl" to "Control_L",
+            "Alt" to "Alt_L", "Shift" to "Shift_L", "↑" to "Up",
+            "↓" to "Down", "←" to "Left", "→" to "Right"
+        )
+        val keys = parseExtraKeys(config).ifEmpty { defaults }
+        fun send(key: String, action: String) {
+            previewImage.inputEventListener?.invoke(("KEY " + key + " " + action).toByteArray(Charsets.US_ASCII))
+        }
+        keys.forEach { (label, key) ->
+            val modifier = key in setOf("Control_L", "Alt_L", "Shift_L", "Super_L")
+            val button = actionButton(label) {
+                if (modifier) {
+                    if (activeExtraModifiers.remove(key)) send(key, "UP")
+                    else { activeExtraModifiers.add(key); send(key, "DOWN") }
+                } else {
+                    send(key, "DOWN")
+                    send(key, "UP")
+                    if (prefs.getBoolean("termux_extra_key_behavior", true)) {
+                        activeExtraModifiers.toList().forEach { held ->
+                            send(held, "UP")
+                            activeExtraModifiers.remove(held)
+                        }
+                    }
+                }
+                buttonFocus()
+            }
+            val arrowIcon = when (key) {
+                "Up" -> R.drawable.ic_extra_key_arrow_up
+                "Down" -> R.drawable.ic_extra_key_arrow_down
+                "Left" -> R.drawable.ic_extra_key_arrow_left
+                "Right" -> R.drawable.ic_extra_key_arrow_right
+                else -> 0
+            }
+            if (arrowIcon != 0) {
+                button.text = ""
+                button.setCompoundDrawablesRelativeWithIntrinsicBounds(null, getDrawable(arrowIcon), null, null)
+            }
+            button.contentDescription = "$label key"
+            button.setOnLongClickListener {
+                if (!modifier) return@setOnLongClickListener false
+                if (activeExtraModifiers.contains(key)) {
+                    send(key, "UP"); activeExtraModifiers.remove(key)
+                } else {
+                    activeExtraModifiers.add(key); send(key, "DOWN")
+                }
+                button.alpha = if (key in activeExtraModifiers) 0.65f else 1f
+                true
+            }
+            extraKeysBar.addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                leftMargin = dp(1); rightMargin = dp(1)
+            })
+        }
+    }
+
+    private fun buttonFocus() {
+        if (::previewImage.isInitialized) previewImage.requestFocus()
+    }
+
+    private fun parseExtraKeys(config: String): List<Pair<String, String>> {
+        if (config.isBlank()) return emptyList()
+        val aliases = mapOf(
+            "ESC" to ("Esc" to "Escape"), "ESCAPE" to ("Esc" to "Escape"),
+            "TAB" to ("Tab" to "Tab"), "CTRL" to ("Ctrl" to "Control_L"),
+            "CONTROL" to ("Ctrl" to "Control_L"), "ALT" to ("Alt" to "Alt_L"),
+            "SHIFT" to ("Shift" to "Shift_L"), "SUPER" to ("Super" to "Super_L"),
+            "HOME" to ("Home" to "Home"), "END" to ("End" to "End"),
+            "UP" to ("↑" to "Up"), "DOWN" to ("↓" to "Down"),
+            "LEFT" to ("←" to "Left"), "RIGHT" to ("→" to "Right"),
+            "PGUP" to ("PgUp" to "Page_Up"), "PAGEUP" to ("PgUp" to "Page_Up"),
+            "PGDN" to ("PgDn" to "Page_Down"), "PAGEDOWN" to ("PgDn" to "Page_Down"),
+            "INS" to ("Ins" to "Insert"), "INSERT" to ("Ins" to "Insert"),
+            "DEL" to ("Del" to "Delete"), "DELETE" to ("Del" to "Delete"),
+            "ENTER" to ("Enter" to "Return"), "RETURN" to ("Enter" to "Return"),
+            "SPACE" to ("Space" to "space"), "BACKSPACE" to ("Bksp" to "BackSpace"),
+            "F1" to ("F1" to "F1"), "F2" to ("F2" to "F2"), "F3" to ("F3" to "F3"),
+            "F4" to ("F4" to "F4"), "F5" to ("F5" to "F5"), "F6" to ("F6" to "F6"),
+            "F7" to ("F7" to "F7"), "F8" to ("F8" to "F8"), "F9" to ("F9" to "F9"),
+            "F10" to ("F10" to "F10"), "F11" to ("F11" to "F11"), "F12" to ("F12" to "F12")
+        )
+        return try {
+            val rows = JSONArray(config)
+            val parsed = mutableListOf<Pair<String, String>>()
+            fun addToken(token: String) {
+                val name = token.trim().trim('"', '\'')
+                if (name.isEmpty()) return
+                val upper = name.uppercase()
+                val pair = aliases[upper] ?: (name to name)
+                parsed.add(pair)
+            }
+            for (i in 0 until rows.length()) {
+                val row = rows.optJSONArray(i)
+                if (row != null) {
+                    for (j in 0 until row.length()) addToken(row.optString(j, ""))
+                } else addToken(rows.optString(i, ""))
+            }
+            parsed.distinctBy { it.second }.take(16)
+        } catch (_: Exception) {
+            config.split(',', ';', '\n').mapNotNull { item ->
+                val parts = item.trim().split('=', ':', limit = 2)
+                if (parts.size != 2) null
+                else {
+                    val key = parts[1].trim()
+                    val mapped = aliases[key.uppercase()] ?: (parts[0].trim() to key)
+                    mapped
+                }
+            }.distinctBy { it.second }.take(16)
+        }
+    }
+
+    private fun applyUiPreferences() {
+        if (!::mouseControls.isInitialized || !::extraKeysBar.isInitialized ||
+            !::mouseToggleButton.isInitialized || !::keyboardBar.isInitialized) return
+        val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+        val showMouse = prefs.getBoolean("mouse_helper", false) && binderFrameCount > 0L
+        mouseControls.visibility = if (showMouse) View.VISIBLE else View.GONE
+        mouseToggleButton.text = if (showMouse) "X" else "×"
+        populateExtraKeysBar()
+        val showExtraKeys = prefs.getBoolean("additional_keyboard", true) && binderFrameCount > 0L
+        extraKeysBar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+        val opacity = prefs.getInt("extra_key_bar_opacity", 100).coerceIn(1, 100) / 100f
+        extraKeysBar.alpha = opacity
+        val position = prefs.getString("extra_key_bar_position", "bottom")
+        val extraParams = extraKeysBar.layoutParams as? FrameLayout.LayoutParams
+        if (extraParams != null) {
+            extraParams.gravity = when (position) {
+                "top" -> Gravity.TOP
+                "left" -> Gravity.START or Gravity.CENTER_VERTICAL
+                "right" -> Gravity.END or Gravity.CENTER_VERTICAL
+                else -> Gravity.BOTTOM
+            }
+            val vertical = position == "left" || position == "right"
+            if (vertical) {
+                extraParams.width = dp(48)
+                extraParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                extraKeysBar.orientation = LinearLayout.VERTICAL
+                for (index in 0 until extraKeysBar.childCount) {
+                    extraKeysBar.getChildAt(index).layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+                    ).apply { topMargin = dp(1); bottomMargin = dp(1) }
+                }
+            } else {
+                extraParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                extraParams.height = dp(44)
+                extraKeysBar.orientation = LinearLayout.HORIZONTAL
+                for (index in 0 until extraKeysBar.childCount) {
+                    extraKeysBar.getChildAt(index).layoutParams = LinearLayout.LayoutParams(
+                        0, dp(40), 1f
+                    ).apply { leftMargin = dp(1); rightMargin = dp(1) }
+                }
+            }
+            extraKeysBar.layoutParams = extraParams
+        }
+        val resizeForKeyboard = prefs.getBoolean("resize_for_keyboard", false)
+        // Resizing is a rendering/compositor behavior; keep the preference visible
+        // but do not simulate it here.
+        keyboardBar.contentDescription = if (resizeForKeyboard) {
+            "Text input toolbar; display resizing preference enabled"
+        } else {
+            "Text input toolbar"
+        }
+    }
+
+    private fun sendKeyboardText() {
+        val text = keyboardInput.text?.toString().orEmpty()
+        if (text.isNotEmpty()) {
+            val safe = text.filter { it == '\n' || it == '\t' || it >= ' ' && it != '\u007f' }
+            if (safe.isNotEmpty() && safe.toByteArray(Charsets.UTF_8).size <= 100) {
+                previewImage.inputEventListener?.invoke(("TEXT " + safe).toByteArray(Charsets.UTF_8))
+            } else {
+                Toast.makeText(this, "Text must be 100 UTF-8 bytes or less", Toast.LENGTH_SHORT).show()
+            }
+            keyboardInput.text.clear()
+        }
+        previewImage.requestFocus()
+    }
+
+    private fun showDisplaysDialog() {
+        val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+        val mode = prefs.getInt("resolution_mode", 0)
+        val modeName = when (mode) {
+            1 -> "Scaled"
+            2 -> "Stretch"
+            3 -> "Pixel-perfect"
+            else -> "Fit"
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Displays")
+            .setMessage("Current output mode: " + modeName +
+                "\nScale: " + prefs.getInt("display_scale", 100) + "%" +
+                "\nFiltering: " + if (prefs.getInt("display_filter", 0) == 0) "Bilinear" else "Nearest-neighbour" +
+                "\n\nDisplay configuration is managed in Preferences.")
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Preferences") { _, _ ->
+                startActivity(Intent(this, PreferencesActivity::class.java))
+            }
+            .show()
+    }
+
+    private fun showHelpDialog() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Termux:XWayland Help")
+            .setMessage(
+                "1. Open Termux and run: termux-xwayland start\\n\\n" +
+                "2. Keep the Termux session running. This screen is the Android host and can wait before a desktop is launched.\\n\\n" +
+                "3. Configure output, pointer, keyboard, and extra-key options in Preferences.\\n\\n" +
+                "The full native rendering/input integration is being ported in separate stages."
+            )
+            .setPositiveButton("Preferences") { _, _ ->
+                startActivity(Intent(this, PreferencesActivity::class.java))
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun connectOrDisconnect() {
@@ -822,6 +1304,13 @@ class MainActivity : Activity() {
         addView(label(title, 15, ink, true))
         addView(label(body, 13, muted, false).apply { setPadding(0, dp(6), 0, 0) })
     }
+
+    private fun iconActionButton(drawableRes: Int, description: String, action: () -> Unit) =
+        actionButton("", action).apply {
+            setCompoundDrawablesRelativeWithIntrinsicBounds(null, getDrawable(drawableRes), null, null)
+            contentDescription = description
+            minWidth = dp(44)
+        }
 
     private fun actionButton(text: String, action: () -> Unit) = Button(this).apply {
         this.text = text
