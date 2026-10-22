@@ -242,9 +242,14 @@ Java_org_techwithkaushik_termuxxwayland_NativeEglRenderer_nativeRender(
         x = 1.f;
         y = 1.f;
     } else if (safeScaleMode == 3) {
-        // Pixel-perfect mode centers the source at 1:1 when possible.
-        x = std::min(1.f, static_cast<float>(width) / static_cast<float>(surfaceWidth));
-        y = std::min(1.f, static_cast<float>(height) / static_cast<float>(surfaceHeight));
+        // Keep source pixels square and centered; downscale uniformly only
+        // when the complete source cannot fit on the native surface.
+        const float pixelScale = std::min(
+            1.f,
+            std::min(static_cast<float>(surfaceWidth) / static_cast<float>(width),
+                     static_cast<float>(surfaceHeight) / static_cast<float>(height)));
+        x = static_cast<float>(width) * pixelScale / static_cast<float>(surfaceWidth);
+        y = static_cast<float>(height) * pixelScale / static_cast<float>(surfaceHeight);
     } else {
         // Fit preserves the desktop aspect ratio. Scaled applies a bounded
         // viewport zoom without resampling the CPU-side RGBA frame.
