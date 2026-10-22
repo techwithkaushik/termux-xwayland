@@ -1,6 +1,8 @@
 package org.techwithkaushik.termuxxwayland
 
 import android.os.Bundle
+import android.content.Intent
+import android.provider.Settings
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceFragmentCompat
@@ -28,7 +30,7 @@ class PreferencesActivity : AppCompatActivity() {
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             preferenceManager.preferenceDataStore =
                 TermuxXWaylandPreferenceDataStore(requireContext())
-            setPreferencesFromResource(R.xml.preferences, rootKey)
+            setPreferencesFromResource(R.xml.preferences, rootKey ?: "main")
 
             val resolutionMode = findPreference<ListPreference>("resolution_mode")
             resolutionMode?.onPreferenceChangeListener =
@@ -38,6 +40,13 @@ class PreferencesActivity : AppCompatActivity() {
                 }
 
             applyDisplayDependencies(resolutionMode?.value ?: DEFAULT_RESOLUTION_MODE)
+
+            findPreference<androidx.preference.Preference>("enable_accessibility_service")?.setOnPreferenceClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                true
+            }
+            findPreference<androidx.preference.Preference>("version")?.summary =
+                "Termux:XWayland UI port • preference layout based on Termux:X11"
         }
 
         private fun applyDisplayDependencies(mode: String) {
