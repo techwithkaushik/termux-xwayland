@@ -796,7 +796,7 @@ class MainActivity : Activity() {
             }
             parsed.distinctBy { it.second }.take(16)
         } catch (_: Exception) {
-            config.split(',', ';', '\\n').mapNotNull { item ->
+            config.split(',', ';', '\n').mapNotNull { item ->
                 val parts = item.trim().split('=', ':', limit = 2)
                 if (parts.size != 2) null
                 else {
