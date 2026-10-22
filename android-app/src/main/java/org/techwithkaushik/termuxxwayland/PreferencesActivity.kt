@@ -54,7 +54,7 @@ class PreferencesActivity : Activity() {
     private fun buildPreferences() {
         content.removeAllViews()
         category("Output")
-        choice("Display resolution mode", "resolution_mode", listOf("Native", "Scaled", "Exact", "Custom"), 0)
+        choice("Display output mode", "resolution_mode", listOf("Fit to display", "Scaled", "Stretch to fill", "Pixel-perfect"), 0)
         seek("Display scale, %", "display_scale", 100, 30, 300, 10)
         choice("Display filtering mode", "display_filter", listOf("Bilinear", "Nearest"), 0)
         toggle("Adjust resolution to fit orientation", "adjust_resolution", false)
