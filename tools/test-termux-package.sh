@@ -39,12 +39,19 @@ fi
 check_grep 'Package: termux-xwayland-bridge' "$pkg/DEBIAN/control" "package name metadata"
 check_grep 'Version: 0.3.0' "$pkg/DEBIAN/control" "package version metadata"
 check_grep 'Depends: bash, coreutils, socat' "$pkg/DEBIAN/control" "loopback status monitor dependency"
-check_grep 'Suggests: clang, pkg-config, wayland' "$pkg/DEBIAN/control" "optional native capture build dependencies"
+check_grep 'Suggests: clang, pkg-config, wayland, libx11, libxtst' "$pkg/DEBIAN/control" "optional native capture and XTest build dependencies"
 if grep -Fq 'wayland' <(sed -n 's/^Depends: //p' "$pkg/DEBIAN/control"); then
   echo "FAIL: optional Wayland capture toolchain must not block bridge package configuration." >&2
   exit 1
 fi
 check_file "$root/native/capture/weston-output-capture.xml"
+check_file "$root/native/input/termux-xwayland-input.c"
+check_file "$root/tools/build-native-input.sh"
+check_grep "XTestFakeRelativeMotionEvent" "$root/native/input/termux-xwayland-input.c" "native relative pointer motion avoids spawning xdotool per event"
+check_grep "dispatchNativePointer(rawEvent)" "$root/termux-package/src/BridgeClient.java" "persistent native pointer helper is preferred"
+check_grep "maxPixels = 1920L * 1080L" "$root/termux-package/src/BridgeClient.java" "high-detail RGBA packets are bounded"
+check_grep "DISPLAY_WIDTH = envDimension" "$root/termux-package/src/BridgeClient.java" "input coordinates retain full XWayland dimensions"
+check_grep "fps=" "$root/termux-package/src/BridgeClient.java" "frame forwarding reports measured FPS"
 check_grep 'bundled_xml="$root/native/capture/weston-output-capture.xml"' "$root/tools/build-native-capture.sh" "bundled capture protocol fallback"
 check_grep 'Architecture: all' "$pkg/DEBIAN/control" "package architecture metadata"
 check_grep '"org.techwithkaushik.termuxxwayland"' "$script" "release host package ID"
@@ -93,12 +100,21 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   [[ "$(dpkg-deb -f "$archive" Architecture)" == "all" ]] || {
     echo "FAIL: wrong architecture in built DEB" >&2; exit 1;
   }
-  if dpkg-deb --contents "$archive" | grep -Fq './build-deb.sh'; then
+  package_contents="$(dpkg-deb --contents "$archive")"
+  if grep -Fq './build-deb.sh' <<< "$package_contents"; then
     echo "FAIL: build tooling must not be installed at the package root." >&2
     exit 1
   fi
-  if ! dpkg-deb --contents "$archive" | grep -Fq './data/data/com.termux/files/usr/bin/termux-xwayland'; then
+  if ! grep -Fq './data/data/com.termux/files/usr/bin/termux-xwayland' <<< "$package_contents"; then
     echo "FAIL: built DEB does not contain the companion executable at the expected path." >&2
+    exit 1
+  fi
+  if ! grep -Fq '/share/termux-xwayland/native/input/termux-xwayland-input.c' <<< "$package_contents"; then
+    echo "FAIL: built DEB does not contain the native pointer helper source." >&2
+    exit 1
+  fi
+  if ! grep -Fq '/share/termux-xwayland/tools/build-native-input.sh' <<< "$package_contents"; then
+    echo "FAIL: built DEB does not contain the native pointer helper builder." >&2
     exit 1
   fi
 fi

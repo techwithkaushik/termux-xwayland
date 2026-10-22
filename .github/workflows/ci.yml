@@ -118,6 +118,12 @@ jobs:
         run: |
           set -euo pipefail
           install -D -m 0644 dist/termux-binder-client/bridge-client.dex termux-package/data/data/com.termux/files/usr/share/termux-xwayland/bridge-client.dex
+      - name: Install XTest development headers for native input helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxtst-dev pkg-config
+      - name: Compile persistent native pointer helper
+        run: bash tools/build-native-input.sh "$RUNNER_TEMP/termux-xwayland-input"
       - name: Check repository structure
         run: bash tools/check-scaffold.sh
       - name: Python diagnostic syntax and protocol validation tests

@@ -11,6 +11,8 @@ import android.os.ParcelFileDescriptor;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -51,10 +53,37 @@ public final class BridgeClient {
     private static final int INPUT = 4;
     private static final int RESIZE = 5;
     private static final int CLIPBOARD = 6;
-    private static final int FRAME_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
-    private static final int FRAME_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
+    // Weston/XWayland can run at the phone's native resolution, but transporting
+    // a full 1080x2400 RGBA image for every frame creates ~10 MB packets and
+    // can overwhelm transport and create stale frames on low-memory/ARM devices. Keep the desktop's
+    // actual coordinates separate from a higher-detail, aspect-preserving stream.
+    private static final int DISPLAY_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
+    private static final int DISPLAY_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
+    private static final int[] STREAM_DIMENSIONS = streamDimensions(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    private static final int FRAME_WIDTH = STREAM_DIMENSIONS[0];
+    private static final int FRAME_HEIGHT = STREAM_DIMENSIONS[1];
     private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
+    private static int[] streamDimensions(int width, int height) {
+        // Near-native text clarity without sending a full 10 MB 1080x2400 frame.
+        // A 1080x2400 output becomes about 966x2146; a 720x1600 output stays native.
+        final long maxPixels = 1920L * 1080L;
+        long pixels = (long) width * height;
+        if (pixels <= maxPixels) return new int[] { width, height };
+        double scale = Math.sqrt((double) maxPixels / (double) pixels);
+        int streamWidth = Math.max(1, (int) Math.floor(width * scale));
+        int streamHeight = Math.max(1, (int) Math.floor(height * scale));
+        while ((long) streamWidth * streamHeight > maxPixels) {
+            if ((double) streamWidth / streamHeight > (double) width / height) streamWidth--;
+            else streamHeight--;
+        }
+        return new int[] { streamWidth, streamHeight };
+    }
+
     private static volatile Process activeFrameCapture;
+    private static volatile Process activeNativeInput;
+    private static BufferedWriter nativeInputWriter;
+    private static boolean nativeInputUnavailableLogged;
+    private static boolean nativeInputDisabled;
     // Keep slow xdotool process launches off the Binder protocol/heartbeat loop.
     // A single worker preserves key/button event ordering while the reader can
     // continue answering PINGs and accepting frames during input bursts.
@@ -99,6 +128,7 @@ public final class BridgeClient {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Process capture = activeFrameCapture;
             if (capture != null) capture.destroy();
+            stopNativeInput();
         }, "termux-xwayland-capture-cleanup"));
         // ActivityThread/ContextImpl may construct Handlers during initialization.
         // Prepare the main looper before constructing any Android app context.
@@ -437,6 +467,7 @@ public final class BridgeClient {
                 Process capture = activeFrameCapture;
                 if (capture != null) capture.destroy();
                 activeFrameCapture = null;
+                stopNativeInput();
             }
         }
     }
@@ -492,9 +523,116 @@ public final class BridgeClient {
         return (int) Math.max(-8192L, Math.min(8192L, value));
     }
 
+    /**
+     * Send latency-sensitive pointer packets through one persistent XTest process.
+     * Spawning xdotool for every move costs tens of milliseconds on low-end ARM devices.
+     * Returns true only when a recognized pointer packet was accepted by the helper.
+     */
+    private static boolean dispatchNativePointer(String rawEvent) {
+        String[] fields = rawEvent.trim().split("\\s+");
+        if (fields.length == 0) return false;
+        String op = fields[0];
+        if (!("REL".equals(op) || "MOVE".equals(op) || "DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op) || "BUTTON".equals(op) || "CLICK".equals(op) || "KEY".equals(op))) return false;
+        final String command;
+        try {
+            if ("REL".equals(op) && fields.length == 3) {
+                int dx = Integer.parseInt(fields[1]), dy = Integer.parseInt(fields[2]);
+                if (Math.abs((long) dx) > 4096L || Math.abs((long) dy) > 4096L) return true;
+                if (dx == 0 && dy == 0) return true;
+                command = "REL " + dx + " " + dy;
+            } else if ("MOVE".equals(op) && fields.length == 3) {
+                float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
+                if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;
+                int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+                int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
+                command = "MOVE " + x + " " + y;
+            } else if ("KEY".equals(op) && fields.length == 3 && ("DOWN".equals(fields[2]) || "UP".equals(fields[2])) && fields[1].matches("[A-Za-z0-9_+.-]{1,32}")) {
+                command = "KEY " + fields[1] + " " + fields[2];
+            } else if (("DOWN".equals(op) || "UP".equals(op) || "CANCEL".equals(op)) && fields.length == 3) {
+                float nx = Float.parseFloat(fields[1]), ny = Float.parseFloat(fields[2]);
+                if (!Float.isFinite(nx) || !Float.isFinite(ny) || nx < 0f || nx > 1f || ny < 0f || ny > 1f) return true;
+                int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+                int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
+                command = op + " " + x + " " + y;
+            } else if ("BUTTON".equals(op) && fields.length == 3 &&
+                    ("DOWN".equals(fields[2]) || "UP".equals(fields[2]))) {
+                int button = Integer.parseInt(fields[1]);
+                if (button < 1 || button > 3) return true;
+                command = "BUTTON " + button + " " + fields[2];
+            } else if ("CLICK".equals(op) && fields.length == 2) {
+                int button = Integer.parseInt(fields[1]);
+                if (button < 1 || button > 3) return true;
+                command = "CLICK " + button;
+            } else {
+                return false;
+            }
+        } catch (NumberFormatException invalid) {
+            return false;
+        }
+
+        synchronized (BridgeClient.class) {
+            if (nativeInputDisabled) return false;
+            try {
+                Process process = activeNativeInput;
+                if (process != null && !process.isAlive()) {
+                    nativeInputDisabled = true;
+                    nativeInputWriter = null;
+                    activeNativeInput = null;
+                    return false;
+                }
+                if (process == null || nativeInputWriter == null) {
+                    String helper = findExecutable("termux-xwayland-input");
+                    String display = System.getenv("DISPLAY");
+                    if (helper == null || display == null || display.trim().isEmpty()) {
+                        nativeInputDisabled = true;
+                        if (!nativeInputUnavailableLogged) {
+                            System.err.println("NATIVE_INPUT_UNAVAILABLE reason=helper_or_DISPLAY_missing; falling back to xdotool");
+                            nativeInputUnavailableLogged = true;
+                        }
+                        return false;
+                    }
+                    process = new ProcessBuilder(helper, "--display", display,
+                            "--width", Integer.toString(DISPLAY_WIDTH),
+                            "--height", Integer.toString(DISPLAY_HEIGHT))
+                            .redirectError(ProcessBuilder.Redirect.INHERIT).start();
+                    activeNativeInput = process;
+                    nativeInputWriter = new BufferedWriter(new OutputStreamWriter(
+                            process.getOutputStream(), StandardCharsets.US_ASCII), 256);
+                    System.out.println("NATIVE_INPUT_STARTED backend=persistent-XTest display=" + display);
+                    System.out.flush();
+                }
+                nativeInputWriter.write(command);
+                nativeInputWriter.newLine();
+                nativeInputWriter.flush();
+                return true;
+            } catch (IOException error) {
+                System.err.println("NATIVE_INPUT_FAILED reason=" + error.getClass().getSimpleName());
+                Process process = activeNativeInput;
+                if (process != null) process.destroy();
+                activeNativeInput = null;
+                nativeInputWriter = null;
+                nativeInputDisabled = true;
+                return false;
+            }
+        }
+    }
+
+    private static void stopNativeInput() {
+        synchronized (BridgeClient.class) {
+            try { if (nativeInputWriter != null) nativeInputWriter.close(); } catch (IOException ignored) {}
+            nativeInputWriter = null;
+            Process process = activeNativeInput;
+            activeNativeInput = null;
+            if (process != null) process.destroy();
+            nativeInputDisabled = false;
+            nativeInputUnavailableLogged = false;
+        }
+    }
+
     private static void handleInput(byte[] payload) {
         if (payload.length == 0 || payload.length > 128) return;
         String rawEvent = new String(payload, StandardCharsets.UTF_8);
+        if (dispatchNativePointer(rawEvent)) return;
         String xdotool = findExecutable("xdotool");
         if (xdotool == null) {
             System.err.println("INPUT_UNAVAILABLE reason=xdotool_not_installed");
@@ -644,8 +782,8 @@ public final class BridgeClient {
             System.err.println("INPUT_REJECTED reason=coordinates_out_of_range");
             return;
         }
-        int x = Math.min(FRAME_WIDTH - 1, Math.round(nx * (FRAME_WIDTH - 1)));
-        int y = Math.min(FRAME_HEIGHT - 1, Math.round(ny * (FRAME_HEIGHT - 1)));
+        int x = Math.min(DISPLAY_WIDTH - 1, Math.round(nx * (DISPLAY_WIDTH - 1)));
+        int y = Math.min(DISPLAY_HEIGHT - 1, Math.round(ny * (DISPLAY_HEIGHT - 1)));
         ProcessBuilder command = new ProcessBuilder(xdotool, "mousemove", Integer.toString(x), Integer.toString(y));
         if ("DOWN".equals(action)) {
             command.command().add("mousedown");
@@ -703,7 +841,8 @@ public final class BridgeClient {
             System.out.println("FRAME_CAPTURE_STARTED epoch_seconds="
                 + (System.currentTimeMillis() / 1000L)
                 + " backend=native-wayland display=" + display
-                + " size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT);
+                + " size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT
+                + " display_size=" + DISPLAY_WIDTH + "x" + DISPLAY_HEIGHT + " max_stream_pixels=230400");
             System.out.flush();
             return process;
         } catch (IOException error) {
@@ -734,6 +873,8 @@ public final class BridgeClient {
             payload[3] = (byte) FRAME_HEIGHT;
             payload[4] = 1;
             long lastLog = 0L;
+            long lastStatsNanos = 0L;
+            long lastStatsFrameCount = 0L;
             long frameCount = 0L;
             try (DataInputStream raw = new DataInputStream(capture.getInputStream())) {
                 while (!Thread.currentThread().isInterrupted()) {
@@ -753,14 +894,23 @@ public final class BridgeClient {
                     writeFrame(output, FRAME, payload);
                     long writeFinished = System.nanoTime();
                     long now = System.currentTimeMillis();
+                    long statsNanos = System.nanoTime();
                     if (frameCount == 1L || lastLog == 0L || now - lastLog >= 5000L) {
+                        long statsElapsedNanos = lastStatsNanos == 0L ? 0L : statsNanos - lastStatsNanos;
+                        long statsFrames = frameCount - lastStatsFrameCount;
+                        double fps = statsElapsedNanos > 0L ? statsFrames * 1_000_000_000.0 / statsElapsedNanos : 0.0;
                         lastLog = now;
                         System.out.println("FRAME_SENT count=" + frameCount
                             + " epoch_seconds=" + (now / 1000L)
+                            + " fps=" + String.format(java.util.Locale.US, "%.1f", fps)
+                            + " frame_size=" + FRAME_WIDTH + "x" + FRAME_HEIGHT
+                            + " packet_bytes=" + payload.length
                             + " read_ms=" + ((readFinished - readStarted) / 1_000_000L)
                             + " write_ms=" + ((writeFinished - writeStarted) / 1_000_000L)
                             + " transport=binder-fd");
                         System.out.flush();
+                        lastStatsNanos = statsNanos;
+                        lastStatsFrameCount = frameCount;
                     }
                 }
             } catch (IOException error) {

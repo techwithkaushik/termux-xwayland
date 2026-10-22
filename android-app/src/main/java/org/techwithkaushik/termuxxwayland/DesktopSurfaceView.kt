@@ -30,6 +30,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     @Volatile private var renderThread: Thread? = null
     private data class PixelFrame(val pixels: ByteArray, val width: Int, val height: Int, val pixelOffset: Int)
     private var latestFrame: PixelFrame? = null
+    private var renderCursorX = 0.5f
+    private var renderCursorY = 0.5f
     private var frameVersion = 0L
     private var renderedVersion = -1L
     private var firstFrameDrawnLogged = false
@@ -44,6 +46,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var touchMoved = false
     private var lastCentroidX = 0f
     private var lastCentroidY = 0f
+    private var trackpadCursorX = -1f
+    private var trackpadCursorY = -1f
     private var lastTapAt = 0L
     private var tapCount = 0
     private val pointerPrefs by lazy {
@@ -158,11 +162,12 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                             }
                         }
                         if (!surfaceReady || Thread.currentThread().isInterrupted) null
-                        else Pair(latestFrame, frameVersion)
+                        else Triple(latestFrame, frameVersion, Pair(renderCursorX, renderCursorY))
                     } ?: break
 
                     val frame = snapshot.first
                     val version = snapshot.second
+                    val cursor = snapshot.third
                     if (frame == null || !holder.surface.isValid) {
                         synchronized(frameLock) { renderedVersion = version }
                         continue
@@ -172,7 +177,7 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                         // Do not hold frameLock while JNI/GPU work runs: the incoming
                         // frame callback must be able to replace stale frames immediately.
                         if (surfaceReady && nativeHandle != 0L &&
-                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height)) {
+                            NativeEglRenderer.nativeRender(nativeHandle, frame.pixels, frame.pixelOffset, frame.width, frame.height, cursor.first, cursor.second, true)) {
                             synchronized(frameLock) { renderedVersion = version }
                             if (!firstFrameDrawnLogged) {
                                 firstFrameDrawnLogged = true
@@ -293,6 +298,29 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         KeyEvent.KEYCODE_PAGE_UP -> "Page_Up"
         KeyEvent.KEYCODE_PAGE_DOWN -> "Page_Down"
         KeyEvent.KEYCODE_FORWARD_DEL -> "Delete"
+KeyEvent.KEYCODE_F1 -> "F1"
+KeyEvent.KEYCODE_F2 -> "F2"
+KeyEvent.KEYCODE_F3 -> "F3"
+KeyEvent.KEYCODE_F4 -> "F4"
+KeyEvent.KEYCODE_F5 -> "F5"
+KeyEvent.KEYCODE_F6 -> "F6"
+KeyEvent.KEYCODE_F7 -> "F7"
+KeyEvent.KEYCODE_F8 -> "F8"
+KeyEvent.KEYCODE_F9 -> "F9"
+KeyEvent.KEYCODE_F10 -> "F10"
+KeyEvent.KEYCODE_F11 -> "F11"
+KeyEvent.KEYCODE_F12 -> "F12"
+KeyEvent.KEYCODE_COMMA -> "comma"
+KeyEvent.KEYCODE_PERIOD -> "period"
+KeyEvent.KEYCODE_MINUS -> "minus"
+KeyEvent.KEYCODE_EQUALS -> "equal"
+KeyEvent.KEYCODE_SLASH -> "slash"
+KeyEvent.KEYCODE_BACKSLASH -> "backslash"
+KeyEvent.KEYCODE_SEMICOLON -> "semicolon"
+KeyEvent.KEYCODE_APOSTROPHE -> "apostrophe"
+KeyEvent.KEYCODE_LEFT_BRACKET -> "bracketleft"
+KeyEvent.KEYCODE_RIGHT_BRACKET -> "bracketright"
+KeyEvent.KEYCODE_GRAVE -> "grave"
         KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> "Shift_L"
         KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> "Control_L"
         KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> "Alt_L"
@@ -321,7 +349,17 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 lastCentroidY = y
                 touchMoved = false
                 when (touchMode) {
-                    0 -> Unit // Trackpad: relative motion and tap-to-click.
+                    0 -> {
+                        // The remote cursor plane is absent from some headless captures.
+                        // Keep a crisp local cursor synchronized with relative pointer deltas.
+                        val bounds = contentBounds()
+                        if (trackpadCursorX < 0f || trackpadCursorY < 0f) {
+                            trackpadCursorX = bounds.centerX()
+                            trackpadCursorY = bounds.centerY()
+                        }
+                        updateRenderCursor(trackpadCursorX, trackpadCursorY)
+                        cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
+                    } // Trackpad: relative motion and tap-to-click.
                     1 -> sendPointer("MOVE", x, y) // Simulated touchscreen: absolute pointer, tap-to-click.
                     else -> sendPointer("DOWN", x, y) // Direct touch: hold left button while in contact.
                 }
@@ -329,8 +367,15 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                // Keep the original finger as the primary pointer; a second finger
-                // must not accidentally release or re-press the desktop mouse button.
+                // Three-finger gesture exposes Android IME, following Termux:X11-style desktop input behavior.
+                if (event.pointerCount >= 3) {
+                    requestFocus()
+                    post {
+                        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                        imm.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
+                // Keep the original finger as the primary pointer; a second finger must not release the mouse button.
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -364,7 +409,9 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 }
                 val dx = x - lastTouchX
                 val dy = y - lastTouchY
-                if (now - lastMoveAt < 16L) return true
+                // Do not impose a 16 ms software throttle on pointer motion.
+                // The Termux-side native XTest helper coalesces/flushes events
+                // without launching a new xdotool process for every move.
                 lastMoveAt = now
                 when (touchMode) {
                     0 -> {
@@ -372,7 +419,15 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                             val bounds = contentBounds()
                             val scaleX = if (bounds.width() > 0f) (frameWidthForInput() / bounds.width()) else 1f
                             val scaleY = if (bounds.height() > 0f) (frameHeightForInput() / bounds.height()) else 1f
-                            sendInput("REL ${kotlin.math.round(dx * scaleX * pointerSpeed).toInt()} ${kotlin.math.round(dy * scaleY * pointerSpeed).toInt()}")
+                            val desktopDx = kotlin.math.round(dx * scaleX * pointerSpeed).toInt()
+                            val desktopDy = kotlin.math.round(dy * scaleY * pointerSpeed).toInt()
+                            sendInput("REL $desktopDx $desktopDy")
+                            trackpadCursorX = (trackpadCursorX + desktopDx * bounds.width() / frameWidthForInput())
+                                .coerceIn(bounds.left, bounds.right)
+                            trackpadCursorY = (trackpadCursorY + desktopDy * bounds.height() / frameHeightForInput())
+                                .coerceIn(bounds.top, bounds.bottom)
+                            updateRenderCursor(trackpadCursorX, trackpadCursorY)
+                            cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
                         }
                     }
                     else -> sendPointer("MOVE", x, y)
@@ -467,11 +522,23 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         if (!insideContent && !allowOutsideCapture) return false
         if (bounds.width() <= 0f || bounds.height() <= 0f) return false
 
+        updateRenderCursor(x, y)
         cursorPositionListener?.invoke(x, y)
         val normalizedX = ((x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
         val normalizedY = ((y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
         sendInput("$action $normalizedX $normalizedY")
         return true
+    }
+
+    private fun updateRenderCursor(x: Float, y: Float) {
+        val bounds = contentBounds()
+        if (bounds.width() <= 0f || bounds.height() <= 0f) return
+        synchronized(frameLock) {
+            renderCursorX = ((x - bounds.left) / bounds.width()).coerceIn(0f, 1f)
+            renderCursorY = ((y - bounds.top) / bounds.height()).coerceIn(0f, 1f)
+            frameVersion++
+            frameLock.notifyAll()
+        }
     }
 
     private fun sendInput(value: String) {
@@ -480,13 +547,12 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         }
     }
 
-    private fun frameWidthForInput(): Float = synchronized(frameLock) {
-        (latestFrame?.width ?: 640).toFloat()
-    }
+    // Input coordinates target the full-size XWayland output, not the
+    // bandwidth-capped preview frame. Using latestFrame.width here makes
+    // touch motion progressively sluggish whenever the stream is downscaled.
+    private fun frameWidthForInput(): Float = resources.displayMetrics.widthPixels.toFloat()
 
-    private fun frameHeightForInput(): Float = synchronized(frameLock) {
-        (latestFrame?.height ?: 360).toFloat()
-    }
+    private fun frameHeightForInput(): Float = resources.displayMetrics.heightPixels.toFloat()
 
     private fun contentBounds(): android.graphics.RectF {
         val frameWidth: Int

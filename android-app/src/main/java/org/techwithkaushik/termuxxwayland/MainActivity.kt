@@ -77,6 +77,7 @@ class MainActivity : Activity() {
     private lateinit var binderStatusDescription: TextView
     private lateinit var desktopProofDescription: TextView
     private lateinit var previewImage: DesktopSurfaceView
+    private lateinit var cursorOverlay: DesktopCursorOverlay
     private lateinit var headingContainer: LinearLayout
     private lateinit var connectionPanel: LinearLayout
     private lateinit var desktopRoot: FrameLayout
@@ -98,6 +99,8 @@ class MainActivity : Activity() {
             binderStatusDescription.text = "Bridge service attached; waiting for the latest desktop frame."
             previewImage.visibility = View.VISIBLE
             previewImage.inputEventListener = { payload -> local.sendInput(payload) }
+            previewImage.cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
+            previewImage.requestFocus()
             // Never retain pixels from an earlier Binder session. Until the new
             // server sends a frame, the desktop surface stays empty/black.
             pendingDesktopFrame.set(null)
@@ -119,6 +122,8 @@ class MainActivity : Activity() {
             pendingDesktopFrame.set(null)
             if (::previewImage.isInitialized) {
                 previewImage.inputEventListener = null
+                previewImage.cursorPositionListener = null
+                cursorOverlay.resetPointer()
                 previewImage.clearFrame()
                 previewImage.visibility = View.VISIBLE
             }
@@ -439,7 +444,9 @@ class MainActivity : Activity() {
             contentDescription = "Live Linux desktop"
             setBackgroundColor(Color.TRANSPARENT)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
+            cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
         }
+        cursorOverlay = DesktopCursorOverlay(this).apply { visibility = View.GONE }
         desktopRoot = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             fitsSystemWindows = false
@@ -447,6 +454,27 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
+            // Pointer is composited directly by the native EGL renderer over the XWayland frame.
+            // Keep an explicit software-keyboard control visible in immersive mode.
+            addView(TextView(this@MainActivity).apply {
+                text = "⌨"
+                textSize = 23f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setBackgroundColor(Color.argb(190, 24, 34, 49))
+                contentDescription = "Show keyboard"
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    previewImage.requestFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showSoftInput(previewImage, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.END).apply {
+                topMargin = dp(12)
+                marginEnd = dp(12)
+            })
         }
         connectionPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

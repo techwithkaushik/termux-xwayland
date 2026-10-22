@@ -35,7 +35,11 @@ mkdir -p "$capture_root/native/capture" "$capture_root/tools"
 cp "$root/native/capture/termux-xwayland-capture.c" "$capture_root/native/capture/"
 cp "$root/native/capture/weston-output-capture.xml" "$capture_root/native/capture/"
 cp "$root/tools/build-native-capture.sh" "$capture_root/tools/"
-chmod 0644 "$capture_root/native/capture/termux-xwayland-capture.c" "$capture_root/native/capture/weston-output-capture.xml"
+mkdir -p "$capture_root/native/input"
+cp "$root/native/input/termux-xwayland-input.c" "$capture_root/native/input/"
+cp "$root/tools/build-native-input.sh" "$capture_root/tools/"
+chmod 0644 "$capture_root/native/capture/termux-xwayland-capture.c" "$capture_root/native/capture/weston-output-capture.xml" "$capture_root/native/input/termux-xwayland-input.c"
+chmod 0755 "$capture_root/tools/build-native-input.sh"
 chmod 0755 "$capture_root/tools/build-native-capture.sh"
 
 find "$stage" -type d -exec chmod 0755 {} +
