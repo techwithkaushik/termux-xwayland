@@ -37,6 +37,15 @@ internal class DesktopCursorOverlay(context: Context) : View(context) {
         setBackgroundColor(Color.TRANSPARENT)
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (!pointerVisible && w > 0 && h > 0) {
+            pointerX = w * 0.5f
+            pointerY = h * 0.5f
+            pointerVisible = true
+        }
+    }
+
     fun updatePointer(x: Float, y: Float) {
         if (!x.isFinite() || !y.isFinite()) return
         pointerX = x.coerceIn(0f, max(0f, width.toFloat() - 1f))
