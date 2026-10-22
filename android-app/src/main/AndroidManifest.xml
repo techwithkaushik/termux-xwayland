@@ -6,7 +6,7 @@
         android:allowBackup="false"
         android:label="Termux XWayland"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/AppTheme">
         <provider
             android:name=".TermuxControlProvider"
             android:authorities="${applicationId}.control"
