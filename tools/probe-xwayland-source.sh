@@ -14,9 +14,9 @@ usage() {
     cat <<'USAGE'
 Usage: tools/probe-xwayland-source.sh [--require-deps] [--host-deps-only]
 
-Checks that the X server submodule contains the upstream XWayland Meson
-backend and reports whether the build host has the common XWayland tools and
-pkg-config dependencies. It does not build or modify files.
+By default, checks that the X server submodule contains the upstream XWayland
+Meson backend and reports common host tools/dependencies. With --host-deps-only,
+reports only host tools/dependencies. It does not build or modify files.
 
 Options:
   --require-deps  Exit non-zero if a required tool or dependency is missing.
@@ -43,7 +43,7 @@ if (( ! HOST_DEPS_ONLY )); then
         echo "Run: git submodule update --init --recursive lorie/src/main/cpp/xserver" >&2
         exit 2
     fi
-    
+
     if [[ -f "$XSERVER_DIR/hw/xwayland/meson.build" && -f "$XSERVER_DIR/meson.build" ]]; then
         ok "upstream XWayland Meson backend exists in the pinned X server source"
     else
@@ -51,12 +51,12 @@ if (( ! HOST_DEPS_ONLY )); then
         echo "This source revision cannot be used as the XWayland backend without updating the source pin." >&2
         exit 2
     fi
-    
+
     if command -v git >/dev/null 2>&1; then
         printf 'X server source revision: '
         git -C "$XSERVER_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo "unknown (submodule metadata unavailable)"
     fi
-    
+
 fi
 
 for tool in meson ninja pkg-config; do
