@@ -41,7 +41,7 @@ internal class TermuxXWaylandPreferenceDataStore(context: Context) : PreferenceD
             return
         }
         val numericKeys = setOf(
-            "resolution_mode", "display_filter", "orientation", "idle_timeout",
+            "resolution_mode", "display_filter", "display_scale", "pointer_speed", "orientation", "idle_timeout",
             "touch_mode", "pointer_transform", "swipe_up", "swipe_down",
             "back_action", "notification_tap"
         )
