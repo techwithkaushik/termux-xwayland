@@ -44,6 +44,8 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
     private var touchMoved = false
     private var lastCentroidX = 0f
     private var lastCentroidY = 0f
+    private var trackpadCursorX = -1f
+    private var trackpadCursorY = -1f
     private var lastTapAt = 0L
     private var tapCount = 0
     private val pointerPrefs by lazy {
@@ -293,6 +295,29 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
         KeyEvent.KEYCODE_PAGE_UP -> "Page_Up"
         KeyEvent.KEYCODE_PAGE_DOWN -> "Page_Down"
         KeyEvent.KEYCODE_FORWARD_DEL -> "Delete"
+KeyEvent.KEYCODE_F1 -> "F1"
+KeyEvent.KEYCODE_F2 -> "F2"
+KeyEvent.KEYCODE_F3 -> "F3"
+KeyEvent.KEYCODE_F4 -> "F4"
+KeyEvent.KEYCODE_F5 -> "F5"
+KeyEvent.KEYCODE_F6 -> "F6"
+KeyEvent.KEYCODE_F7 -> "F7"
+KeyEvent.KEYCODE_F8 -> "F8"
+KeyEvent.KEYCODE_F9 -> "F9"
+KeyEvent.KEYCODE_F10 -> "F10"
+KeyEvent.KEYCODE_F11 -> "F11"
+KeyEvent.KEYCODE_F12 -> "F12"
+KeyEvent.KEYCODE_COMMA -> "comma"
+KeyEvent.KEYCODE_PERIOD -> "period"
+KeyEvent.KEYCODE_MINUS -> "minus"
+KeyEvent.KEYCODE_EQUALS -> "equal"
+KeyEvent.KEYCODE_SLASH -> "slash"
+KeyEvent.KEYCODE_BACKSLASH -> "backslash"
+KeyEvent.KEYCODE_SEMICOLON -> "semicolon"
+KeyEvent.KEYCODE_APOSTROPHE -> "apostrophe"
+KeyEvent.KEYCODE_LEFT_BRACKET -> "bracketleft"
+KeyEvent.KEYCODE_RIGHT_BRACKET -> "bracketright"
+KeyEvent.KEYCODE_GRAVE -> "grave"
         KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> "Shift_L"
         KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> "Control_L"
         KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> "Alt_L"
@@ -321,7 +346,16 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                 lastCentroidY = y
                 touchMoved = false
                 when (touchMode) {
-                    0 -> Unit // Trackpad: relative motion and tap-to-click.
+                    0 -> {
+                        // The remote cursor plane is absent from some headless captures.
+                        // Keep a crisp local cursor synchronized with relative pointer deltas.
+                        val bounds = contentBounds()
+                        if (trackpadCursorX < 0f || trackpadCursorY < 0f) {
+                            trackpadCursorX = bounds.centerX()
+                            trackpadCursorY = bounds.centerY()
+                        }
+                        cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
+                    } // Trackpad: relative motion and tap-to-click.
                     1 -> sendPointer("MOVE", x, y) // Simulated touchscreen: absolute pointer, tap-to-click.
                     else -> sendPointer("DOWN", x, y) // Direct touch: hold left button while in contact.
                 }
@@ -374,7 +408,14 @@ internal class DesktopSurfaceView @JvmOverloads constructor(
                             val bounds = contentBounds()
                             val scaleX = if (bounds.width() > 0f) (frameWidthForInput() / bounds.width()) else 1f
                             val scaleY = if (bounds.height() > 0f) (frameHeightForInput() / bounds.height()) else 1f
-                            sendInput("REL ${kotlin.math.round(dx * scaleX * pointerSpeed).toInt()} ${kotlin.math.round(dy * scaleY * pointerSpeed).toInt()}")
+                            val desktopDx = kotlin.math.round(dx * scaleX * pointerSpeed).toInt()
+                            val desktopDy = kotlin.math.round(dy * scaleY * pointerSpeed).toInt()
+                            sendInput("REL $desktopDx $desktopDy")
+                            trackpadCursorX = (trackpadCursorX + desktopDx * bounds.width() / frameWidthForInput())
+                                .coerceIn(bounds.left, bounds.right)
+                            trackpadCursorY = (trackpadCursorY + desktopDy * bounds.height() / frameHeightForInput())
+                                .coerceIn(bounds.top, bounds.bottom)
+                            cursorPositionListener?.invoke(trackpadCursorX, trackpadCursorY)
                         }
                     }
                     else -> sendPointer("MOVE", x, y)
