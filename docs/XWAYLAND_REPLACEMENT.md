@@ -2,17 +2,18 @@
 
 ## Goal
 
-Replace the current Lorie-specific X.Org server build with the upstream XWayland server backend. This is a backend replacement, not a rename of the existing `Xlorie` library or executable.
+Replace the current Lorie-specific X.Org server build with a genuine upstream XWayland backend. This is a backend replacement, not a rename of the existing `Xlorie` library or executable.
 
 ## Verified current build facts
 
 - `lorie/src/main/cpp/CMakeLists.txt` includes `recipes/xserver.cmake`.
-- `recipes/xserver.cmake` assembles X.Org server core libraries and links them into the Lorie Android native implementation. It does not currently build the upstream `hw/xwayland` backend.
+- `recipes/xserver.cmake` assembles X.Org server core libraries and links them into the Lorie Android native implementation. It does not currently build upstream `hw/xwayland`.
 - The current Android rendering path includes Lorie-specific screen setup and EGL/GLES rendering. That path must not be assumed to be the XWayland backend.
-- The `.gitmodules` entry points `lorie/src/main/cpp/xserver` to `https://gitlab.freedesktop.org/xorg/xserver.git`; the `termux-x11-port` tree pins that submodule at `65d790bd208ec380b196eb98f144abb0b32e334d`.
-- **CI verified on 2026-10-22 that this pinned source does not contain either top-level `meson.build` or `hw/xwayland/meson.build`.** The current pin therefore cannot be used for a Meson-based upstream XWayland build as-is. This is a source revision blocker, not an Android dependency failure.
-- The current top-level native build is CMake-based, while upstream X server/XWayland uses Meson. The integration must explicitly bridge this build-system boundary rather than assuming CMake's existing source lists build `hw/xwayland`.
-- Upstream XWayland needs Wayland client/protocol dependencies and a compatible Wayland compositor connection. Android target-ABI availability must be proven rather than inferred from host packages.
+- The `.gitmodules` entry points `lorie/src/main/cpp/xserver` to `https://gitlab.freedesktop.org/xorg/xserver.git`; `termux-x11-port` pins it at `65d790bd208ec380b196eb98f144abb0b32e334d`.
+- CI on 2026-10-22 confirmed that this pinned gitlink does not contain top-level `meson.build` or `hw/xwayland/meson.build`. It cannot directly provide the Meson-based XWayland backend.
+- The official standalone XWayland release archive `xwayland-24.1.14.tar.xz` is available from the X.Org release directory. The repository now has `tools/fetch-xwayland-source.sh`, which fetches this pinned release over HTTPS, checks archive paths, extracts it under `build/third_party/xwayland-24.1.14`, and validates the version and required Meson files.
+- The source fetch script currently does **not** verify the release's detached cryptographic signature. The workflow reports the archive SHA-256 for audit, but a hash calculated after download is not an authenticity check. Signature verification should be added before treating the source-fetch pipeline as production hardened.
+- The current Android native build is CMake-based, while upstream XWayland uses Meson. The integration must explicitly bridge this build-system boundary.
 
 ## Target architecture
 
@@ -30,32 +31,38 @@ Wayland compositor (Weston or another compatible compositor)
 Android native display/output integration
 ```
 
-## First implementation change: source/dependency preflight
+## Current source-validation workflow
 
-The branch includes `tools/probe-xwayland-source.sh`. Run it from a checkout with submodules initialized:
+The workflow `.github/workflows/xwayland-preflight.yml` now:
+1. Checks both shell scripts' syntax.
+2. Diagnoses the legacy submodule source, but does not let that known blocker mask the separate release-source check.
+3. Fetches the pinned official XWayland 24.1.14 release and verifies the Meson build files and embedded version.
+4. Reports host dependency availability as informational only.
+
+Run locally:
 
 ```sh
-bash tools/probe-xwayland-source.sh
+bash tools/fetch-xwayland-source.sh
 ```
 
-The CI workflow checks script syntax, initializes recursive submodules, and checks for both Meson files. The workflow currently fails at the source check because the pinned source is too old for this integration. This failure is intentional and must not be hidden or converted into a successful build result.
+The script downloads source into `build/third_party`; it does not modify the existing native target. The release archive should be excluded from commits/build outputs as appropriate.
 
 ## Migration stages
 
 ### Stage 1 — establish a genuine upstream build
 
-1. Choose and pin a specific upstream X server revision that actually contains `meson.build` and `hw/xwayland/meson.build`.
-2. Review the source revision's release/commit and Meson options before updating the gitlink; do not blindly move to an arbitrary development head.
-3. Verify which dependencies are already vendored and which need Android/NDK-compatible builds.
+1. Validate the pinned standalone XWayland source and add release-signature verification.
+2. Audit the exact 24.1.14 Meson options and dependency requirements against the Termux Android package recipe.
+3. Build target-ABI Wayland client/protocol and X server dependencies with the Android NDK; never use host libraries for an Android target.
 4. Add an Android Meson cross file and a separate, explicit XWayland build target without deleting the working Lorie target.
-5. Build for the project's supported Android ABI(s) in CI.
+5. Build for supported Android ABIs in CI.
 
-**Exit criteria:** CI proves the upstream XWayland backend is compiled and linked. Merely compiling X.Org core or producing a library named `Xwayland` does not satisfy this stage.
+**Exit criteria:** CI proves that the upstream XWayland backend is compiled and linked for the target ABI. Merely compiling X.Org core or producing a library named `Xwayland` does not satisfy this stage.
 
 ### Stage 2 — connect to a Wayland compositor
 
 1. Start or connect to a compositor and pass its Wayland socket to XWayland.
-2. Implement the required XWayland startup handshake and X11 display socket/readiness checks.
+2. Implement the XWayland startup handshake and X11 display socket/readiness checks.
 3. Verify a minimal X11 client can connect and create a window.
 4. Keep server startup separate from launching a desktop environment.
 
@@ -71,7 +78,7 @@ The CI workflow checks script syntax, initializes recursive submodules, and chec
 
 ### Stage 4 — remove the legacy backend
 
-Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiring and native rendering code. Keep unrelated application/UI code only where it remains necessary for Android integration.
+Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiring and native rendering code.
 
 ## Guardrails
 
@@ -79,11 +86,11 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 - Do not delete the current build before the replacement builds and passes smoke tests.
 - Do not claim Android rendering works based only on a successful native compile.
 - Keep XWayland, compositor/output integration, and Android UI as separate modules with explicit interfaces.
-- Validate 32-bit ARM and the project's other supported ABIs before changing release defaults.
+- Validate 32-bit ARM and other supported ABIs before changing release defaults.
 
 ## Validation checklist
 
-- [ ] Pin an upstream revision containing the XWayland Meson backend.
+- [ ] Standalone release signature is verified against a trusted X.Org signing key.
 - [ ] Android Meson cross-build succeeds for target ABI(s).
 - [ ] Compositor connection and XWayland startup handshake succeed.
 - [ ] X11 socket becomes ready and a minimal client connects.
@@ -94,4 +101,4 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 
 ## Current status
 
-The source preflight workflow ran on 2026-10-22 and correctly failed because the pinned X server revision `65d790bd208ec380b196eb98f144abb0b32e334d` lacks the required Meson/XWayland source files. No Android XWayland build or device runtime test has been claimed. The next code-changing prerequisite is selecting and pinning a verified upstream source revision; then the Android cross-build can be implemented against that exact source.
+The legacy gitlink source check failed for the expected reason. A separate, version-pinned standalone XWayland 24.1.14 source-fetch/structure-validation path has been added to CI, but its run has not yet been verified. No Android native build or device runtime test has been claimed. Next: verify the new workflow, add cryptographic release verification, then implement the Android Meson cross-build and target-ABI dependency graph.
