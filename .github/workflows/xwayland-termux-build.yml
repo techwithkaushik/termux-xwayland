@@ -118,28 +118,3 @@ jobs:
             termux-packages/output/xwayland-build-manifest.txt
           if-no-files-found: error
           retention-days: 14
- || {
-            echo "ERROR: package does not contain the Xwayland executable" >&2
-            exit 1
-          }
-
-          {
-            echo "Package: $package_name"
-            echo "Version: $package_version"
-            echo "Architecture: $actual_arch"
-            echo "Workflow target: $TERMUX_ARCH"
-            echo "SHA256:"
-            sha256sum "$package"
-          } > output/xwayland-build-manifest.txt
-          cat output/xwayland-build-manifest.txt
-
-      - name: Upload built XWayland package
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xwayland-termux-${{ inputs.arch }}
-          path: |
-            termux-packages/output/xwayland_*.deb
-            termux-packages/output/xwayland-build-manifest.txt
-          if-no-files-found: error
-          retention-days: 14
