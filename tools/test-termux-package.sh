@@ -100,19 +100,20 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   [[ "$(dpkg-deb -f "$archive" Architecture)" == "all" ]] || {
     echo "FAIL: wrong architecture in built DEB" >&2; exit 1;
   }
-  if dpkg-deb --contents "$archive" | grep -Fq './build-deb.sh'; then
+  package_contents="$(dpkg-deb --contents "$archive")"
+  if grep -Fq './build-deb.sh' <<< "$package_contents"; then
     echo "FAIL: build tooling must not be installed at the package root." >&2
     exit 1
   fi
-  if ! dpkg-deb --contents "$archive" | grep -Fq './data/data/com.termux/files/usr/bin/termux-xwayland'; then
+  if ! grep -Fq './data/data/com.termux/files/usr/bin/termux-xwayland' <<< "$package_contents"; then
     echo "FAIL: built DEB does not contain the companion executable at the expected path." >&2
     exit 1
   fi
-  if ! dpkg-deb --contents "$archive" | grep -Fq '/share/termux-xwayland/native/input/termux-xwayland-input.c'; then
+  if ! grep -Fq '/share/termux-xwayland/native/input/termux-xwayland-input.c' <<< "$package_contents"; then
     echo "FAIL: built DEB does not contain the native pointer helper source." >&2
     exit 1
   fi
-  if ! dpkg-deb --contents "$archive" | grep -Fq '/share/termux-xwayland/tools/build-native-input.sh'; then
+  if ! grep -Fq '/share/termux-xwayland/tools/build-native-input.sh' <<< "$package_contents"; then
     echo "FAIL: built DEB does not contain the native pointer helper builder." >&2
     exit 1
   fi
