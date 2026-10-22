@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -71,7 +72,7 @@ def main() -> int:
     if len(bins) != 1:
         parser.error(f"expected exactly one usable NDK toolchain bin directory; found {len(bins)}")
     bin_dir = bins[0]
-    sysroot = bin_dir.parent.parent / "sysroot"
+    sysroot = bin_dir.parent / "sysroot"
     if not sysroot.is_dir():
         parser.error(f"NDK sysroot not found: {sysroot}")
 
@@ -91,13 +92,17 @@ def main() -> int:
     if not libdirs:
         parser.error(f"no target pkg-config metadata found under {prefix}/lib or {prefix}/share")
 
+    pkg_config = shutil.which("pkg-config")
+    if not pkg_config:
+        parser.error("pkg-config is required on the build host to generate the wrapper")
+
     output.parent.mkdir(parents=True, exist_ok=True)
     wrapper = output.with_name("android-pkg-config")
     wrapper.write_text(
         "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
         "unset PKG_CONFIG_PATH\n"
         f"export PKG_CONFIG_LIBDIR={shlex.quote(os.pathsep.join(map(str, libdirs)))}\n"
-        f"exec {shlex.quote(str(Path('/usr/bin/pkg-config')))} \"$@\"\n",
+        f"exec {shlex.quote(pkg_config)} \"$@\"\n",
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
