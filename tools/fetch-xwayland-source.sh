@@ -6,6 +6,8 @@ set -Eeuo pipefail
 # Meson/XWayland backend at its current pinned revision.
 readonly VERSION="24.1.14"
 readonly BASE_URL="https://xorg.freedesktop.org/releases/individual/xserver"
+# SHA-256 pinned by the official Termux XWayland package recipe for 24.1.14.
+readonly EXPECTED_SHA256="4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a"
 DEST_DIR="${1:-build/third_party}"
 readonly ARCHIVE="xwayland-${VERSION}.tar.xz"
 readonly ARCHIVE_PATH="${DEST_DIR}/${ARCHIVE}"
@@ -26,6 +28,15 @@ echo "Downloading official XWayland release: ${VERSION}"
 curl --fail --location --silent --show-error \
     --proto '=https' --tlsv1.2 \
     "${BASE_URL}/${ARCHIVE}" --output "$tmp_archive"
+
+# Verify against the checksum pinned by the official Termux package recipe.
+actual_sha256="$(sha256sum "$tmp_archive" | awk '{print $1}')"
+if [[ "$actual_sha256" != "$EXPECTED_SHA256" ]]; then
+    echo "ERROR: XWayland archive SHA-256 mismatch" >&2
+    echo "Expected: $EXPECTED_SHA256" >&2
+    echo "Actual:   $actual_sha256" >&2
+    exit 1
+fi
 
 # Refuse absolute paths or parent traversal before extracting the archive.
 if tar -tf "$tmp_archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
@@ -51,4 +62,5 @@ fi
 printf 'Verified source layout: %s\n' "$SOURCE_DIR"
 printf 'Pinned release archive SHA-256: '
 sha256sum "$ARCHIVE_PATH"
-echo "NOTE: HTTPS and source-layout/version checks are used here; cryptographic release-signature verification is not yet configured."
+echo "Verified SHA-256 against the official Termux XWayland 24.1.14 package recipe."
+echo "NOTE: detached OpenPGP release-signature verification is not yet configured."
