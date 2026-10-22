@@ -98,6 +98,7 @@ class MainActivity : Activity() {
             val local = service as? BridgeSessionService.BridgeBinder ?: return
             localBridgeBinder = local
             if (::connectionPanel.isInitialized && binderFrameCount == 0L) connectionPanel.visibility = View.VISIBLE
+            if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.GONE
             Log.i("TermuxXWayland", "event=binder_service_connected component=MainActivity")
             statusTitle.text = "Not connected"
             statusDescription.text = "Connected to the persistent bridge service. Reopening the host reattaches the live-frame listener."
@@ -132,6 +133,9 @@ class MainActivity : Activity() {
                 previewImage.clearFrame()
                 previewImage.visibility = View.VISIBLE
             }
+            if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.GONE
+            if (::extraKeysBar.isInitialized) extraKeysBar.visibility = View.GONE
+            if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.GONE
             if (::desktopProofDescription.isInitialized) {
                 desktopProofDescription.text =
                     "NO LIVE DESKTOP FRAME • Binder service disconnected. Previous pixels are cleared and are not treated as live."
@@ -300,7 +304,10 @@ class MainActivity : Activity() {
                         previewImage.setFrame(frame.pixels, frame.width, frame.height, frame.pixelOffset)
                         previewImage.visibility = View.VISIBLE
                         if (::connectionPanel.isInitialized) connectionPanel.visibility = View.GONE
+                        if (::desktopTopControls.isInitialized) desktopTopControls.visibility = View.VISIBLE
+                        if (::mouseToggleButton.isInitialized) mouseToggleButton.visibility = View.VISIBLE
                         binderFrameCount++
+                        if (binderFrameCount == 1L) applyUiPreferences()
                         // Avoid forcing extra TextView layout work on every desktop frame.
                         if (binderFrameCount == 1L || binderFrameCount % 60L == 0L) {
                             if (::binderStatusDescription.isInitialized) {
@@ -668,6 +675,7 @@ class MainActivity : Activity() {
             mouseToggleButton.text = if (nextVisible) "X" else "×"
         }
         mouseToggleButton.contentDescription = "Show or hide mouse click helper"
+        mouseToggleButton.visibility = View.GONE
         desktopRoot.addView(mouseToggleButton, FrameLayout.LayoutParams(dp(44), dp(32), Gravity.TOP or Gravity.START).apply {
             topMargin = dp(4)
             marginStart = dp(4)
@@ -868,11 +876,11 @@ class MainActivity : Activity() {
         if (!::mouseControls.isInitialized || !::extraKeysBar.isInitialized ||
             !::mouseToggleButton.isInitialized || !::keyboardBar.isInitialized) return
         val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
-        val showMouse = prefs.getBoolean("mouse_helper", false)
+        val showMouse = prefs.getBoolean("mouse_helper", false) && binderFrameCount > 0L
         mouseControls.visibility = if (showMouse) View.VISIBLE else View.GONE
         mouseToggleButton.text = if (showMouse) "X" else "×"
         populateExtraKeysBar()
-        val showExtraKeys = prefs.getBoolean("additional_keyboard", true)
+        val showExtraKeys = prefs.getBoolean("additional_keyboard", true) && binderFrameCount > 0L
         extraKeysBar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
         val opacity = prefs.getInt("extra_key_bar_opacity", 100).coerceIn(1, 100) / 100f
         extraKeysBar.alpha = opacity
