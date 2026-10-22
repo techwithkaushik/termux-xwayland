@@ -70,13 +70,13 @@ def main() -> int:
         if not any(token.lower() in machine.lower() for token in expected):
             failures.append(f"{library}: unexpected ELF machine '{machine}' for ABI {args.abi}")
 
-    if checked == 0:
-        print(f"ERROR: no ELF shared libraries could be validated under {libdir}", file=sys.stderr)
-        return 1
     if failures:
         print(f"ERROR: {len(failures)} target-prefix architecture problem(s):", file=sys.stderr)
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
+        return 1
+    if checked == 0:
+        print(f"ERROR: no ELF shared libraries could be validated under {libdir}", file=sys.stderr)
         return 1
 
     print(f"Validated {checked} ELF shared libraries for ABI={args.abi} under {libdir}.")
