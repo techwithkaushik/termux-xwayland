@@ -23,7 +23,8 @@ class CrossFileGeneratorTest(unittest.TestCase):
         self.bin_dir = self.root / "ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
         self.bin_dir.mkdir(parents=True)
         (self.bin_dir.parent / "sysroot").mkdir()
-        for name in ("llvm-ar", "llvm-strip", *COMPILERS.values()):
+        compiler_names = [name for compiler in COMPILERS.values() for name in (compiler, compiler.replace("-clang", "-clang++"))]
+        for name in ("llvm-ar", "llvm-strip", *compiler_names):
             path = self.bin_dir / name
             path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             path.chmod(0o755)
