@@ -34,10 +34,10 @@ Android native display/output integration
 ## Current source-validation workflow
 
 The workflow `.github/workflows/xwayland-preflight.yml` now:
-1. Checks both shell scripts' syntax.
+1. Checks all three shell scripts' syntax.
 2. Diagnoses the legacy submodule source, but does not let that known blocker mask the separate release-source check.
 3. Fetches the pinned official XWayland 24.1.14 release and verifies the Meson build files and embedded version.
-4. Reports host dependency availability as informational only.
+4. Reports host dependency availability as informational only, independently of the known legacy-submodule blocker.
 
 Run locally:
 
@@ -102,4 +102,4 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 
 ## Current status
 
-The legacy gitlink source check failed for the expected reason. A separate, version-pinned standalone XWayland 24.1.14 source-fetch/structure-validation path has been added to CI, including a fixed SHA-256 check from the official Termux package recipe. The workflow now runs for relevant pull-request changes (or manual dispatch), not for every push to the feature branch, avoiding duplicate push-plus-PR runs. The updated workflow run is not yet verified. No Android native build or device runtime test has been claimed. Next: verify the new workflow, add detached signature verification, then implement the Android Meson cross-build and target-ABI dependency graph.
+The legacy gitlink source check failed for the expected reason. A separate, version-pinned standalone XWayland 24.1.14 source-fetch/structure-validation path has been added to CI, including a fixed SHA-256 check from the official Termux package recipe. The workflow now runs for relevant pull-request changes (or manual dispatch), not for every push to the feature branch, avoiding duplicate push-plus-PR runs. The preflight workflow run `39768922312` completed successfully on 2026-10-22: archive fetch/source-layout validation and all 19 Meson option-presence checks passed. The legacy-submodule diagnostic correctly reports the known missing XWayland backend. A follow-up fix makes the host dependency report run independently instead of exiting early on that legacy-source check. This workflow validates source and option metadata only; it does not compile XWayland for Android. No Android native build or device runtime test has been claimed. Next: establish a trusted X.Org signing-key fingerprint for detached-signature verification, then implement the Android Meson cross-build and target-ABI dependency graph.
