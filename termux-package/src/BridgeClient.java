@@ -55,8 +55,8 @@ public final class BridgeClient {
     private static final int CLIPBOARD = 6;
     // Weston/XWayland can run at the phone's native resolution, but transporting
     // a full 1080x2400 RGBA image for every frame creates ~10 MB packets and
-    // guarantees stale frames on low-memory/ARM devices. Keep the desktop's
-    // actual coordinates separate from a bounded, aspect-preserving stream.
+    // can overwhelm transport and create stale frames on low-memory/ARM devices. Keep the desktop's
+    // actual coordinates separate from a higher-detail, aspect-preserving stream.
     private static final int DISPLAY_WIDTH = envDimension("TERMUX_XWAYLAND_WIDTH", 640);
     private static final int DISPLAY_HEIGHT = envDimension("TERMUX_XWAYLAND_HEIGHT", 360);
     private static final int[] STREAM_DIMENSIONS = streamDimensions(DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -64,7 +64,7 @@ public final class BridgeClient {
     private static final int FRAME_HEIGHT = STREAM_DIMENSIONS[1];
     private static final int FRAME_BYTES = Math.multiplyExact(Math.multiplyExact(FRAME_WIDTH, FRAME_HEIGHT), 4);
     private static int[] streamDimensions(int width, int height) {
-        final long maxPixels = 640L * 360L;
+        final long maxPixels = 1280L * 720L;
         long pixels = (long) width * height;
         if (pixels <= maxPixels) return new int[] { width, height };
         double scale = Math.sqrt((double) maxPixels / (double) pixels);
