@@ -870,7 +870,7 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
         val showMouse = prefs.getBoolean("mouse_helper", false)
         mouseControls.visibility = if (showMouse) View.VISIBLE else View.GONE
-        mouseToggleButton.text = if (showMouse) "×" else "🖱"
+        mouseToggleButton.text = if (showMouse) "X" else "×"
         populateExtraKeysBar()
         val showExtraKeys = prefs.getBoolean("additional_keyboard", true)
         extraKeysBar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
