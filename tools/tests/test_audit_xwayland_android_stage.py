@@ -67,6 +67,17 @@ class AndroidStageAuditTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("pkg-config prefix escapes", result.stderr)
 
+    def test_rejects_split_isystem_path_outside_staging_root(self):
+        self.write_modules()
+        module = self.pc_dir / "x11.pc"
+        module.write_text(
+            module.read_text(encoding="utf-8") + "Cflags: -isystem /usr/include\\n",
+            encoding="utf-8",
+        )
+        result = self.run_audit()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("compiler/linker flag escapes target roots: -isystem /usr/include", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
