@@ -47,6 +47,32 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("readelf failed", result.stderr)
 
+    def test_rejects_library_symlink_escaping_staging_prefix(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prefix = root / "prefix"
+            libdir = prefix / "lib"
+            libdir.mkdir(parents=True)
+            external_source = root / "outside.c"
+            external_source.write_text(
+                "int outside_prefix_fixture(void) { return 1; }\\n",
+                encoding="utf-8",
+            )
+            external_library = root / "liboutside.so"
+            build = subprocess.run(
+                ["cc", "-shared", "-fPIC", str(external_source), "-o", str(external_library)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr)
+            (libdir / "liboutside.so").symlink_to(external_library)
+            result = subprocess.run(
+                [shutil.which("python3") or "python3", str(SCRIPT),
+                 "--prefix", str(prefix), "--abi", "armeabi-v7a"],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("resolves outside staging prefix", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
