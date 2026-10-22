@@ -1,5 +1,7 @@
 package org.techwithkaushik.termuxxwayland
 
+import org.json.JSONArray
+
 
 import android.app.Activity
 import android.app.PictureInPictureParams
@@ -641,61 +643,7 @@ class MainActivity : Activity() {
             setPadding(dp(4), dp(2), dp(4), dp(2))
             setBackgroundColor(Color.argb(205, 12, 16, 24))
         }
-        fun sendExtraKey(key: String, action: String) {
-            previewImage.inputEventListener?.invoke(
-                ("KEY " + key + " " + action).toByteArray(Charsets.US_ASCII)
-            )
-        }
-        fun extraKey(label: String, key: String) {
-            val modifier = key in setOf("Control_L", "Alt_L", "Shift_L", "Super_L")
-            val button = actionButton(label) {
-                if (modifier) {
-                    if (activeExtraModifiers.remove(key)) {
-                        sendExtraKey(key, "UP")
-                    } else {
-                        activeExtraModifiers.add(key)
-                        sendExtraKey(key, "DOWN")
-                    }
-                } else {
-                    sendExtraKey(key, "DOWN")
-                    sendExtraKey(key, "UP")
-                    val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
-                    if (prefs.getBoolean("termux_extra_key_behavior", true)) {
-                        activeExtraModifiers.toList().forEach { held ->
-                            sendExtraKey(held, "UP")
-                            activeExtraModifiers.remove(held)
-                        }
-                    }
-                }
-                previewImage.requestFocus()
-            }
-            button.setOnLongClickListener {
-                if (modifier) {
-                    if (activeExtraModifiers.contains(key)) {
-                        sendExtraKey(key, "UP")
-                        activeExtraModifiers.remove(key)
-                    } else {
-                        activeExtraModifiers.add(key)
-                        sendExtraKey(key, "DOWN")
-                    }
-                    button.alpha = if (key in activeExtraModifiers) 0.65f else 1f
-                    true
-                } else false
-            }
-            extraKeysBar.addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                leftMargin = dp(1)
-                rightMargin = dp(1)
-            })
-        }
-        extraKey("Esc", "Escape")
-        extraKey("Tab", "Tab")
-        extraKey("Ctrl", "Control_L")
-        extraKey("Alt", "Alt_L")
-        extraKey("Shift", "Shift_L")
-        extraKey("↑", "Up")
-        extraKey("↓", "Down")
-        extraKey("←", "Left")
-        extraKey("→", "Right")
+        populateExtraKeysBar()
         desktopRoot.addView(extraKeysBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
         ).apply { bottomMargin = dp(0) })
@@ -756,6 +704,110 @@ class MainActivity : Activity() {
      * Re-apply visual-only preferences after returning from Preferences.
      * These controls are intentionally separate from compositor/rendering state.
      */
+    private fun populateExtraKeysBar() {
+        if (!::extraKeysBar.isInitialized || !::previewImage.isInitialized) return
+        extraKeysBar.removeAllViews()
+        val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+        val config = prefs.getString("extra_keys_config", "").orEmpty().trim()
+        val defaults = listOf(
+            "Esc" to "Escape", "Tab" to "Tab", "Ctrl" to "Control_L",
+            "Alt" to "Alt_L", "Shift" to "Shift_L", "↑" to "Up",
+            "↓" to "Down", "←" to "Left", "→" to "Right"
+        )
+        val keys = parseExtraKeys(config).ifEmpty { defaults }
+        fun send(key: String, action: String) {
+            previewImage.inputEventListener?.invoke(("KEY " + key + " " + action).toByteArray(Charsets.US_ASCII))
+        }
+        keys.forEach { (label, key) ->
+            val modifier = key in setOf("Control_L", "Alt_L", "Shift_L", "Super_L")
+            val button = actionButton(label) {
+                if (modifier) {
+                    if (activeExtraModifiers.remove(key)) send(key, "UP")
+                    else { activeExtraModifiers.add(key); send(key, "DOWN") }
+                } else {
+                    send(key, "DOWN")
+                    send(key, "UP")
+                    if (prefs.getBoolean("termux_extra_key_behavior", true)) {
+                        activeExtraModifiers.toList().forEach { held ->
+                            send(held, "UP")
+                            activeExtraModifiers.remove(held)
+                        }
+                    }
+                }
+                buttonFocus()
+            }
+            button.contentDescription = "$label key"
+            button.setOnLongClickListener {
+                if (!modifier) return@setOnLongClickListener false
+                if (activeExtraModifiers.contains(key)) {
+                    send(key, "UP"); activeExtraModifiers.remove(key)
+                } else {
+                    activeExtraModifiers.add(key); send(key, "DOWN")
+                }
+                button.alpha = if (key in activeExtraModifiers) 0.65f else 1f
+                true
+            }
+            extraKeysBar.addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                leftMargin = dp(1); rightMargin = dp(1)
+            })
+        }
+    }
+
+    private fun buttonFocus() {
+        if (::previewImage.isInitialized) previewImage.requestFocus()
+    }
+
+    private fun parseExtraKeys(config: String): List<Pair<String, String>> {
+        if (config.isBlank()) return emptyList()
+        val aliases = mapOf(
+            "ESC" to ("Esc" to "Escape"), "ESCAPE" to ("Esc" to "Escape"),
+            "TAB" to ("Tab" to "Tab"), "CTRL" to ("Ctrl" to "Control_L"),
+            "CONTROL" to ("Ctrl" to "Control_L"), "ALT" to ("Alt" to "Alt_L"),
+            "SHIFT" to ("Shift" to "Shift_L"), "SUPER" to ("Super" to "Super_L"),
+            "HOME" to ("Home" to "Home"), "END" to ("End" to "End"),
+            "UP" to ("↑" to "Up"), "DOWN" to ("↓" to "Down"),
+            "LEFT" to ("←" to "Left"), "RIGHT" to ("→" to "Right"),
+            "PGUP" to ("PgUp" to "Page_Up"), "PAGEUP" to ("PgUp" to "Page_Up"),
+            "PGDN" to ("PgDn" to "Page_Down"), "PAGEDOWN" to ("PgDn" to "Page_Down"),
+            "INS" to ("Ins" to "Insert"), "INSERT" to ("Ins" to "Insert"),
+            "DEL" to ("Del" to "Delete"), "DELETE" to ("Del" to "Delete"),
+            "ENTER" to ("Enter" to "Return"), "RETURN" to ("Enter" to "Return"),
+            "SPACE" to ("Space" to "space"), "BACKSPACE" to ("Bksp" to "BackSpace"),
+            "F1" to ("F1" to "F1"), "F2" to ("F2" to "F2"), "F3" to ("F3" to "F3"),
+            "F4" to ("F4" to "F4"), "F5" to ("F5" to "F5"), "F6" to ("F6" to "F6"),
+            "F7" to ("F7" to "F7"), "F8" to ("F8" to "F8"), "F9" to ("F9" to "F9"),
+            "F10" to ("F10" to "F10"), "F11" to ("F11" to "F11"), "F12" to ("F12" to "F12")
+        )
+        return try {
+            val rows = JSONArray(config)
+            val parsed = mutableListOf<Pair<String, String>>()
+            fun addToken(token: String) {
+                val name = token.trim().trim('"', '\'')
+                if (name.isEmpty()) return
+                val upper = name.uppercase()
+                val pair = aliases[upper] ?: (name to name)
+                parsed.add(pair)
+            }
+            for (i in 0 until rows.length()) {
+                val row = rows.optJSONArray(i)
+                if (row != null) {
+                    for (j in 0 until row.length()) addToken(row.optString(j, ""))
+                } else addToken(rows.optString(i, ""))
+            }
+            parsed.distinctBy { it.second }.take(16)
+        } catch (_: Exception) {
+            config.split(',', ';', '\\n').mapNotNull { item ->
+                val parts = item.trim().split('=', ':', limit = 2)
+                if (parts.size != 2) null
+                else {
+                    val key = parts[1].trim()
+                    val mapped = aliases[key.uppercase()] ?: (parts[0].trim() to key)
+                    mapped
+                }
+            }.distinctBy { it.second }.take(16)
+        }
+    }
+
     private fun applyUiPreferences() {
         if (!::mouseControls.isInitialized || !::extraKeysBar.isInitialized ||
             !::mouseToggleButton.isInitialized || !::keyboardBar.isInitialized) return
@@ -763,6 +815,7 @@ class MainActivity : Activity() {
         val showMouse = prefs.getBoolean("mouse_helper", false)
         mouseControls.visibility = if (showMouse) View.VISIBLE else View.GONE
         mouseToggleButton.text = if (showMouse) "×" else "🖱"
+        populateExtraKeysBar()
         val showExtraKeys = prefs.getBoolean("additional_keyboard", true)
         extraKeysBar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
         val opacity = prefs.getInt("extra_key_bar_opacity", 100).coerceIn(1, 100) / 100f
