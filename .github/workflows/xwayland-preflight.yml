@@ -8,6 +8,7 @@ on:
       - ".github/workflows/xwayland-preflight.yml"
       - "tools/probe-xwayland-source.sh"
       - "tools/fetch-xwayland-source.sh"
+      - "tools/audit-xwayland-meson-options.sh"
       - "docs/XWAYLAND_REPLACEMENT.md"
       - ".gitmodules"
       - "lorie/src/main/cpp/xserver"
@@ -40,6 +41,7 @@ jobs:
         run: |
           bash -n tools/probe-xwayland-source.sh
           bash -n tools/fetch-xwayland-source.sh
+          bash -n tools/audit-xwayland-meson-options.sh
 
       - name: Diagnose legacy X server gitlink (known blocker)
         continue-on-error: true
@@ -57,6 +59,9 @@ jobs:
           grep -Eq "version: ['\"]24.1.14['\"]" "$source_dir/meson.build"
           printf 'Validated upstream XWayland source: '
           grep -E "version: ['\"]24.1.14['\"]" "$source_dir/meson.build" | head -n 1
+
+      - name: Audit Termux Meson option compatibility
+        run: bash tools/audit-xwayland-meson-options.sh build/third_party/xwayland-24.1.14
 
       - name: Record host dependency probe (informational)
         continue-on-error: true
