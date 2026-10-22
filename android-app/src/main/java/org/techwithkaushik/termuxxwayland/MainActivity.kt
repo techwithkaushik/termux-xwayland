@@ -26,6 +26,7 @@ import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.util.Rational
@@ -271,6 +272,12 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         statusPollHandler.removeCallbacks(statusPollRunnable)
+        if (::previewImage.isInitialized) {
+            activeExtraModifiers.toList().forEach { held ->
+                previewImage.inputEventListener?.invoke(("KEY " + held + " UP").toByteArray(Charsets.US_ASCII))
+            }
+        }
+        activeExtraModifiers.clear()
         localBridgeBinder?.frameListener = null
         if (::previewImage.isInitialized) previewImage.inputEventListener = null
         localBridgeBinder = null
@@ -565,12 +572,12 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setBackgroundColor(Color.argb(175, 12, 16, 24))
         }
-        desktopTopControls.addView(actionButton("⚙") {
+        desktopTopControls.addView(iconActionButton(R.drawable.ic_extra_key_settings, "Preferences") {
             startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
         }, LinearLayout.LayoutParams(dp(44), dp(42)))
-        desktopTopControls.addView(actionButton("▦") { showDisplaysDialog() },
+        desktopTopControls.addView(iconActionButton(R.drawable.lorie_ic_displays, "Displays") { showDisplaysDialog() },
             LinearLayout.LayoutParams(dp(44), dp(42)))
-        desktopTopControls.addView(actionButton("⌨") {
+        desktopTopControls.addView(iconActionButton(R.drawable.ic_extra_key_keyboard, "Toggle text input") {
             keyboardBar.visibility = if (keyboardBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             if (keyboardBar.visibility == View.VISIBLE) {
                 keyboardInput.requestFocus()
@@ -613,6 +620,52 @@ class MainActivity : Activity() {
                 rightMargin = dp(2)
             })
         }
+        val dragHandle = TextView(this).apply {
+            text = "⠿"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Drag mouse helper"
+            setPadding(dp(4), 0, dp(4), 0)
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> true
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.x - lastMouseDragX
+                        val dy = event.y - lastMouseDragY
+                        mouseControls.translationX = (mouseControls.translationX + dx)
+                            .coerceIn(-mouseControls.left.toFloat(), (desktopRoot.width - mouseControls.right).toFloat())
+                        mouseControls.translationY = (mouseControls.translationY + dy)
+                            .coerceIn(-mouseControls.top.toFloat(), (desktopRoot.height - mouseControls.bottom).toFloat())
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+        dragHandle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastMouseDragX = event.rawX
+                    lastMouseDragY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - lastMouseDragX
+                    val dy = event.rawY - lastMouseDragY
+                    mouseControls.translationX = (mouseControls.translationX + dx)
+                        .coerceIn(-mouseControls.left.toFloat(), (desktopRoot.width - mouseControls.right).toFloat())
+                    mouseControls.translationY = (mouseControls.translationY + dy)
+                        .coerceIn(-mouseControls.top.toFloat(), (desktopRoot.height - mouseControls.bottom).toFloat())
+                    lastMouseDragX = event.rawX
+                    lastMouseDragY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
+        mouseControls.addView(dragHandle, LinearLayout.LayoutParams(dp(28), dp(42)))
         mouseButton("L", 1, 2f)
         mouseButton("M", 2)
         mouseButton("R", 3, 2f)
@@ -698,6 +751,8 @@ class MainActivity : Activity() {
     private lateinit var mouseToggleButton: Button
     private lateinit var desktopTopControls: LinearLayout
     private val activeExtraModifiers = linkedSetOf<String>()
+    private var lastMouseDragX = 0f
+    private var lastMouseDragY = 0f
 
     /**
      * Re-apply visual-only preferences after returning from Preferences.
@@ -1229,6 +1284,13 @@ class MainActivity : Activity() {
         addView(label(title, 15, ink, true))
         addView(label(body, 13, muted, false).apply { setPadding(0, dp(6), 0, 0) })
     }
+
+    private fun iconActionButton(drawableRes: Int, description: String, action: () -> Unit) =
+        actionButton("", action).apply {
+            setCompoundDrawablesRelativeWithIntrinsicBounds(null, getDrawable(drawableRes), null, null)
+            contentDescription = description
+            minWidth = dp(44)
+        }
 
     private fun actionButton(text: String, action: () -> Unit) = Button(this).apply {
         this.text = text
