@@ -436,8 +436,8 @@ class MainActivity : Activity() {
     }
 
     private fun buildScreen(): View {
-        // Keep legacy status objects initialized for bridge/session diagnostics,
-        // but never attach their text or controls to the desktop host UI.
+        // Termux:X11-inspired host surface. The authenticated Binder/session
+        // implementation remains untouched; this is a UI-only port phase.
         statusTitle = TextView(this)
         statusDescription = TextView(this)
         binderStatusDescription = TextView(this)
@@ -447,96 +447,314 @@ class MainActivity : Activity() {
         previewImage = DesktopSurfaceView(this).apply {
             visibility = View.VISIBLE
             contentDescription = "Live Linux desktop"
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.BLACK)
             inputEventListener = { payload -> localBridgeBinder?.sendInput(payload) }
             cursorPositionListener = { x, y -> cursorOverlay.updatePointer(x, y) }
         }
         cursorOverlay = DesktopCursorOverlay(this).apply { visibility = View.GONE }
         desktopRoot = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.BLACK)
             fitsSystemWindows = false
             addView(previewImage, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
-            // Pointer is composited directly by the native EGL renderer over the XWayland frame.
-            // Keep an explicit software-keyboard control visible in immersive mode.
-            addView(TextView(this@MainActivity).apply {
-                text = "⌨"
-                textSize = 23f
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                setBackgroundColor(Color.argb(190, 24, 34, 49))
-                contentDescription = "Show keyboard"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    previewImage.requestFocus()
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showSoftInput(previewImage, InputMethodManager.SHOW_IMPLICIT)
-                }
-            }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(12)
-                marginEnd = dp(12)
-            })
-            // Settings stays available above the live desktop, not only on the disconnected screen.
-            addView(TextView(this@MainActivity).apply {
-                text = "⚙"
-                textSize = 23f
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                setBackgroundColor(Color.argb(190, 24, 34, 49))
-                contentDescription = "Open display and input preferences"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
-                }
-            }, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.START).apply {
-                topMargin = dp(12)
-                marginStart = dp(12)
-            })
         }
+
+        // Disconnected/status stub: X11-style centered mark and the four familiar actions.
         connectionPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(24), dp(24), dp(24), dp(24))
-            setBackgroundColor(Color.rgb(18, 24, 35))
-            addView(TextView(this@MainActivity).apply {
-                text = "Not connected"
-                textSize = 20f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, dp(24))
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            val actions = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-            }
-            actions.addView(actionButton("⚙  Settings") {
-                startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(8)
-            })
-            actions.addView(actionButton("⏻  Exit") {
-                finishAndRemoveTask()
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = dp(8)
-            })
-            addView(actions, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
+            setBackgroundColor(Color.BLACK)
         }
-        desktopRoot.addView(connectionPanel, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
+        val logo = TextView(this).apply {
+            text = "X"
+            textSize = 92f
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "X11 logo"
+        }
+        connectionPanel.addView(logo, LinearLayout.LayoutParams(dp(130), dp(130)))
+        connectionPanel.addView(TextView(this).apply {
+            text = "Termux:XWayland"
+            textSize = 21f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        statusTitle = TextView(this).apply {
+            text = "Waiting for Termux"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        connectionPanel.addView(statusTitle, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+        statusDescription = TextView(this).apply {
+            text = "Run termux-xwayland start in Termux. The host will wait for the desktop session."
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.LTGRAY)
+            setPadding(dp(12), 0, dp(12), dp(18))
+        }
+        connectionPanel.addView(statusDescription, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        binderStatusDescription = TextView(this).apply {
+            text = "Binder transport: waiting"
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(Color.GRAY)
+            setPadding(dp(8), 0, dp(8), dp(14))
+        }
+        connectionPanel.addView(binderStatusDescription, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        desktopProofDescription = TextView(this).apply {
+            text = "No desktop frame received yet"
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(Color.GRAY)
+            setPadding(dp(8), 0, dp(8), dp(12))
+        }
+        connectionPanel.addView(desktopProofDescription, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun addMainAction(label: String, click: () -> Unit) {
+            actions.addView(actionButton(label, click), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        addMainAction("⚙\nPreferences") {
+            startActivity(Intent(this, PreferencesActivity::class.java))
+        }
+        addMainAction("▦\nDisplays") { showDisplaysDialog() }
+        addMainAction("?\nHelp") { showHelpDialog() }
+        addMainAction("⏻\nExit") {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Exit Termux:XWayland?")
+                .setMessage("Close this Android host window? The Termux server may continue running.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Exit") { _, _ -> finishAndRemoveTask() }
+                .show()
+        }
+        connectionPanel.addView(actions, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        desktopRoot.addView(connectionPanel, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        // Persistent top controls remain reachable while a desktop frame is visible.
+        val topControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setBackgroundColor(Color.argb(175, 12, 16, 24))
+        }
+        topControls.addView(actionButton("⚙") {
+            startActivity(Intent(this@MainActivity, PreferencesActivity::class.java))
+        }, LinearLayout.LayoutParams(dp(44), dp(42)))
+        topControls.addView(actionButton("▦") { showDisplaysDialog() },
+            LinearLayout.LayoutParams(dp(44), dp(42)))
+        topControls.addView(actionButton("⌨") {
+            keyboardBar.visibility = if (keyboardBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            if (keyboardBar.visibility == View.VISIBLE) {
+                keyboardInput.requestFocus()
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT)
+            } else {
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .hideSoftInputFromWindow(keyboardInput.windowToken, 0)
+                previewImage.requestFocus()
+            }
+        }, LinearLayout.LayoutParams(dp(44), dp(42)))
+        val topSpacer = View(this)
+        topControls.addView(topSpacer, LinearLayout.LayoutParams(0, 1, 1f))
+        topControls.addView(TextView(this).apply {
+            text = "XWayland"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+        })
+        desktopRoot.addView(topControls, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP
+        ))
+
+        // Mouse helper follows the familiar L/M/R overlay. Button packets use the
+        // same documented input protocol as the existing Termux bridge.
+        val mouseControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(5), dp(3), dp(5), dp(3))
+            alpha = 0.88f
+            setBackgroundColor(Color.argb(185, 18, 24, 35))
+        }
+        fun mouseButton(label: String, button: Int, weight: Float = 1f) {
+            mouseControls.addView(actionButton(label) {
+                previewImage.inputEventListener?.invoke(("BUTTON " + button + " DOWN").toByteArray(Charsets.US_ASCII))
+                previewImage.inputEventListener?.invoke(("BUTTON " + button + " UP").toByteArray(Charsets.US_ASCII))
+                previewImage.requestFocus()
+            }, LinearLayout.LayoutParams(0, dp(42), weight).apply {
+                leftMargin = dp(2)
+                rightMargin = dp(2)
+            })
+        }
+        mouseButton("L", 1, 2f)
+        mouseButton("M", 2)
+        mouseButton("R", 3, 2f)
+        val mouseToggle = actionButton("×") {
+            mouseControls.visibility = if (mouseControls.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        mouseToggle.contentDescription = "Show or hide mouse click helper"
+        desktopRoot.addView(mouseToggle, FrameLayout.LayoutParams(dp(44), dp(42), Gravity.BOTTOM or Gravity.END).apply {
+            bottomMargin = dp(62)
+            marginEnd = dp(8)
+        })
+        mouseControls.visibility = if (getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+            .getBoolean("mouse_helper", false)) View.VISIBLE else View.GONE
+        desktopRoot.addView(mouseControls, FrameLayout.LayoutParams(
+            dp(220), dp(48), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = dp(62) })
+
+        // Extra-key strip: compact keys send the same KEY name/action packets as the
+        // on-screen keyboard input connection. It does not alter rendering.
+        val extraKeys = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+            setBackgroundColor(Color.argb(205, 12, 16, 24))
+        }
+        fun extraKey(label: String, key: String) {
+            extraKeys.addView(actionButton(label) {
+                previewImage.inputEventListener?.invoke(("KEY " + key + " DOWN").toByteArray(Charsets.US_ASCII))
+                previewImage.inputEventListener?.invoke(("KEY " + key + " UP").toByteArray(Charsets.US_ASCII))
+                previewImage.requestFocus()
+            }, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                leftMargin = dp(1)
+                rightMargin = dp(1)
+            })
+        }
+        extraKey("Esc", "Escape")
+        extraKey("Tab", "Tab")
+        extraKey("Ctrl", "Control_L")
+        extraKey("Alt", "Alt_L")
+        extraKey("↑", "Up")
+        extraKey("↓", "Down")
+        extraKey("←", "Left")
+        extraKey("→", "Right")
+        desktopRoot.addView(extraKeys, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
+        ).apply { bottomMargin = dp(0) })
+
+        // Text-input toolbar based on upstream's back-button + single-line editor.
+        keyboardBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            setBackgroundColor(Color.rgb(24, 30, 42))
+            visibility = View.GONE
+        }
+        keyboardBar.addView(actionButton("←") {
+            keyboardBar.visibility = View.GONE
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                .hideSoftInputFromWindow(keyboardInput.windowToken, 0)
+            previewImage.requestFocus()
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        keyboardInput = EditText(this).apply {
+            hint = "Type into Linux desktop"
+            setHintTextColor(Color.LTGRAY)
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            singleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                    sendKeyboardText()
+                    true
+                } else false
+            }
+        }
+        keyboardBar.addView(keyboardInput, LinearLayout.LayoutParams(
+            0, dp(44), 1f
+        ))
+        keyboardBar.addView(actionButton("Send") { sendKeyboardText() },
+            LinearLayout.LayoutParams(dp(64), dp(44)))
+        desktopRoot.addView(keyboardBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(50), Gravity.BOTTOM
+        ).apply { bottomMargin = dp(44) })
+
         connectionPanel.visibility = if (binderFrameCount > 0L) View.GONE else View.VISIBLE
         return desktopRoot
+    }
+
+    private lateinit var keyboardBar: LinearLayout
+    private lateinit var keyboardInput: EditText
+
+    private fun sendKeyboardText() {
+        val text = keyboardInput.text?.toString().orEmpty()
+        if (text.isNotEmpty()) {
+            val safe = text.filter { it == '\n' || it == '\t' || it >= ' ' && it != '\u007f' }
+            if (safe.isNotEmpty() && safe.toByteArray(Charsets.UTF_8).size <= 100) {
+                previewImage.inputEventListener?.invoke(("TEXT " + safe).toByteArray(Charsets.UTF_8))
+            } else {
+                Toast.makeText(this, "Text must be 100 UTF-8 bytes or less", Toast.LENGTH_SHORT).show()
+            }
+            keyboardInput.text.clear()
+        }
+        previewImage.requestFocus()
+    }
+
+    private fun showDisplaysDialog() {
+        val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+        val mode = prefs.getInt("resolution_mode", 0)
+        val modeName = when (mode) {
+            1 -> "Scaled"
+            2 -> "Stretch"
+            3 -> "Pixel-perfect"
+            else -> "Fit"
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Displays")
+            .setMessage("Current output mode: " + modeName +
+                "\nScale: " + prefs.getInt("display_scale", 100) + "%" +
+                "\nFiltering: " + if (prefs.getInt("display_filter", 0) == 0) "Bilinear" else "Nearest-neighbour" +
+                "\n\nDisplay configuration is managed in Preferences.")
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Preferences") { _, _ ->
+                startActivity(Intent(this, PreferencesActivity::class.java))
+            }
+            .show()
+    }
+
+    private fun showHelpDialog() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Termux:XWayland Help")
+            .setMessage(
+                "1. Open Termux and run: termux-xwayland start\\n\\n" +
+                "2. Keep the Termux session running. This screen is the Android host and can wait before a desktop is launched.\\n\\n" +
+                "3. Configure output, pointer, keyboard, and extra-key options in Preferences.\\n\\n" +
+                "The full native rendering/input integration is being ported in separate stages."
+            )
+            .setPositiveButton("Preferences") { _, _ ->
+                startActivity(Intent(this, PreferencesActivity::class.java))
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun connectOrDisconnect() {
