@@ -9,6 +9,8 @@ on:
       - "tools/probe-xwayland-source.sh"
       - "tools/fetch-xwayland-source.sh"
       - "tools/audit-xwayland-meson-options.sh"
+      - "tools/generate-android-meson-cross-file.py"
+      - "tools/tests/**"
       - "docs/XWAYLAND_REPLACEMENT.md"
       - ".gitmodules"
       - "lorie/src/main/cpp/xserver"
