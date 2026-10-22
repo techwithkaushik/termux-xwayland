@@ -42,6 +42,8 @@ jobs:
           bash -n tools/probe-xwayland-source.sh
           bash -n tools/fetch-xwayland-source.sh
           bash -n tools/audit-xwayland-meson-options.sh
+          python3 -m py_compile tools/generate-android-meson-cross-file.py tools/tests/test_generate_android_meson_cross_file.py
+          python3 -m unittest discover -s tools/tests -v
 
       - name: Diagnose legacy X server gitlink (known blocker)
         continue-on-error: true
