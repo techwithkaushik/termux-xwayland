@@ -38,7 +38,7 @@ The workflow `.github/workflows/xwayland-preflight.yml` now:
 2. Runs unit tests for the Android Meson cross-file generator against a synthetic NDK layout for all four Android ABIs.
 3. Tests `tools/check-xwayland-android-prefix.py` against host-built shared libraries, static archives, malformed ELF files, and escaping symlinks.
 4. Tests `tools/audit-xwayland-android-stage.py` against synthetic pkg-config metadata, including missing modules and prefixes that leak outside the staging root.
-5. Diagnoses the legacy submodule source, but does not let that known blocker mask the separate release-source check.
+5. Reports the legacy submodule's missing standalone XWayland backend as an explicit expected warning (`--allow-legacy-source`), while keeping the standalone release-source validation as a separate, required check.
 6. Fetches the pinned official XWayland 24.1.14 release and verifies the Meson build files and embedded version.
 7. Audits all 19 Meson option names and reports host dependency availability independently of the known legacy-submodule blocker.
 
@@ -129,7 +129,7 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 
 ## Current status
 
-The latest source-preflight workflow run [#73](https://github.com/techwithkaushik/termux-xwayland/actions/runs/39791122714) succeeded on commit `d9d6800d5279c4826596b49546324045c791b26e`. Its shell syntax/help checks, Python compilation and unit tests (including the staging-metadata audit), standalone release fetch/layout validation, all 19 Meson option-presence checks, and informational host-dependency report completed successfully. The legacy-source diagnostic remains intentionally non-blocking because the pinned gitlink lacks the standalone Meson XWayland backend. The separate manual official-package build workflow has not yet been dispatched.
+The source-preflight workflow validates shell syntax, Python compilation and unit tests (including the staging-metadata audit), the standalone release archive/layout, all 19 Meson option-presence checks, and host dependency availability. The legacy source diagnostic now emits an explicit warning for the expected old gitlink and exits successfully only when invoked with `--allow-legacy-source`; without that opt-in, the command remains a strict check and exits non-zero when the standalone backend is absent. The separate manual official-package build workflow has not yet been dispatched.
 
 The target-prefix architecture guard now checks ELF headers in shared libraries and static archive members, and rejects malformed ELF shared libraries, broken symlinks, and library symlinks escaping the staging prefix. Regression tests cover these cases. The new staging audit also checks the required pkg-config modules and rejects metadata/compiler/linker paths outside the target staging prefix (or an explicitly allowed NDK sysroot). OpenSSL is checked through its actual pkg-config modules, `libcrypto` and `libssl`, rather than a non-portable `openssl` module name. These are safety checks only: they do not prove full Android ABI compatibility, dependency completeness beyond the listed modules, or final linkability.
 
