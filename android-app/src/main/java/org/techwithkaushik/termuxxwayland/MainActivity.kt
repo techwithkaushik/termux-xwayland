@@ -677,7 +677,7 @@ class MainActivity : Activity() {
             setHintTextColor(Color.LTGRAY)
             setTextColor(Color.WHITE)
             textSize = 15f
-            singleLine = true
+            setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND or
                 android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
