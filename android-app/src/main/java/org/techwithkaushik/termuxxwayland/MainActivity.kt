@@ -615,11 +615,15 @@ class MainActivity : Activity() {
         mouseButton("L", 1, 2f)
         mouseButton("M", 2)
         mouseButton("R", 3, 2f)
-        val mouseToggle = actionButton("×") {
-            mouseControls.visibility = if (mouseControls.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        mouseToggleButton = actionButton("🖱") {
+            val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+            val nextVisible = mouseControls.visibility != View.VISIBLE
+            prefs.edit().putBoolean("mouse_helper", nextVisible).apply()
+            mouseControls.visibility = if (nextVisible) View.VISIBLE else View.GONE
+            mouseToggleButton.text = if (nextVisible) "×" else "🖱"
         }
-        mouseToggle.contentDescription = "Show or hide mouse click helper"
-        desktopRoot.addView(mouseToggle, FrameLayout.LayoutParams(dp(44), dp(42), Gravity.BOTTOM or Gravity.END).apply {
+        mouseToggleButton.contentDescription = "Show or hide mouse click helper"
+        desktopRoot.addView(mouseToggleButton, FrameLayout.LayoutParams(dp(44), dp(42), Gravity.BOTTOM or Gravity.END).apply {
             bottomMargin = dp(62)
             marginEnd = dp(8)
         })
@@ -734,12 +738,25 @@ class MainActivity : Activity() {
                 "right" -> Gravity.END or Gravity.CENTER_VERTICAL
                 else -> Gravity.BOTTOM
             }
-            if (position == "left" || position == "right") {
-                extraParams.width = dp(44)
+            val vertical = position == "left" || position == "right"
+            if (vertical) {
+                extraParams.width = dp(48)
                 extraParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                extraKeysBar.orientation = LinearLayout.VERTICAL
+                for (index in 0 until extraKeysBar.childCount) {
+                    extraKeysBar.getChildAt(index).layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+                    ).apply { topMargin = dp(1); bottomMargin = dp(1) }
+                }
             } else {
                 extraParams.width = ViewGroup.LayoutParams.MATCH_PARENT
                 extraParams.height = dp(44)
+                extraKeysBar.orientation = LinearLayout.HORIZONTAL
+                for (index in 0 until extraKeysBar.childCount) {
+                    extraKeysBar.getChildAt(index).layoutParams = LinearLayout.LayoutParams(
+                        0, dp(40), 1f
+                    ).apply { leftMargin = dp(1); rightMargin = dp(1) }
+                }
             }
             extraKeysBar.layoutParams = extraParams
         }
