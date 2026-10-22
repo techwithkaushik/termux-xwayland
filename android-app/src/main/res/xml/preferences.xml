@@ -8,15 +8,13 @@
             app:entries="@array/display_resolution_modes"
             app:entryValues="@array/display_resolution_mode_values"
             app:defaultValue="0" />
-        <SeekBarPreference
+        <ListPreference
             app:key="display_scale"
             app:title="Display scale"
             app:summary="Scale factor in percent."
-            app:min="30"
-            app:max="300"
-            app:seekBarIncrement="10"
-            app:defaultValue="100"
-            app:showSeekBarValue="true" />
+            app:entries="@array/display_scale_entries"
+            app:entryValues="@array/display_scale_values"
+            app:defaultValue="100" />
         <ListPreference
             app:key="display_filter"
             app:title="Display filtering mode"
@@ -77,7 +75,7 @@
                 app:entries="@array/pointer_transforms"
                 app:entryValues="@array/pointer_transform_values"
                 app:defaultValue="4" />
-            <SeekBarPreference app:key="pointer_speed" app:title="Captured pointer speed factor (%)" app:min="1" app:max="300" app:defaultValue="100" app:showSeekBarValue="true" />
+            <ListPreference app:key="pointer_speed" app:title="Captured pointer speed factor (%)" app:entries="@array/pointer_speed_entries" app:entryValues="@array/pointer_speed_values" app:defaultValue="100" />
             <SwitchPreferenceCompat app:key="tap_to_move" app:title="Enable tap-to-move for touchpads" app:defaultValue="true" />
             <SwitchPreferenceCompat app:key="ignore_gamepad" app:title="Ignore gamepad input events" app:defaultValue="false" />
             <SwitchPreferenceCompat app:key="zoom_follows_cursor" app:title="Pan to follow cursor while zoomed in" app:defaultValue="true" />
