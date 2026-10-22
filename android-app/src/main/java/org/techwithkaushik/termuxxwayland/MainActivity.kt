@@ -641,12 +641,48 @@ class MainActivity : Activity() {
             setPadding(dp(4), dp(2), dp(4), dp(2))
             setBackgroundColor(Color.argb(205, 12, 16, 24))
         }
+        fun sendExtraKey(key: String, action: String) {
+            previewImage.inputEventListener?.invoke(
+                ("KEY " + key + " " + action).toByteArray(Charsets.US_ASCII)
+            )
+        }
         fun extraKey(label: String, key: String) {
-            extraKeysBar.addView(actionButton(label) {
-                previewImage.inputEventListener?.invoke(("KEY " + key + " DOWN").toByteArray(Charsets.US_ASCII))
-                previewImage.inputEventListener?.invoke(("KEY " + key + " UP").toByteArray(Charsets.US_ASCII))
+            val modifier = key in setOf("Control_L", "Alt_L", "Shift_L", "Super_L")
+            val button = actionButton(label) {
+                if (modifier) {
+                    if (activeExtraModifiers.remove(key)) {
+                        sendExtraKey(key, "UP")
+                    } else {
+                        activeExtraModifiers.add(key)
+                        sendExtraKey(key, "DOWN")
+                    }
+                } else {
+                    sendExtraKey(key, "DOWN")
+                    sendExtraKey(key, "UP")
+                    val prefs = getSharedPreferences("termux_xwayland_preferences", MODE_PRIVATE)
+                    if (prefs.getBoolean("termux_extra_key_behavior", true)) {
+                        activeExtraModifiers.toList().forEach { held ->
+                            sendExtraKey(held, "UP")
+                            activeExtraModifiers.remove(held)
+                        }
+                    }
+                }
                 previewImage.requestFocus()
-            }, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+            }
+            button.setOnLongClickListener {
+                if (modifier) {
+                    if (activeExtraModifiers.contains(key)) {
+                        sendExtraKey(key, "UP")
+                        activeExtraModifiers.remove(key)
+                    } else {
+                        activeExtraModifiers.add(key)
+                        sendExtraKey(key, "DOWN")
+                    }
+                    button.alpha = if (key in activeExtraModifiers) 0.65f else 1f
+                    true
+                } else false
+            }
+            extraKeysBar.addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
                 leftMargin = dp(1)
                 rightMargin = dp(1)
             })
@@ -655,6 +691,7 @@ class MainActivity : Activity() {
         extraKey("Tab", "Tab")
         extraKey("Ctrl", "Control_L")
         extraKey("Alt", "Alt_L")
+        extraKey("Shift", "Shift_L")
         extraKey("↑", "Up")
         extraKey("↓", "Down")
         extraKey("←", "Left")
@@ -713,6 +750,7 @@ class MainActivity : Activity() {
     private lateinit var mouseControls: LinearLayout
     private lateinit var mouseToggleButton: Button
     private lateinit var desktopTopControls: LinearLayout
+    private val activeExtraModifiers = linkedSetOf<String>()
 
     /**
      * Re-apply visual-only preferences after returning from Preferences.
