@@ -32,6 +32,21 @@ class PrefixArchitectureCheckTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unexpected ELF machine", result.stderr)
 
+    def test_reports_truncated_elf_shared_library(self):
+        with tempfile.TemporaryDirectory() as temp:
+            prefix = Path(temp)
+            libdir = prefix / "lib"
+            libdir.mkdir()
+            malformed = libdir / "libtruncated.so"
+            malformed.write_bytes(b"\\x7fELF" + b"truncated")
+            result = subprocess.run(
+                [shutil.which("python3") or "python3", str(SCRIPT),
+                 "--prefix", str(prefix), "--abi", "armeabi-v7a"],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("readelf failed", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
