@@ -11,16 +11,13 @@ on:
       - "docs/XWAYLAND_REPLACEMENT.md"
       - ".gitmodules"
       - "lorie/src/main/cpp/xserver"
-  push:
-    branches:
-      - xwayland/replace-xorg
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: xwayland-preflight-${{ github.ref }}
+  group: xwayland-preflight-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
