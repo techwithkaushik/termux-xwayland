@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject host-architecture shared libraries in an Android XWayland staging prefix.
+"""Reject host-architecture ELF libraries/archives in an Android staging prefix.
 
 This is a safety preflight, not a dependency-completeness check or a build test.
 """
@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 EXPECTED_MACHINES = {
-    "armeabi-v7a": ("ARM", "ARM"),
-    "arm64-v8a": ("AArch64", "AArch64"),
-    "x86": ("Intel 80386", "Intel 80386"),
+    "armeabi-v7a": ("ARM",),
+    "arm64-v8a": ("AArch64",),
+    "x86": ("Intel 80386",),
     "x86_64": ("Advanced Micro Devices X86-64", "X86-64"),
 }
 
@@ -39,10 +39,10 @@ def main() -> int:
     candidates = sorted(
         path for path in libdir.rglob("*")
         if (path.is_file() or path.is_symlink())
-        and (".so" == path.suffix or ".so." in path.name)
+        and (path.suffix == ".a" or path.suffix == ".so" or ".so." in path.name)
     )
     if not candidates:
-        parser.error(f"no shared libraries (*.so or *.so.*) found under {libdir}")
+        parser.error(f"no shared libraries (*.so) or static archives (*.a) found under {libdir}")
 
     expected = EXPECTED_MACHINES[args.abi]
     failures: list[str] = []
@@ -52,18 +52,18 @@ def main() -> int:
             try:
                 resolved = library.resolve(strict=True)
             except OSError as exc:
-                failures.append(f"{library}: broken shared-library symlink: {exc}")
+                failures.append(f"{library}: broken library symlink: {exc}")
                 continue
             try:
                 resolved.relative_to(prefix)
             except ValueError:
                 failures.append(
-                    f"{library}: shared-library symlink resolves outside staging prefix: {resolved}"
+                    f"{library}: library symlink resolves outside staging prefix: {resolved}"
                 )
                 continue
 
         if not library.is_file():
-            failures.append(f"{library}: shared-library path is not a regular file")
+            failures.append(f"{library}: library path is not a regular file")
             continue
 
         result = subprocess.run(
@@ -71,22 +71,35 @@ def main() -> int:
             text=True, capture_output=True, check=False,
         )
         if result.returncode != 0:
-            # Ignore linker scripts or non-ELF files named .so; report only if
-            # the file looks like an ELF binary but cannot be inspected.
+            # Ignore linker scripts/non-ELF .so files, but not malformed ELF.
             try:
-                magic = library.open("rb").read(4)
+                with library.open("rb") as stream:
+                    magic = stream.read(4)
             except OSError:
                 magic = b""
             if magic == b"\x7fELF":
                 failures.append(f"{library}: readelf failed: {result.stderr.strip()}")
+            elif library.suffix == ".a":
+                failures.append(f"{library}: cannot inspect static archive members: {result.stderr.strip()}")
             continue
-        checked += 1
-        header = result.stdout
-        machine_line = next((line.strip() for line in header.splitlines()
-                             if line.strip().startswith("Machine:")), "Machine: <unknown>")
-        machine = machine_line.split(":", 1)[-1].strip()
-        if not any(token.lower() in machine.lower() for token in expected):
-            failures.append(f"{library}: unexpected ELF machine '{machine}' for ABI {args.abi}")
+
+        machine_lines = [
+            line.split(":", 1)[-1].strip()
+            for line in result.stdout.splitlines()
+            if line.strip().startswith("Machine:")
+        ]
+        if not machine_lines:
+            # Linker scripts may use a .so suffix; archives must contain inspectable ELF members.
+            if library.suffix == ".a":
+                failures.append(f"{library}: no ELF object machine headers found in static archive")
+            continue
+
+        for machine in machine_lines:
+            checked += 1
+            if not any(token.lower() in machine.lower() for token in expected):
+                failures.append(
+                    f"{library}: unexpected ELF machine '{machine}' for ABI {args.abi}"
+                )
 
     if failures:
         print(f"ERROR: {len(failures)} target-prefix architecture problem(s):", file=sys.stderr)
@@ -94,10 +107,10 @@ def main() -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
     if checked == 0:
-        print(f"ERROR: no ELF shared libraries could be validated under {libdir}", file=sys.stderr)
+        print(f"ERROR: no ELF shared-library or archive members could be validated under {libdir}", file=sys.stderr)
         return 1
 
-    print(f"Validated {checked} ELF shared libraries for ABI={args.abi} under {libdir}.")
+    print(f"Validated {checked} ELF object header(s) for ABI={args.abi} under {libdir}.")
     print("NOTE: this checks ELF machine types only; it does not prove dependency completeness or linkability.")
     return 0
 
