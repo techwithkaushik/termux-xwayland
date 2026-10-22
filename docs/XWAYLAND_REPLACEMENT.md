@@ -68,6 +68,12 @@ This driver is not itself evidence of a successful Android build: it cannot proc
 
 The script downloads source into `build/third_party`; it does not modify the existing native target. The release archive should be excluded from commits/build outputs as appropriate.
 
+### Reproducible upstream Android package build
+
+The manual workflow `.github/workflows/xwayland-termux-build.yml` uses the official `termux/termux-packages` build container and XWayland package recipe rather than pretending that a host preflight is an Android cross-build. Run it from the Actions tab with `arm` selected first for the Redmi 9 Active's 32-bit ABI; `aarch64` is also available. By default it builds XWayland against published Termux dependency packages and uploads the resulting `.deb`. The optional force-dependencies input requests a much longer rebuild of the full dependency chain.
+
+This package workflow is a separate verification path: it validates the upstream Termux recipe's Android cross-build, but it does not yet populate the custom Meson staging prefix used by `tools/build-xwayland-android.sh`, nor does it integrate the package into the app. A successful package build is not a device rendering/input test.
+
 ## Migration stages
 
 ### Stage 1 — establish a genuine upstream build
@@ -123,7 +129,7 @@ Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiri
 
 ## Current status
 
-The source-preflight workflow run [#59](https://github.com/techwithkaushik/termux-xwayland/actions/runs/39783522204) succeeded on commit `45a2528018ba12f8ba710adec0ed4f068525227f`. Its shell syntax/help checks, Python compilation and unit tests, standalone release fetch/layout validation, all 19 Meson option-presence checks, and informational host-dependency report completed successfully. The legacy-source diagnostic remains intentionally non-blocking because the pinned gitlink lacks the standalone Meson XWayland backend.
+The source-preflight workflow run [#59](https://github.com/techwithkaushik/termux-xwayland/actions/runs/39783522204) succeeded on commit `45a2528018ba12f8ba710adec0ed4f068525227f`. The new staging-metadata audit and manual official-package build workflow are added in later commits; their validation is tracked by the latest CI run. Its shell syntax/help checks, Python compilation and unit tests, standalone release fetch/layout validation, all 19 Meson option-presence checks, and informational host-dependency report completed successfully. The legacy-source diagnostic remains intentionally non-blocking because the pinned gitlink lacks the standalone Meson XWayland backend.
 
 The target-prefix architecture guard now checks ELF headers in shared libraries and static archive members, and rejects malformed ELF shared libraries, broken symlinks, and library symlinks escaping the staging prefix. Regression tests cover these cases. The new staging audit also checks the required pkg-config modules and rejects metadata/compiler/linker paths outside the target staging prefix (or an explicitly allowed NDK sysroot). These are safety checks only: they do not prove full Android ABI compatibility, dependency completeness beyond the listed modules, or final linkability.
 
