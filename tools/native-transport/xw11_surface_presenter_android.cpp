@@ -27,10 +27,19 @@ extern "C" xw11_present_result xw11_presenter_set_window(
     pthread_mutex_lock(&g_lock);
     // Surface callbacks can race with delayed native work. Never let an older
     // generation replace a newer Surface, even after the newer one was detached.
-    if (generation <= g_last_generation) {
+    if (generation < g_last_generation ||
+        (generation == g_last_generation &&
+         (g_generation != generation || g_window != window))) {
         pthread_mutex_unlock(&g_lock);
         ANativeWindow_release(window);
         return XW11_PRESENT_ERR_STALE_ATTACH;
+    }
+    // Repeated surfaceChanged callbacks for the same live Surface are idempotent.
+    if (generation == g_last_generation && g_generation == generation &&
+        g_window == window) {
+        pthread_mutex_unlock(&g_lock);
+        ANativeWindow_release(window);
+        return XW11_PRESENT_OK;
     }
     ANativeWindow *previous = g_window;
     g_window = window;
