@@ -51,6 +51,27 @@ int main(void) {
     input = valid_header(); input.sequence_id = 0;
     assert(xw11_encode_header(&input, bytes, sizeof(bytes)) == XW11_PROTOCOL_ERR_SEQUENCE);
 
-    puts("XW11 protocol header tests passed");
+    xw11_sequence_tracker tracker = {0, 0};
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_ERR_SESSION);
+    assert(xw11_sequence_tracker_reset(&tracker, 17) == XW11_PROTOCOL_OK);
+    input = valid_header();
+    input.sequence_id = 1;
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_OK);
+    input.sequence_id = 2;
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_OK);
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_ERR_SEQUENCE);
+    input.sequence_id = 1;
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_ERR_SEQUENCE);
+    input.sequence_id = 3;
+    input.session_id = 18;
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_ERR_SESSION);
+    assert(xw11_sequence_tracker_reset(&tracker, 0) == XW11_PROTOCOL_ERR_SESSION);
+    assert(xw11_sequence_tracker_reset(&tracker, 18) == XW11_PROTOCOL_OK);
+    input = valid_header();
+    input.session_id = 18;
+    input.sequence_id = 1;
+    assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_OK);
+
+    puts("XW11 protocol header and sequence tests passed");
     return 0;
 }
