@@ -14,7 +14,8 @@ Open the [latest XW11 Android package workflow](https://github.com/techwithkaush
 Download these artifacts:
 - `termux-xw11-main-apk` — standalone APK for ordinary installation.
 - `termux-xw11-shareduid-apk` — optional shared-UID APK; only use it with a matching Termux installation/signature.
-- `termux-xw11-launcher-package` — contains `termux-xw11-nightly-*-all.deb` and the Arch companion package.
+- `termux-xw11-deb` — the validated `.deb` plus a manifest with package metadata and SHA-256; use this for straightforward Termux installation.
+- `termux-xw11-launcher-package` — contains the `.deb` and Arch companion package together.
 - `termux-xw11-loader-apk` — diagnostic artifact; normally the loader inside the companion package is used.
 
 GitHub Actions artifacts download as ZIP files. Extract the ZIP on the device or on a computer first.
