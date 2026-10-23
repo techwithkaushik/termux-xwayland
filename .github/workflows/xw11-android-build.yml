@@ -72,8 +72,7 @@ jobs:
           bash -n tools/test-weston-xwayland-runtime.sh
           # Exercise the real Weston -> XWayland -> X11-client startup path on CI.
           # This is a headless protocol smoke test, not Android Surface/GPU validation.
-          PREFIX=/usr TMPDIR=/tmp HOME="$RUNNER_TEMP" \\
-            bash tools/test-weston-xwayland-runtime.sh --headless
+          PREFIX=/usr TMPDIR=/tmp HOME="$RUNNER_TEMP" bash tools/test-weston-xwayland-runtime.sh --headless
           bash -n shell-loader/scripts/termux-xw11-wayland.in
           grep -Fq 'LorieView.this.surfaceCreated(mNativeContext)' lorie/src/main/java/com/termux/x11/LorieView.java
           grep -Fq '{"surfaceCreated", "(J)V"' lorie/src/main/cpp/lorie/activity.cpp
