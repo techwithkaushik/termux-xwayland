@@ -15,9 +15,10 @@ typedef enum xw11_surface_result {
 } xw11_surface_result;
 
 /*
- * Portable lifecycle gate for the Android Surface presentation adapter.
- * This is deliberately independent of Android headers so the state machine
- * can be tested on the host before it is wired to ANativeWindow/JNI.
+ * Portable lifecycle gate used by the current Android Surface host callbacks.
+ * It remains independent of Android headers so the state machine can be
+ * host-tested; asynchronous frame/input paths must also carry their captured
+ * generation before they can safely use this gate for stale-event rejection.
  */
 typedef struct xw11_surface_generation {
     uint64_t generation;
