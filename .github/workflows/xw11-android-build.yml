@@ -19,10 +19,10 @@ on:
   workflow_dispatch:
     inputs:
       build_xwayland:
-        description: "Also build the upstream XWayland Termux package (long-running)"
+        description: "Build upstream XWayland Termux package (long-running; required for replacement validation)"
         type: boolean
         required: true
-        default: false
+        default: true
       arch:
         description: "Termux target architecture for optional XWayland package build"
         type: choice
