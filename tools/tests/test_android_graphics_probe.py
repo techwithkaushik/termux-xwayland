@@ -20,6 +20,9 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         cls.probe_activity = (ROOT / "lorie/src/main/java/com/termux/x11/NativeGraphicsProbeActivity.java").read_text()
         cls.manifest = (ROOT / "lorie/src/main/AndroidManifest.xml").read_text()
         cls.runner = (ROOT / "tools/run-android-egl-probe.sh").read_text()
+        cls.presenter_activity = (ROOT / "lorie/src/main/java/com/termux/x11/NativePresenterProbeActivity.java").read_text()
+        cls.presenter_view = (ROOT / "lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java").read_text()
+        cls.presenter_runner = (ROOT / "tools/run-android-presenter-probe.sh").read_text()
 
     def test_java_and_jni_entry_points_match(self):
         self.assertIn("native String probeEglCapabilities();", self.java_probe)
@@ -48,6 +51,19 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn('ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativeGraphicsProbeActivity}"', self.runner)
         self.assertNotIn("RUN_EGL_PROBE", self.runner)
         self.assertIn("window surface swap: passed", self.runner)
+
+
+    def test_native_presenter_probe_is_isolated_and_bounded(self):
+        self.assertIn('android:name=".NativePresenterProbeActivity"', self.manifest)
+        self.assertIn("Xw11NativeSurfaceView(this)", self.presenter_activity)
+        self.assertIn("MAX_TEST_PIXELS = 4 * 1024 * 1024", self.presenter_activity)
+        self.assertIn("presentRgbaFrame(pixels, width, height, stride, generation)", self.presenter_activity)
+        self.assertIn("generationForDiagnostics()", self.presenter_activity)
+        self.assertIn("long generationForDiagnostics()", self.presenter_view)
+        self.assertIn("nativePresentRgbaFrame", self.presenter_view)
+        self.assertIn('ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativePresenterProbeActivity}"', self.presenter_runner)
+        self.assertIn("PASS: native ANativeWindow CPU-copy frame posted", self.presenter_runner)
+        self.assertIn("no Weston frame producer is connected", self.presenter_runner)
 
     def test_diagnostic_is_opt_in_and_surface_lifecycle_scoped(self):
         key = 'getBooleanExtra("org.techwithkaushik.termuxxw11.RUN_EGL_PROBE", false)'
