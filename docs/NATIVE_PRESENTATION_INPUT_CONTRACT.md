@@ -138,3 +138,25 @@ The opt-in diagnostic now also creates a Java `SurfaceView` and passes its live 
 Launch the app's exported main activity with the existing boolean extra `org.techwithkaushik.termuxxw11.RUN_EGL_PROBE=true`. Keep the diagnostic activity in the foreground while the surface is created. Collect the `XW11-EGL-PROBE` log entries from logcat. Verify both the pbuffer report and the separate `window surface swap: passed` line. A failure should be recorded with its EGL error code; do not infer support from SurfaceFlinger extension strings alone.
 
 No device run or successful APK build is asserted by this commit. The next acceptance stage is explicit Weston-buffer export/import and fence/lifetime validation.
+
+
+## On-device Weston/XWayland protocol smoke test (2026-10-23)
+
+The Redmi 9 Active / Termux session completed these manual tests:
+
+- Headless Weston 16.0.1 with `--renderer=pixman --shell=kiosk --xwayland` started upstream XWayland 24.1.14. `DISPLAY=:1 xdpyinfo` succeeded and `xwininfo -root -tree` showed an XTerm window.
+- A second isolated headless runtime started XWayland on `:2`; `xdpyinfo` and XTerm window enumeration succeeded. The X11 abstract socket for `:1` was already occupied, so Weston selected another display. This is expected display allocation behavior, not evidence of a renderer failure.
+- Weston with `--backend=x11 --renderer=pixman --shell=kiosk --xwayland`, using the existing Termux:X11 `:0` as its parent display, created a 1024x600 X11 output. It launched XWayland on `:3`; `DISPLAY=:3 xdpyinfo` succeeded and `xwininfo -root -tree` showed the test XTerm window.
+- One earlier runtime directory disappeared while its Weston process remained alive and retained a deleted lock-file descriptor. A fresh, uniquely named runtime directory worked. Runtime directories must be owned by the test process and must not be removed while their compositor is running.
+
+These results establish Weston/XWayland startup, X11 protocol connectivity, and X11 client-window creation. They do **not** establish that the nested Weston window was visually confirmed on the Android display, that Weston renders directly to an Android `Surface`, that rendering is GPU accelerated, that buffers are zero-copy, or that touch/pointer latency is acceptable. All successful Weston logs above report the Pixman CPU renderer.
+
+For repeatable, bounded testing, run:
+
+```sh
+bash tools/test-weston-xwayland-runtime.sh --nested
+```
+
+This starts a uniquely isolated nested Weston instance, waits for the XWayland display, checks `xdpyinfo`, launches a test XTerm, verifies the window tree, and cleans up only the instance it started. Use `--headless` for a protocol-only test. It intentionally uses Pixman and is not an Android-native presentation acceptance test.
+
+Next device gate: run the opt-in app-process EGL pbuffer and Surface-backed EGL probes described above, then implement and validate actual Weston buffer export/import, synchronization fences, buffer lifetime, and input forwarding. Do not remove the Lorie fallback until visible X11 output and input pass on the target Android device.
