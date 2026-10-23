@@ -60,8 +60,14 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
         return XW11_PRESENT_ERR_DIMENSIONS;
 
     const size_t row_bytes = (size_t)width * 4u;
-    if (source_stride < row_bytes || source_stride > kMaxFrameBytes ||
-        source_stride > kMaxFrameBytes / height || source_stride > SIZE_MAX / height)
+    if (source_stride < row_bytes || source_stride > kMaxFrameBytes)
+        return XW11_PRESENT_ERR_STRIDE;
+    // The final row needs only row_bytes; it does not need trailing padding.
+    // Bound the bytes actually read, not source_stride * height.
+    if ((size_t)(height - 1u) > (SIZE_MAX - row_bytes) / source_stride)
+        return XW11_PRESENT_ERR_STRIDE;
+    const size_t source_bytes = (size_t)(height - 1u) * source_stride + row_bytes;
+    if (source_bytes > kMaxFrameBytes)
         return XW11_PRESENT_ERR_STRIDE;
 
     pthread_mutex_lock(&g_lock);
