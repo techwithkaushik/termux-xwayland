@@ -300,6 +300,7 @@ add_library(Xlorie SHARED
         "../../../../tools/native-transport/xw11_transport_protocol.cpp"
         "../../../../tools/native-transport/xw11_transport_io.cpp"
         "../../../../tools/native-transport/xw11_input_transport.cpp"
+        "../../../../tools/native-transport/xw11_input_receiver.cpp"
         "../../../../tools/native-transport/xw11_surface_presenter_android.cpp")
 target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include" "../../../../tools/native-transport")
 # -nostdlib++ keeps this shared object free of any libc++ dependency; renderer.cpp, activity.cpp,
