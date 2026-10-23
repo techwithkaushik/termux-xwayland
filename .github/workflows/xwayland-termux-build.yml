@@ -1,0 +1,104 @@
+name: Build upstream XWayland for Termux Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture (arm is 32-bit ARM / armeabi-v7a)"
+        type: choice
+        required: true
+        default: arm
+        options:
+          - arm
+          - aarch64
+      force_dependencies:
+        description: "Build dependencies from source instead of downloading published Termux packages"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xwayland-termux-package-${{ inputs.arch }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build XWayland (${{ inputs.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      TARGET_ARCH: ${{ inputs.arch }}
+      FORCE_DEPENDENCIES: ${{ inputs.force_dependencies }}
+      TERMUX_PKG_MAKE_PROCESSES: "2"
+    steps:
+      - name: Checkout pinned Termux package build system
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-packages
+          ref: facb27bc85ef36fd1120d4ae990fbd59e134fc61
+          path: termux-packages
+          fetch-depth: 1
+
+      - name: Verify pinned XWayland package recipe
+        working-directory: termux-packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f x11-packages/xwayland/build.sh
+          grep -Fq 'TERMUX_PKG_VERSION="24.1.14"' x11-packages/xwayland/build.sh
+          grep -Fq '4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a' x11-packages/xwayland/build.sh
+          grep -Fq 'TERMUX_PKG_DEPENDS=' x11-packages/xwayland/build.sh
+          echo "Pinned Termux recipe and upstream source checksum verified."
+
+      - name: Build XWayland for selected Android ABI
+        working-directory: termux-packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$TARGET_ARCH" == "arm" ]]; then
+            EXPECTED_DEB_ARCH="arm"
+          elif [[ "$TARGET_ARCH" == "aarch64" ]]; then
+            EXPECTED_DEB_ARCH="aarch64"
+          else
+            echo "Unsupported target architecture: $TARGET_ARCH" >&2
+            exit 2
+          fi
+          if [[ "$FORCE_DEPENDENCIES" == "true" ]]; then
+            ./scripts/run-docker.sh ./build-package.sh -a "$TARGET_ARCH" xwayland
+          else
+            ./scripts/run-docker.sh ./build-package.sh -I -a "$TARGET_ARCH" xwayland
+          fi
+          mapfile -t packages < <(find output -maxdepth 1 -type f -name 'xwayland_*.deb' -print)
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            echo "Expected exactly one xwayland .deb, found ${#packages[@]}" >&2
+            find output -maxdepth 1 -type f -name '*.deb' -print >&2 || true
+            exit 1
+          fi
+          deb="${packages[0]}"
+          package_name="$(dpkg-deb -f "$deb" Package)"
+          package_arch="$(dpkg-deb -f "$deb" Architecture)"
+          package_version="$(dpkg-deb -f "$deb" Version)"
+          [[ "$package_name" == "xwayland" ]]
+          [[ "$package_arch" == "$EXPECTED_DEB_ARCH" ]]
+          dpkg-deb --contents "$deb" | grep -E '/(bin|libexec)/Xwayland$'
+          mkdir -p ../validated-output
+          cp "$deb" ../validated-output/
+          sha256sum ../validated-output/*.deb | tee ../validated-output/SHA256SUMS
+          {
+            echo "package=$package_name"
+            echo "version=$package_version"
+            echo "architecture=$package_arch"
+            echo "source_revision=facb27bc85ef36fd1120d4ae990fbd59e134fc61"
+            echo "dependency_mode=$([[ "$FORCE_DEPENDENCIES" == "true" ]] && echo build-from-source || echo published-termux-packages)"
+          } | tee ../validated-output/BUILD-MANIFEST.txt
+
+      - name: Upload validated XWayland package
+        uses: actions/upload-artifact@v4
+        with:
+          name: xwayland-termux-${{ inputs.arch }}
+          path: validated-output/
+          if-no-files-found: error
+          retention-days: 14
