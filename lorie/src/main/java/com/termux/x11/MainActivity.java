@@ -297,6 +297,18 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Explicit opt-in diagnostic mode avoids touching EGL during normal
+        // display startup. Launch with --ez org.techwithkaushik.termuxxw11.RUN_EGL_PROBE true.
+        if (getIntent().getBooleanExtra("org.techwithkaushik.termuxxw11.RUN_EGL_PROBE", false)) {
+            try {
+                Log.i("XW11-EGL-PROBE", NativeGraphicsProbe.probeEglCapabilities());
+            } catch (Throwable error) {
+                Log.e("XW11-EGL-PROBE", "Native EGL probe failed", error);
+            }
+            finish();
+            return;
+        }
+
         app = (LorieApp) getApplication();
 
         String parsedTag = relaunchAsTaggedIfNeeded(getIntent(), true);
