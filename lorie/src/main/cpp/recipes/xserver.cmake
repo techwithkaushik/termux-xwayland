@@ -290,8 +290,9 @@ add_library(Xlorie SHARED
         "lorie/activity.cpp"
         "lorie/graphics_probe.cpp"
         "lorie/cmdentrypoint.cpp"
-        "lorie/workqueue.cpp")
-target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include")
+        "lorie/workqueue.cpp"
+        "../../../../tools/native-transport/xw11_surface_generation.cpp")
+target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include" "../../../../tools/native-transport")
 # -nostdlib++ keeps this shared object free of any libc++ dependency; renderer.cpp, activity.cpp,
 # and cmdentrypoint.cpp are restricted to a runtime-free subset of C++ (no exceptions, no RTTI, no
 # STL) to make that possible.
