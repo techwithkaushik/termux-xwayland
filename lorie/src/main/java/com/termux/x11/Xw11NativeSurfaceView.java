@@ -23,6 +23,10 @@ import android.os.ParcelFileDescriptor;
  * It must never share LorieView's Surface with the legacy EGL renderer.
  */
 final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
+    static {
+        System.loadLibrary("Xlorie");
+    }
+
     private static final String TAG = "XW11Surface";
     private static final long NS_PER_MS = 1_000_000L;
     private static final int INPUT_POINTER_MOTION = 1;
