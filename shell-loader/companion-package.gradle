@@ -22,7 +22,7 @@ import java.security.MessageDigest
 def pkgName = 'termux-xw11-nightly'
 def pkgVersion = (file("$rootDir/lorie/version.gradle").text =~ /version = "([^"]+)"/)[0][1] + '-0'
 def pkgDescription = 'Companion package for Termux-XW11 app'
-def pkgHomepage = 'https://github.com/termux/termux-xw11'
+def pkgHomepage = 'https://github.com/techwithkaushik/termux-xwayland'
 def pkgMaintainer = 'Twaik Yont @twaik'
 def pkgDepends = 'xkeyboard-config'
 
@@ -42,7 +42,7 @@ tasks.register('generateWrapperScripts', Copy) {
 tasks.register('buildCompanionPackage') {
     dependsOn tasks.named('assembleDebug'), tasks.named('generateWrapperScripts')
 
-    def loaderApk = layout.buildDirectory.file('outputs/apk/debug/shell-loader-debug.apk')
+    def loaderApk = layout.buildDirectory.file('outputs/apk/debug/termux-xw11-loader-debug.apk')
     def scriptsDir = layout.buildDirectory.dir('generated/scripts')
     inputs.file(loaderApk)
     inputs.dir(scriptsDir)
