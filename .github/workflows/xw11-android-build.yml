@@ -115,6 +115,12 @@ jobs:
             tools/native-transport/tests/test_buffer_registry.cpp \
             -o /tmp/xw11-buffer-registry-test
           /tmp/xw11-buffer-registry-test
+          c++ -std=c++17 -Wall -Wextra -Werror \
+            -Itools/native-transport \
+            tools/native-transport/xw11_input_transform.cpp \
+            tools/native-transport/tests/test_input_transform.cpp \
+            -o /tmp/xw11-input-transform-test
+          /tmp/xw11-input-transform-test
 
       - name: Diagnose legacy X server gitlink
         run: bash tools/probe-xwayland-source.sh --allow-legacy-source
