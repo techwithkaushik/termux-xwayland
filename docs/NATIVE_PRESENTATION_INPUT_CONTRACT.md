@@ -181,3 +181,9 @@ The committed `tools/test-weston-xwayland-runtime.sh --nested` was executed on t
 The unified CI run for this change also completed successfully: [run 39931512759](https://github.com/techwithkaushik/termux-xwayland/actions/runs/39931512759). CI validates repository checks and packaging; it does not run on the Android device and is not evidence of native graphics-buffer interoperability.
 
 The next concrete device measurement is the app-process EGL pbuffer plus Android Surface-backed EGL probe. It should be run on the installed XW11 APK before writing a buffer-import bridge; it will establish whether this app can render to its own Surface, not whether Weston buffers can be imported.
+
+## Buffer descriptor validation primitive (implemented; not connected to producer/consumer)
+
+The portable native module `tools/native-transport/xw11_buffer_descriptor.h/.cpp` validates buffer metadata before a future import or submission path can allocate or use it. It requires nonzero buffer ID and surface generation, bounds dimensions to 16384x16384, recognizes only RGB565/XRGB8888/ARGB8888 fourcc values, verifies stride against width and bytes-per-pixel, checks multiplication safely, and caps the declared backing-store size at 512 MiB. The host test covers invalid IDs/generations, zero and excessive dimensions, unknown formats, undersized stride, oversized total size, null input, and RGB565.
+
+This is a metadata validation gate only. It does not open or inspect a graphics FD, validate a DRM modifier, prove that a gralloc/DMA-BUF handle is importable, or synchronize producer/consumer access. Format/modifier support must be negotiated against the actual Weston producer and Android EGL consumer, and buffer lifetime must be enforced by the eventual transport owner. CI compiles the validator with C++17 and warnings-as-errors and runs its host test.
