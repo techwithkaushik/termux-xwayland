@@ -1,4 +1,6 @@
 #include <jni.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
@@ -153,5 +155,106 @@ Java_com_termux_x11_NativeGraphicsProbe_probeEglCapabilities(JNIEnv *env,
     eglDestroyContext(display, context);
     eglDestroySurface(display, surface);
     eglTerminate(display);
+    return env->NewStringUTF(report);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_termux_x11_NativeGraphicsProbe_probeWindowSurface(JNIEnv *env,
+                                                            jclass,
+                                                            jobject surface_object) {
+    char report[1024] = {};
+    append_line(report, sizeof(report), "probe", "Android Surface-backed EGL window surface");
+    if (surface_object == nullptr) {
+        append_line(report, sizeof(report), "input Surface", "null");
+        return env->NewStringUTF(report);
+    }
+
+    ANativeWindow *window = ANativeWindow_fromSurface(env, surface_object);
+    if (window == nullptr) {
+        append_line(report, sizeof(report), "ANativeWindow_fromSurface", "failed");
+        return env->NewStringUTF(report);
+    }
+
+    EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (display == EGL_NO_DISPLAY) {
+        append_line(report, sizeof(report), "eglGetDisplay", "failed");
+        ANativeWindow_release(window);
+        return env->NewStringUTF(report);
+    }
+
+    EGLint major = 0, minor = 0;
+    if (eglInitialize(display, &major, &minor) != EGL_TRUE) {
+        char error[32];
+        snprintf(error, sizeof(error), "0x%04x", eglGetError());
+        append_line(report, sizeof(report), "eglInitialize", error);
+        ANativeWindow_release(window);
+        return env->NewStringUTF(report);
+    }
+
+    const EGLint config_attributes[] = {
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+        EGL_NONE
+    };
+    EGLConfig config = nullptr;
+    EGLint count = 0;
+    if (eglChooseConfig(display, config_attributes, &config, 1, &count) != EGL_TRUE ||
+        count < 1) {
+        append_line(report, sizeof(report), "EGL window config", "unavailable");
+        eglTerminate(display);
+        ANativeWindow_release(window);
+        return env->NewStringUTF(report);
+    }
+
+    EGLSurface egl_surface = eglCreateWindowSurface(display, config, window, nullptr);
+    if (egl_surface == EGL_NO_SURFACE) {
+        char error[32];
+        snprintf(error, sizeof(error), "0x%04x", eglGetError());
+        append_line(report, sizeof(report), "eglCreateWindowSurface", error);
+        eglTerminate(display);
+        ANativeWindow_release(window);
+        return env->NewStringUTF(report);
+    }
+
+    const EGLint context_attributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE
+    };
+    EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT,
+                                          context_attributes);
+    if (context == EGL_NO_CONTEXT) {
+        char error[32];
+        snprintf(error, sizeof(error), "0x%04x", eglGetError());
+        append_line(report, sizeof(report), "eglCreateContext", error);
+        eglDestroySurface(display, egl_surface);
+        eglTerminate(display);
+        ANativeWindow_release(window);
+        return env->NewStringUTF(report);
+    }
+
+    if (eglMakeCurrent(display, egl_surface, egl_surface, context) != EGL_TRUE) {
+        char error[32];
+        snprintf(error, sizeof(error), "0x%04x", eglGetError());
+        append_line(report, sizeof(report), "eglMakeCurrent", error);
+    } else {
+        glViewport(0, 0, ANativeWindow_getWidth(window), ANativeWindow_getHeight(window));
+        glClearColor(0.05f, 0.15f, 0.25f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        if (eglSwapBuffers(display, egl_surface) == EGL_TRUE)
+            append_line(report, sizeof(report), "window surface swap", "passed");
+        else {
+            char error[32];
+            snprintf(error, sizeof(error), "0x%04x", eglGetError());
+            append_line(report, sizeof(report), "window surface swap", error);
+        }
+        append_line(report, sizeof(report), "window dimensions",
+                    "queried from ANativeWindow");
+    }
+
+    eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    eglDestroyContext(display, context);
+    eglDestroySurface(display, egl_surface);
+    eglTerminate(display);
+    ANativeWindow_release(window);
     return env->NewStringUTF(report);
 }
