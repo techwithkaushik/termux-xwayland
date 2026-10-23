@@ -54,7 +54,7 @@ tasks.register('buildCompanionPackage') {
         int time = (System.currentTimeMillis() / 1000L) as int
         def prefix = "data/data/$embeddedApplicationId/files/usr".toString()
 
-        def scripts = ['termux-xw11', 'termux-xw11-preference'].collectEntries {
+        def scripts = ['termux-xw11', 'termux-xw11-preference', 'termux-xw11-wayland'].collectEntries {
             ["$prefix/bin/$it".toString(), file("${scriptsDir.get()}/$it").bytes]
         }
         def content = scripts + [("$prefix/libexec/termux-xw11/loader.apk".toString()): loaderApk.get().asFile.bytes]
