@@ -134,6 +134,18 @@ A follow-up `su -c 'dumpsys SurfaceFlinger'` probe on the same Redmi 9 Active ex
 
 These extension strings are promising capability clues, not proof that an app-owned buffer can be exported from Weston and imported by Android's host surface. The next test must query extensions in the actual Termux-XW11 process/context, enumerate supported buffer formats/modifiers, and verify allocation, FD transfer, import, acquire/release fence handling, and buffer lifetime on-device. Do not assume DMA-BUF support solely from EGL extension presence, and do not treat the memory-object FD extension as interchangeable with Android gralloc handles.
 
+## Native presenter smoke test (added; device run pending)
+
+An isolated `NativePresenterProbeActivity` now uses its own `Xw11NativeSurfaceView` and sends a bounded synthetic RGBA color-bar frame through `xw11_presenter_present_rgba8888()` into that view's `ANativeWindow`. The view's native bridge loads `Xlorie` independently and retains its own Surface-generation guard. The activity caps the test at 4 Mi pixels and reports pass/failure on screen and under `XW11-PRESENTER-PROBE`.
+
+After building and installing the new APK, run:
+
+```sh
+bash tools/run-android-presenter-probe.sh
+```
+
+A pass will validate the Android CPU-copy consumer and Surface attach/detach lifecycle for a synthetic frame. It will **not** validate a Weston frame producer, shared graphics-buffer import, fence synchronization, zero-copy, or input forwarding. This is an intermediate device gate before compositor integration, not a replacement for it.
+
 ## Test gates before enabling the new path
 
 ### Host/unit tests
