@@ -122,3 +122,11 @@ These extension strings are promising capability clues, not proof that an app-ow
 ## Current blocker
 
 The repository currently builds/packages the legacy Lorie path; the separate upstream XWayland package is not yet connected to a tested Android presentation backend. The next implementation step is to prototype and verify buffer export/import support on the target device before selecting concrete producer and consumer APIs. A successful APK build or an open X11 socket alone is not acceptance evidence.
+
+## App-process EGL diagnostic (implemented; device run pending)
+
+The library now contains `NativeGraphicsProbe`, a JNI-backed diagnostic that initializes the default EGL display, queries selected EGL extensions, creates a small 16x16 ES2 pbuffer/context, and records the GL vendor, renderer, version, and selected memory-object capability. It releases its EGL objects before returning. The probe is opt-in so normal display startup does not initialize or terminate an extra EGL display.
+
+After installing a build containing this change, request a one-shot report from the host activity with the intent extra `org.techwithkaushik.termuxxw11.RUN_EGL_PROBE=true`. Read logcat entries tagged `XW11-EGL-PROBE`. Use the installed package ID and activity component for the current build; debug variants may use a suffix.
+
+This diagnostic is deliberately limited: it tests whether the app process can initialize EGL and create a pbuffer. It does not access an Android `Surface`, allocate Android gralloc buffers, enumerate DMA-BUF formats/modifiers, transfer graphics-buffer FDs, or validate acquire/release fences. A successful result is only the prerequisite for a separate surface-backed buffer interoperability test. Device execution and report review are still pending.
