@@ -168,44 +168,28 @@ jobs:
             sha256sum "$package"
           } | tee shell-loader/build/outputs/companion/termux-xw11-deb-manifest.txt
 
-      - name: Upload standalone main APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: termux-xw11-main-apk
-          if-no-files-found: error
-          path: lorie-app/build/outputs/apk/standalone/debug/termux-xw11-universal-debug.apk
+      - name: Stage only required deliverables
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          out=build/xw11-deliverables
+          mkdir -p "$out"
+          cp lorie-app/build/outputs/apk/standalone/debug/termux-xw11-universal-debug.apk "$out/termux-xw11.apk"
+          cp shell-loader/build/outputs/companion/termux-xw11-*-all.deb "$out/termux-xw11.deb"
+          cp shell-loader/build/outputs/companion/termux-xw11-deb-manifest.txt "$out/termux-xw11-deb-manifest.txt"
+          (
+            cd "$out"
+            sha256sum termux-xw11.apk termux-xw11.deb termux-xw11-deb-manifest.txt > SHA256SUMS
+          )
+          ls -lh "$out"
 
-      - name: Upload shared-UID main APK
+      - name: Upload required deliverables (single artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: termux-xw11-shareduid-apk
+          name: termux-xw11-required
           if-no-files-found: error
-          path: lorie-app/build/outputs/apk/sharedUid/debug/termux-xw11-universal-sharedUid-debug.apk
-
-      - name: Upload loader APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: termux-xw11-loader-apk
-          if-no-files-found: error
-          path: shell-loader/build/outputs/apk/debug/termux-xw11-loader-debug.apk
-
-      - name: Upload standalone Debian package and manifest
-        uses: actions/upload-artifact@v4
-        with:
-          name: termux-xw11-deb
-          if-no-files-found: error
-          path: |
-            shell-loader/build/outputs/companion/termux-xw11-*-all.deb
-            shell-loader/build/outputs/companion/termux-xw11-deb-manifest.txt
-
-      - name: Upload Termux launcher companion packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: termux-xw11-launcher-package
-          if-no-files-found: error
-          path: |
-            shell-loader/build/outputs/companion/termux-xw11-*-all.deb
-            shell-loader/build/outputs/companion/termux-xw11-*-any.pkg.tar.xz
+          path: build/xw11-deliverables/*
+          retention-days: 14
 
   build-xwayland:
     name: Build upstream XWayland Termux package
