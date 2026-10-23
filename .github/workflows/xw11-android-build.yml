@@ -73,7 +73,11 @@ jobs:
           test -x "$tmp/data/data/com.termux/files/usr/bin/termux-xw11-preference"
           test -s "$tmp/data/data/com.termux/files/usr/libexec/termux-xw11/loader.apk"
           echo "Validated installable Termux-XW11 companion .deb: $package"
-          sha256sum "$package"
+          {
+            dpkg-deb -f "$package" Package Version Architecture Depends
+            printf "SHA256: "
+            sha256sum "$package"
+          } | tee shell-loader/build/outputs/companion/termux-xw11-deb-manifest.txt
 
       - name: Upload standalone main APK
         uses: actions/upload-artifact@v4
@@ -95,6 +99,15 @@ jobs:
           name: termux-xw11-loader-apk
           if-no-files-found: error
           path: shell-loader/build/outputs/apk/debug/termux-xw11-loader-debug.apk
+
+      - name: Upload standalone Debian package for direct installation
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xw11-deb
+          if-no-files-found: error
+          path: |
+            shell-loader/build/outputs/companion/termux-xw11-*-all.deb
+            shell-loader/build/outputs/companion/termux-xw11-deb-manifest.txt
 
       - name: Upload Termux launcher companion packages
         uses: actions/upload-artifact@v4
