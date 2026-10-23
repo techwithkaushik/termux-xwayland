@@ -47,6 +47,34 @@ jobs:
       - name: Build main APK, loader APK and companion package
         run: ./gradlew --no-daemon assembleDebug
 
+      - name: Validate Debian launcher package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+          packages=(shell-loader/build/outputs/companion/termux-xw11-*-all.deb)
+          if (( ${#packages[@]} != 1 )); then
+            echo "ERROR: expected exactly one XW11 .deb package; found ${#packages[@]}" >&2
+            printf '%s\n' "${packages[@]}" >&2
+            exit 1
+          fi
+          package="${packages[0]}"
+          test "$(dpkg-deb -f "$package" Package)" = "termux-xw11-nightly"
+          test "$(dpkg-deb -f "$package" Architecture)" = "all"
+          dpkg-deb --info "$package"
+          listing="$(dpkg-deb --contents "$package")"
+          grep -Fq '/bin/termux-xw11' <<<"$listing"
+          grep -Fq '/bin/termux-xw11-preference' <<<"$listing"
+          grep -Fq '/libexec/termux-xw11/loader.apk' <<<"$listing"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          dpkg-deb --extract "$package" "$tmp"
+          test -x "$tmp/data/data/org.techwithkaushik.termuxxw11/files/usr/bin/termux-xw11"
+          test -x "$tmp/data/data/org.techwithkaushik.termuxxw11/files/usr/bin/termux-xw11-preference"
+          test -s "$tmp/data/data/org.techwithkaushik.termuxxw11/files/usr/libexec/termux-xw11/loader.apk"
+          echo "Validated installable Termux-XW11 companion .deb: $package"
+          sha256sum "$package"
+
       - name: Upload standalone main APK
         uses: actions/upload-artifact@v4
         with:
