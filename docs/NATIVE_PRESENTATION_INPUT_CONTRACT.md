@@ -27,6 +27,15 @@ Preferred path:
 
 A shared-memory pixel buffer may be used as a separately named diagnostic fallback for early protocol tests, but it is not the performance target and must not be represented as zero-copy.
 
+## Framing primitive now in the repository
+
+The transport-neutral framing primitive lives in `tools/native-transport/`:
+- `xw11_transport_protocol.h/.cpp` defines a 28-byte, big-endian v1 header with explicit magic, version, type, flags, payload length, session ID, and sequence ID.
+- `tests/test_protocol.cpp` covers round-trip encoding/decoding and rejects invalid magic, unsupported versions/types, nonzero reserved flags, oversized payloads, zero session/sequence IDs, and truncated headers.
+- The XWayland preflight workflow compiles this code with C++17 warnings-as-errors and runs the test executable.
+
+This is deliberately only a protocol primitive. It is not connected to Android JNI, Weston, native buffers, FD passing, or XWayland process startup. Do not describe the frame transport as integrated until those producer/consumer paths and device tests exist.
+
 ## Control protocol requirements
 
 Every message must include:
