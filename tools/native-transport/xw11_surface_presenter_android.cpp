@@ -12,6 +12,8 @@ constexpr size_t kMaxFrameBytes = 256u * 1024u * 1024u;
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 ANativeWindow *g_window = nullptr;
 uint64_t g_generation = 0;
+// Monotonic high-water mark survives detach so delayed stale attaches cannot win.
+uint64_t g_last_generation = 0;
 uint32_t g_width = 0;
 uint32_t g_height = 0;
 }
@@ -23,9 +25,17 @@ extern "C" xw11_present_result xw11_presenter_set_window(
 
     ANativeWindow_acquire(window);
     pthread_mutex_lock(&g_lock);
+    // Surface callbacks can race with delayed native work. Never let an older
+    // generation replace a newer Surface, even after the newer one was detached.
+    if (generation <= g_last_generation) {
+        pthread_mutex_unlock(&g_lock);
+        ANativeWindow_release(window);
+        return XW11_PRESENT_ERR_STALE_ATTACH;
+    }
     ANativeWindow *previous = g_window;
     g_window = window;
     g_generation = generation;
+    g_last_generation = generation;
     g_width = 0;
     g_height = 0;
     pthread_mutex_unlock(&g_lock);
