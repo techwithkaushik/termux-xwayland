@@ -4,8 +4,7 @@
 set -Eeuo pipefail
 
 PACKAGE="${XW11_PACKAGE:-org.techwithkaushik.termuxxw11}"
-ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.MainActivity}"
-EXTRA="org.techwithkaushik.termuxxw11.RUN_EGL_PROBE"
+ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativeGraphicsProbeActivity}"
 OUT="${1:-$HOME/xw11-egl-probe.log}"
 TAG="XW11-EGL-PROBE"
 LOGGER_PID=""
@@ -35,14 +34,14 @@ LOGGER_PID=$!
 sleep 1
 
 echo "Launching opt-in EGL probe: $PACKAGE/$ACTIVITY"
-if ! am start -W -n "$PACKAGE/$ACTIVITY" --ez "$EXTRA" true; then
+if ! am start -W -n "$PACKAGE/$ACTIVITY"; then
     echo "ERROR: Activity launch failed. Check installed package/activity names." >&2
     exit 1
 fi
 
-# The diagnostic runs from the Activity's Surface callbacks. Give Android time
-# to create the Surface and log both pbuffer and window-surface results.
-sleep 8
+# The dedicated Activity owns a separate task and runs the probe when its
+# Surface is created. This does not restart MainActivity or the X11 session.
+sleep 5
 cleanup
 LOGGER_PID=""
 
