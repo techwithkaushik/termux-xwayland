@@ -15,7 +15,6 @@
 #include <arpa/inet.h>
 #include <poll.h>
 #include <new>
-#include <mutex>
 #include "xw11_surface_generation.h"
 #include "xw11_surface_presenter_android.h"
 #include "xw11_input_dispatcher.h"
@@ -30,9 +29,16 @@
 #define sendEvent(r, ...) do { if ((r) && (r)->connFd != -1) { lorieEvent e = { __VA_ARGS__ }; write((r)->connFd, &e, sizeof(e)); } } while (0)
 
 // Experimental XW11 input transport; disabled until a connected session socket is supplied.
-static std::mutex xw11InputMutex;
+static pthread_mutex_t xw11InputMutex = PTHREAD_MUTEX_INITIALIZER;
 static xw11_input_dispatcher *xw11InputDispatcher = nullptr;
 static uint64_t xw11InputGeneration = 0;
+
+struct Xw11InputLock {
+    Xw11InputLock() { pthread_mutex_lock(&xw11InputMutex); }
+    ~Xw11InputLock() { pthread_mutex_unlock(&xw11InputMutex); }
+    Xw11InputLock(const Xw11InputLock&) = delete;
+    Xw11InputLock& operator=(const Xw11InputLock&) = delete;
+};
 
 bool lorieDebugEnabled = false;
 
@@ -642,7 +648,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                     xw11_input_dispatcher_destroy(next);
                     return (jint) started;
                 }
-                std::lock_guard<std::mutex> lock(xw11InputMutex);
+                Xw11InputLock lock;
                 if (xw11InputDispatcher) xw11_input_dispatcher_destroy(xw11InputDispatcher);
                 xw11InputDispatcher = next;
                 xw11InputGeneration = (uint64_t) generation;
