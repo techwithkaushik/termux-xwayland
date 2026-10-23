@@ -63,6 +63,13 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
             r"presentRgbaFrame\(\s*pixels,\s*(?:width|frameWidth),\s*(?:height|frameHeight),\s*stride,\s*generation\s*\)",
         )
         self.assertIn("generationForDiagnostics()", self.presenter_activity)
+        # Large frame allocation, generation, and native Surface locking must stay off the UI thread.
+        self.assertIn('new Thread(() -> {', self.presenter_activity)
+        self.assertIn('}, "XW11-Presenter-Probe");', self.presenter_activity)
+        self.assertIn("worker.start();", self.presenter_activity)
+        self.assertIn("runOnUiThread(() -> {", self.presenter_activity)
+        self.assertIn("final int frameWidth = width;", self.presenter_activity)
+        self.assertIn("final int frameHeight = height;", self.presenter_activity)
         self.assertIn("long generationForDiagnostics()", self.presenter_view)
         self.assertIn("nativePresentRgbaFrame", self.presenter_view)
         self.assertIn('ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativePresenterProbeActivity}"', self.presenter_runner)
