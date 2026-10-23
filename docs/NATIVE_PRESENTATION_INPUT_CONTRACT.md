@@ -66,6 +66,16 @@ Reject unknown mandatory message types, unsupported major versions, stale genera
 - UI-thread work is limited to Android lifecycle and view operations; socket I/O, process supervision, and waits run off the UI thread.
 - Input is timestamped and forwarded without waiting for a frame render. Pointer movement may be coalesced; button/key transitions may not be dropped.
 
+## Target-device graphics capability probe
+
+Before choosing the concrete buffer transport, run the non-invasive Android probe on the target Termux device:
+
+```sh
+bash tools/probe-android-buffer-transport.sh "$HOME/xw11-device-probe.txt"
+```
+
+It records Android API/ABI hints, graphics device nodes, relevant EGL/GLES/Vulkan/DRM/gralloc library paths, available diagnostic tools, and a filtered SurfaceFlinger graphics summary. It does not change system settings or dump the full environment. The report is evidence for selecting follow-up tests only: device-node/library presence or EGL extension strings do not prove that the Weston producer and Android consumer can import the same buffers with correct fences. The probe must be followed by a real buffer import/export and synchronization test before the transport is selected.
+
 ## Test gates before enabling the new path
 
 ### Host/unit tests
