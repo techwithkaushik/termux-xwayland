@@ -103,6 +103,12 @@ jobs:
             tools/native-transport/tests/test_surface_generation.cpp \
             -o /tmp/xw11-surface-generation-test
           /tmp/xw11-surface-generation-test
+          c++ -std=c++17 -Wall -Wextra -Werror \
+            -Itools/native-transport \
+            tools/native-transport/xw11_buffer_descriptor.cpp \
+            tools/native-transport/tests/test_buffer_descriptor.cpp \
+            -o /tmp/xw11-buffer-descriptor-test
+          /tmp/xw11-buffer-descriptor-test
 
       - name: Diagnose legacy X server gitlink
         run: bash tools/probe-xwayland-source.sh --allow-legacy-source
