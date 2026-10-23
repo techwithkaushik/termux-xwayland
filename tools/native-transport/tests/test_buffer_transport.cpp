@@ -43,10 +43,28 @@ int main() {
     assert(read(received.fd, &read_back, 1) == 1 && read_back == value);
 
     close(received.fd);
-    close(pipe_fds[0]);
-    close(pipe_fds[1]);
     close(sockets[0]);
     close(sockets[1]);
-    puts("PASS: XW11 buffer FD + metadata transport");
+
+    // A valid descriptor for an old/replaced Surface generation must not escape
+    // the receiver as an accepted buffer. The receiver must close the received FD.
+    int stale_sockets[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, stale_sockets) == 0);
+    assert(xw11_send_buffer(stale_sockets[0], &source, 9, 2, pipe_fds[0]) ==
+           XW11_BUFFER_TRANSPORT_OK);
+    xw11_sequence_tracker stale_tracker = {};
+    assert(xw11_sequence_tracker_reset(&stale_tracker, 9) == XW11_PROTOCOL_OK);
+    xw11_received_buffer stale = {};
+    stale.fd = -1;
+    assert(xw11_receive_buffer(stale_sockets[1], 9, &stale_tracker, 43, &stale) ==
+           XW11_BUFFER_TRANSPORT_ERR_METADATA);
+    assert(stale.fd == -1);
+    assert(stale.descriptor.width == 0);
+    close(stale_sockets[0]);
+    close(stale_sockets[1]);
+
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+    puts("PASS: XW11 buffer FD + metadata transport and stale-generation rejection");
     return 0;
 }
