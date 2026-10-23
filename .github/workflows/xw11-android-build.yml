@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - xwayland/replace-xorg
-  pull_request:
-    branches:
-      - termux-x11-port
   workflow_dispatch:
 
 permissions:
