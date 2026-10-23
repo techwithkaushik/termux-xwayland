@@ -16,6 +16,7 @@
 #include <poll.h>
 #include <new>
 #include "lorie.h"
+#include "xw11_surface_generation.h"
 
 #pragma clang diagnostic ignored "-Wunknown-pragmas"
 #pragma ide diagnostic ignored "cppcoreguidelines-narrowing-conversions"
@@ -66,6 +67,7 @@ struct LorieViewResources {
     jobject activity = nullptr; // global ref to the owning MainActivity
     volatile int connFd = -1;
     bool destroyed = true;
+    xw11_surface_generation surfaceGeneration{};
 
     LorieViewResources(JNIEnv* callerEnv, jobject view);
     ~LorieViewResources();
@@ -158,6 +160,7 @@ static jlong nativeInit(JNIEnv *env, jobject thiz) {
 LorieViewResources::LorieViewResources(JNIEnv *callerEnv, jobject view) {
     JavaVM* vm;
     destroyed = false;
+    xw11_surface_generation_init(&surfaceGeneration);
     renderer.init(callerEnv, view);
     renderer.connFdPtr = &connFd; // lets the renderer thread wake up a GPU copy waiter
 
@@ -417,9 +420,34 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 r->~LorieViewResources();
                 free(r);
             }},
+            {"surfaceCreated", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jobject thiz, jlong ptr) {
+                auto* r = (LorieViewResources*) ptr;
+                if (!r || r->destroyed) return;
+                uint64_t generation = 0;
+                xw11_surface_result result =
+                        xw11_surface_generation_created(&r->surfaceGeneration, &generation);
+                if (result != XW11_SURFACE_OK) {
+                    log(ERROR, "Surface generation create failed: %d", (int) result);
+                    return;
+                }
+                log(DEBUG, "Android Surface generation %llu created",
+                    (unsigned long long) generation);
+            }},
             {"surfaceChanged", "(JLandroid/view/Surface;)V", (void *) +[](JNIEnv *env, __unused jobject thiz, jlong ptr, jobject sfc) {
                 auto* r = (LorieViewResources*) ptr;
                 if (!r || r->destroyed) return;
+                if (sfc) {
+                    xw11_surface_result result = xw11_surface_generation_accepts(
+                            &r->surfaceGeneration, r->surfaceGeneration.generation);
+                    if (result != XW11_SURFACE_OK) {
+                        log(ERROR, "Rejecting Surface update for inactive generation: %d",
+                            (int) result);
+                        return;
+                    }
+                } else if (r->surfaceGeneration.active) {
+                    xw11_surface_generation_destroyed(
+                            &r->surfaceGeneration, r->surfaceGeneration.generation);
+                }
                 r->renderer.setWindow(env, sfc);
             }},
             {"setViewport", "(JIIIIIII)V", (void *) +[](__unused JNIEnv *env, __unused jobject thiz, jlong ptr, jint x, jint y, jint w, jint h, jint ew, jint eh, jint hidden) {
