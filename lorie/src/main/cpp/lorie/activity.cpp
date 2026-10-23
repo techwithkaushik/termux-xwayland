@@ -630,6 +630,24 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 ANativeWindow_release(window);
                 return (jint) result;
             }},
+            {"nativePresentRgbaFrame", "(Ljava/nio/ByteBuffer;IIIIIIJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject pixels, jint offset, jint length, jint width, jint height, jint strideBytes, jlong generation) -> jint {
+                if (!pixels || offset < 0 || length < 0 || width <= 0 || height <= 0 ||
+                    strideBytes <= 0 || generation <= 0)
+                    return (jint) XW11_PRESENT_ERR_ARGUMENT;
+                void *base = env->GetDirectBufferAddress(pixels);
+                jlong capacity = env->GetDirectBufferCapacity(pixels);
+                if (!base || capacity < 0 || (jlong) offset > capacity ||
+                    (jlong) length > capacity - offset)
+                    return (jint) XW11_PRESENT_ERR_ARGUMENT;
+                const size_t requiredStride = (size_t) width * 4u;
+                if ((size_t) strideBytes < requiredStride ||
+                    (size_t) height > SIZE_MAX / (size_t) strideBytes ||
+                    (size_t) length < (size_t) strideBytes * (size_t) height)
+                    return (jint) XW11_PRESENT_ERR_STRIDE;
+                return (jint) xw11_presenter_present_rgba8888(
+                        (uint64_t) generation, (uint32_t) width, (uint32_t) height,
+                        static_cast<const uint8_t *>(base) + offset, (size_t) strideBytes);
+            }},
             {"nativeDetachSurface", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
                 if (generation > 0)
                     xw11_presenter_clear_window((uint64_t) generation);
