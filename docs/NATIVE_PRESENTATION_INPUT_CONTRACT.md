@@ -32,11 +32,12 @@ A shared-memory pixel buffer may be used as a separately named diagnostic fallba
 The transport-neutral framing primitive lives in `tools/native-transport/`:
 - `xw11_transport_protocol.h/.cpp` defines a 28-byte, big-endian v1 header with explicit magic, version, type, flags, payload length, session ID, and sequence ID.
 - `tests/test_protocol.cpp` covers round-trip encoding/decoding and rejects invalid magic, unsupported versions/types, nonzero reserved flags, oversized payloads, zero session/sequence IDs, and truncated headers.
-- `xw11_transport_io.h/.cpp` adds bounded stream-socket frame send/receive with partial-I/O and EINTR handling, payload-capacity checks, and explicit EOF/system/protocol errors. It does not pass file descriptors.
-- `tests/test_transport_io.cpp` exercises payload round trips, empty frames, too-small receive buffers, and truncated connections using a local Unix socket pair.
-- The XWayland preflight workflow compiles both test executables with C++17 warnings-as-errors and runs them.
+- `xw11_transport_io.h/.cpp` adds bounded stream-socket frame send/receive with partial-I/O and EINTR handling, payload-capacity checks, and explicit EOF/system/protocol errors.
+- `xw11_fd_passing.h/.cpp` provides a separate one-descriptor `SCM_RIGHTS` transfer primitive for connected Unix stream sockets. It checks the marker/control message, rejects malformed or multiple-FD transfers, and marks the received descriptor close-on-exec. This is not yet used by a producer/consumer.
+- `tests/test_transport_io.cpp` exercises payload round trips, empty frames, too-small receive buffers, and truncated connections using a local Unix socket pair. `tests/test_fd_passing.cpp` checks descriptor transfer, descriptor usability, close-on-exec, and argument rejection.
+- The XWayland preflight workflow compiles all three native transport test executables with C++17 warnings-as-errors and runs them.
 
-This is still a standalone transport module. It is not connected to Android JNI, Weston, native buffers, FD passing, or XWayland process startup. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The current module does not enforce per-session sequence monotonicity. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
+This is still a standalone transport module. It is not connected to Android JNI, Weston, Android/gralloc buffers, fences, or XWayland process startup. Passing an FD successfully does not prove that the FD represents an importable graphics buffer. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The current module does not enforce per-session sequence monotonicity. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
 
 ## Control protocol requirements
 
