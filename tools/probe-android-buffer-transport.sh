@@ -45,7 +45,7 @@ run_if_available() {
     section "Relevant libraries"
     for root in /system/lib /system/lib64 /vendor/lib /vendor/lib64 "${PREFIX:-}/lib"; do
         [[ -d "$root" ]] || continue
-        printf '-- %s --\n' "$root"
+        printf '%s\n' "-- $root --"
         find "$root" -maxdepth 2 -type f \( \
             -iname '*EGL*' -o -iname '*GLES*' -o -iname '*vulkan*' -o \
             -iname '*gralloc*' -o -iname '*hardware*' -o -iname '*drm*' -o \
