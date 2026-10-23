@@ -83,6 +83,9 @@ jobs:
           grep -Fq 'xw11_input_receiver.cpp' lorie/src/main/cpp/recipes/xserver.cmake
           grep -Fq 'xw11_input_dispatcher.cpp' lorie/src/main/cpp/recipes/xserver.cmake
           grep -Fq 'Xw11NativeSurfaceView' lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java
+          grep -Fq 'onGenericMotionEvent' lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java
+          grep -Fq 'MotionEvent.ACTION_BUTTON_PRESS' lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java
+          grep -Fq 'MotionEvent.ACTION_BUTTON_RELEASE' lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java
           grep -Fq 'nativeAttachSurface' lorie/src/main/cpp/lorie/activity.cpp
           grep -Fq 'xw11_presenter_set_window' lorie/src/main/cpp/lorie/activity.cpp
           bash tools/build-xwayland-android.sh --help
