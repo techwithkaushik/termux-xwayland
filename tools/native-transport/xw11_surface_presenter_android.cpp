@@ -73,7 +73,8 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
     ANativeWindow *window = g_window;
     int32_t current_width = ANativeWindow_getWidth(window);
     int32_t current_height = ANativeWindow_getHeight(window);
-    if (current_width != (int32_t)width || current_height != (int32_t)height) {
+    if (g_width != width || g_height != height ||
+        current_width != (int32_t)width || current_height != (int32_t)height) {
         int32_t geometry = ANativeWindow_setBuffersGeometry(
             window, (int32_t)width, (int32_t)height, WINDOW_FORMAT_RGBA_8888);
         if (geometry != 0) {
