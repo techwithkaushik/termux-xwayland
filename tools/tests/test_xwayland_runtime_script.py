@@ -36,6 +36,9 @@ class WestonRuntimeScriptContract(unittest.TestCase):
         self.assertIn('run_optional_gate()', self.runner)
         self.assertIn('run_optional_gate "Weston runtime test"', self.runner)
         self.assertIn('run_optional_gate "Android presenter probe"', self.runner)
+        self.assertIn('run_optional_gate "Android app-process EGL probe"', self.runner)
+        self.assertIn('XW11_RUN_ANDROID_EGL_PROBE', self.runner)
+        self.assertIn('tools/run-android-egl-probe.sh', self.runner)
         self.assertIn('optional_failures', self.runner)
         self.assertIn('exit 1', self.runner)
 
