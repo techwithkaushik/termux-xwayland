@@ -642,8 +642,12 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                     return (jint) XW11_PRESENT_ERR_ARGUMENT;
                 const size_t requiredStride = (size_t) width * 4u;
                 if ((size_t) strideBytes < requiredStride ||
-                    (size_t) height > SIZE_MAX / (size_t) strideBytes ||
-                    (size_t) length < (size_t) strideBytes * (size_t) height)
+                    (size_t) (height - 1) > (SIZE_MAX - requiredStride) / (size_t) strideBytes)
+                    return (jint) XW11_PRESENT_ERR_STRIDE;
+                // Only row bytes are read from the final row; trailing padding is optional.
+                const size_t requiredBytes =
+                        (size_t) (height - 1) * (size_t) strideBytes + requiredStride;
+                if ((size_t) length < requiredBytes)
                     return (jint) XW11_PRESENT_ERR_STRIDE;
                 return (jint) xw11_presenter_present_rgba8888(
                         (uint64_t) generation, (uint32_t) width, (uint32_t) height,
