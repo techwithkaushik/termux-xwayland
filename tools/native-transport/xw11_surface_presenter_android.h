@@ -22,7 +22,8 @@ typedef enum xw11_present_result {
     XW11_PRESENT_ERR_DIMENSIONS,
     XW11_PRESENT_ERR_STRIDE,
     XW11_PRESENT_ERR_WINDOW_LOCK,
-    XW11_PRESENT_ERR_WINDOW_SIZE
+    XW11_PRESENT_ERR_WINDOW_SIZE,
+    XW11_PRESENT_ERR_STALE_ATTACH
 } xw11_present_result;
 
 /* Takes its own ANativeWindow reference. A generation must be non-zero. */
