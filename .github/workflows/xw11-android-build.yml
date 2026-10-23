@@ -85,6 +85,12 @@ jobs:
             tools/native-transport/tests/test_transport_io.cpp \
             -o /tmp/xw11-transport-io-test
           /tmp/xw11-transport-io-test
+          c++ -std=c++17 -Wall -Wextra -Werror \\
+            -Itools/native-transport \\
+            tools/native-transport/xw11_fd_passing.cpp \\
+            tools/native-transport/tests/test_fd_passing.cpp \\
+            -o /tmp/xw11-fd-passing-test
+          /tmp/xw11-fd-passing-test
 
       - name: Diagnose legacy X server gitlink
         run: bash tools/probe-xwayland-source.sh --allow-legacy-source
