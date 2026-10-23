@@ -14,6 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(xw11_native_transport STATIC
     xw11_buffer_descriptor.cpp
     xw11_buffer_registry.cpp
+    xw11_buffer_wire.cpp
     xw11_fd_passing.cpp
     xw11_input_dispatcher.cpp
     xw11_input_event.cpp
@@ -41,6 +42,7 @@ xw11_add_test(test_transport_io test_transport_io.cpp)
 xw11_add_test(test_fd_passing test_fd_passing.cpp)
 xw11_add_test(test_surface_generation test_surface_generation.cpp)
 xw11_add_test(test_buffer_descriptor test_buffer_descriptor.cpp)
+xw11_add_test(test_buffer_wire test_buffer_wire.cpp)
 xw11_add_test(test_buffer_registry test_buffer_registry.cpp)
 xw11_add_test(test_input_transform test_input_transform.cpp)
 xw11_add_test(test_input_event test_input_event.cpp)
