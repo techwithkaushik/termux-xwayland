@@ -287,6 +287,21 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         }
     }
 
+    /**
+     * Submit a compositor-produced RGBA8888 frame to this view's own Surface.
+     * The direct buffer is borrowed only for the duration of the native call;
+     * the native presenter copies its rows before returning.
+     */
+    boolean presentRgbaFrame(@NonNull java.nio.ByteBuffer pixels, int width, int height,
+                             int strideBytes, long frameGeneration) {
+        if (!pixels.isDirect() || frameGeneration == 0 || frameGeneration != generation)
+            return false;
+        return nativePresentRgbaFrame(pixels, pixels.position(), pixels.remaining(),
+                width, height, strideBytes, frameGeneration) == 0;
+    }
+
+    private static native int nativePresentRgbaFrame(java.nio.ByteBuffer pixels,
+            int offset, int length, int width, int height, int strideBytes, long generation);
     private static native int nativeAttachSurface(Surface surface, long generation);
     private static native void nativeDetachSurface(long generation);
     private static native int nativeAttachInputTransport(int fd, long sessionId, long generation);
