@@ -144,7 +144,7 @@ jobs:
             tools/native-transport/tests/test_input_queue.cpp \
             -o /tmp/xw11-input-queue-test
           /tmp/xw11-input-queue-test
-          c++ -std=c++17 -Wall -Wextra -Werror -pthread -Itools/native-transport \\
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
             tools/native-transport/xw11_transport_io.cpp \
             tools/native-transport/xw11_input_event.cpp \
