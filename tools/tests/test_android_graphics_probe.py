@@ -79,6 +79,13 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn("final int frameHeight = height;", self.presenter_activity)
         self.assertIn("long generationForDiagnostics()", self.presenter_view)
         self.assertIn("nativePresentRgbaFrame", self.presenter_view)
+        # Native attach must reject delayed callbacks from an older Surface generation.
+        presenter_cpp = (ROOT / "tools/native-transport/xw11_surface_presenter_android.cpp").read_text()
+        presenter_header = (ROOT / "tools/native-transport/xw11_surface_presenter_android.h").read_text()
+        self.assertIn("g_last_generation", presenter_cpp)
+        self.assertIn("generation <= g_last_generation", presenter_cpp)
+        self.assertIn("XW11_PRESENT_ERR_STALE_ATTACH", presenter_cpp)
+        self.assertIn("XW11_PRESENT_ERR_STALE_ATTACH", presenter_header)
         self.assertIn('ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativePresenterProbeActivity}"', self.presenter_runner)
         self.assertIn("PASS: native ANativeWindow CPU-copy frame posted", self.presenter_runner)
         self.assertIn("no Weston frame producer is connected", self.presenter_runner)
