@@ -90,3 +90,32 @@ xw11_protocol_error xw11_encode_header(const xw11_frame_header *header,
     write_be64(out + 20, header->sequence_id);
     return XW11_PROTOCOL_OK;
 }
+
+
+xw11_protocol_error xw11_sequence_tracker_reset(xw11_sequence_tracker *tracker,
+                                                uint32_t session_id) {
+    if (tracker == NULL)
+        return XW11_PROTOCOL_ERR_ARGUMENT;
+    if (session_id == 0)
+        return XW11_PROTOCOL_ERR_SESSION;
+    tracker->session_id = session_id;
+    tracker->last_sequence_id = 0;
+    return XW11_PROTOCOL_OK;
+}
+
+xw11_protocol_error xw11_sequence_tracker_accept(xw11_sequence_tracker *tracker,
+                                                 const xw11_frame_header *header) {
+    if (tracker == NULL || header == NULL)
+        return XW11_PROTOCOL_ERR_ARGUMENT;
+
+    xw11_protocol_error result = validate(header);
+    if (result != XW11_PROTOCOL_OK)
+        return result;
+    if (tracker->session_id == 0 || header->session_id != tracker->session_id)
+        return XW11_PROTOCOL_ERR_SESSION;
+    if (header->sequence_id <= tracker->last_sequence_id)
+        return XW11_PROTOCOL_ERR_SEQUENCE;
+
+    tracker->last_sequence_id = header->sequence_id;
+    return XW11_PROTOCOL_OK;
+}
