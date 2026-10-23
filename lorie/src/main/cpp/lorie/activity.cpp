@@ -351,9 +351,10 @@ static void startLogcat(JNIEnv *env, __unused jclass clazz, __unused jlong ptr, 
             dup2(fd, 1);
             dup2(fd, 2);
             prctl(PR_SET_PDEATHSIG, SIGTERM);
-            char buf[64] = {0};
-            sprintf(buf, "--pid=%d", getppid());
-            execl("/system/bin/logcat", "logcat", buf, NULL);
+            // Capture the complete device log stream for diagnosis. A --pid filter here
+            // hides logs from the X server, Weston/XWayland helpers, SurfaceFlinger,
+            // and Android framework processes that are needed to diagnose connection/rendering.
+            execl("/system/bin/logcat", "logcat", NULL);
             log(ERROR, "exec logcat: %s", strerror(errno));
             env->FatalError("Exiting");
     }
