@@ -211,3 +211,10 @@ The registry is compiled into `Xlorie` and its standalone host test runs in CI. 
 The portable module `tools/native-transport/xw11_input_transform.h/.cpp` maps Android view-pixel coordinates through a configured viewport into compositor output coordinates. It rejects stale or zero generations, empty/invalid dimensions, and events outside the visible viewport; it uses 64-bit intermediate arithmetic to avoid overflow and clamps the final valid coordinate to the last output pixel. The host test covers top-left and bottom-right mapping, stale generation, outside-viewport events, invalid dimensions, and null arguments.
 
 The mapper is compiled into `Xlorie` and tested in CI. It is not yet connected to Android MotionEvent callbacks or Wayland input injection. Do not infer that pointer/touch events currently reach Weston from the existence of this primitive; event timestamps, button/key transition preservation, focus handling, and actual Wayland event submission remain integration work.
+
+
+## Input-event wire codec (implemented; routing not connected)
+
+The portable module `tools/native-transport/xw11_input_event.h/.cpp` now defines a fixed 40-byte, big-endian payload for `XW11_MSG_INPUT_EVENT`. It carries Surface generation, monotonic timestamp, event type/action, key or button code / touch pointer ID, signed compositor coordinates, modifiers, and device ID. Encode/decode validate event types, legal action combinations, exact payload size, and nonzero generation; wire format is independent of C++ struct padding and host endianness. CI compiles it with warnings-as-errors and exercises round-trip, signed coordinates, byte order, invalid size/type/action, and zero-generation rejection.
+
+This is the serialization boundary only. It is not yet connected to Android `MotionEvent` / `KeyEvent`, a live Unix control socket, or a Weston input backend. A consumer must still reject stale generations, preserve key/button down-up pairs, validate event ordering, and submit events through Weston/libinput's supported input path. Do not treat the codec test as evidence that Android input reaches XWayland.
