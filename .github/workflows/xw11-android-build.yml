@@ -70,6 +70,7 @@ jobs:
           bash -n tools/build-xwayland-android.sh
           bash -n tools/probe-android-buffer-transport.sh
           bash -n tools/test-weston-xwayland-runtime.sh
+          bash -n tools/run-xw11-acceptance.sh
           bash -n tools/test-existing-xwayland-display.sh
           bash -n tools/run-android-egl-probe.sh
           bash -n tools/run-android-presenter-probe.sh
@@ -95,7 +96,7 @@ jobs:
           grep -Fq 'nativePresentRgbaFrame' lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java
           grep -Fq 'xw11_presenter_present_rgba8888' lorie/src/main/cpp/lorie/activity.cpp
           bash tools/build-xwayland-android.sh --help
-          python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py tools/tests/test_android_graphics_probe.py
+          python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py tools/tests/test_android_graphics_probe.py tools/tests/test_xwayland_runtime_script.py
           python3 -m unittest discover -s tools/tests -v
           python3 tools/tests/test_android_graphics_probe.py
           # Prove the portable native transport builds and tests without the legacy X.Org graph.
