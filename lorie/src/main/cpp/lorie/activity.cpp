@@ -15,12 +15,12 @@
 #include <arpa/inet.h>
 #include <poll.h>
 #include <new>
-#include "lorie.h"
+#include <mutex>
 #include "xw11_surface_generation.h"
 #include "xw11_surface_presenter_android.h"
 #include "xw11_input_dispatcher.h"
 #include "xw11_input_event.h"
-#include <mutex>
+#include "lorie.h"
 
 #pragma clang diagnostic ignored "-Wunknown-pragmas"
 #pragma ide diagnostic ignored "cppcoreguidelines-narrowing-conversions"
