@@ -146,7 +146,7 @@ case "$ACTION" in
         "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     else
       env XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
-        "$WESTON" "${WESTON_ARGS[@]}" >> "$log_file" 2>&1 &
+        "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     fi
     WESTON_PID=$!
     printf '%s\n' "$WESTON_PID" > "$pid_file"
