@@ -40,6 +40,11 @@
             android:excludeFromRecents="true"
             android:exported="true" />
         <activity
+            android:name=".NativePresenterProbeActivity"
+            android:theme="@style/LorieAppTheme"
+            android:excludeFromRecents="true"
+            android:exported="true" />
+        <activity
             android:name=".MainActivity$MainActivityTagged"
             android:taskAffinity=""
             android:theme="@style/LorieAppTheme"
