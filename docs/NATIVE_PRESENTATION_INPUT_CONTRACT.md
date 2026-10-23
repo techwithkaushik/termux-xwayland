@@ -91,6 +91,16 @@ Interpretation and next probe:
 - Do not hard-code a DRM/GBM or DMA-BUF path based on this report. Next, inspect the actual Android host's `Surface`/EGL capability from the app process and test buffer allocation/import plus acquire/release synchronization on-device. Keep the transport behind an adapter so an unsupported path fails clearly.
 - The report is diagnostic evidence, not an acceptance test. No rendering/input integration or X.Org removal is implied by these findings.
 
+## Root SurfaceFlinger probe findings (2026-10-23)
+
+A follow-up `su -c 'dumpsys SurfaceFlinger'` probe on the same Redmi 9 Active exposed additional graphics information:
+- EGL reports version 1.4 and extensions including `EGL_ANDROID_image_native_buffer`, `EGL_ANDROID_native_fence_sync`, `EGL_KHR_fence_sync`, `EGL_KHR_wait_sync`, `EGL_EXT_image_dma_buf_import`, and `EGL_EXT_image_dma_buf_import_modifiers`.
+- GLES reports Imagination Technologies PowerVR Rogue GE8320, OpenGL ES 3.2. The driver lists `GL_EXT_memory_object` and `GL_EXT_memory_object_fd`.
+- SurfaceFlinger reports `EGL_ANDROID_native_fence_sync` and `EGL_KHR_wait_sync` in its sync configuration; the internal display is 720x1600 and uses HWC composition for the sampled layers.
+- The dump showed a high cumulative HWC missed-frame count, but this single cumulative value is not a measurement of the proposed XW11 renderer and must not be used as a performance baseline.
+
+These extension strings are promising capability clues, not proof that an app-owned buffer can be exported from Weston and imported by Android's host surface. The next test must query extensions in the actual Termux-XW11 process/context, enumerate supported buffer formats/modifiers, and verify allocation, FD transfer, import, acquire/release fence handling, and buffer lifetime on-device. Do not assume DMA-BUF support solely from EGL extension presence, and do not treat the memory-object FD extension as interchangeable with Android gralloc handles.
+
 ## Test gates before enabling the new path
 
 ### Host/unit tests
