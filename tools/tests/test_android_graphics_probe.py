@@ -68,6 +68,13 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn('}, "XW11-Presenter-Probe");', self.presenter_activity)
         self.assertIn("worker.start();", self.presenter_activity)
         self.assertIn("runOnUiThread(() -> {", self.presenter_activity)
+        # A destroyed/replaced Surface must invalidate old frame generations before detach.
+        destroyed = self.presenter_view.index("public void surfaceDestroyed(@NonNull SurfaceHolder holder)")
+        destroyed_end = self.presenter_view.index("\n    }", destroyed)
+        lifecycle = self.presenter_view[destroyed:destroyed_end]
+        self.assertIn("generation = 0;", lifecycle)
+        self.assertIn("nativeDetachSurface(current);", lifecycle)
+        self.assertIn("frameGeneration != generation", self.presenter_view)
         self.assertIn("final int frameWidth = width;", self.presenter_activity)
         self.assertIn("final int frameHeight = height;", self.presenter_activity)
         self.assertIn("long generationForDiagnostics()", self.presenter_view)
