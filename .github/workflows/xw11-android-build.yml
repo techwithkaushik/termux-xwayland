@@ -78,6 +78,9 @@ jobs:
           grep -Fq '{"surfaceCreated", "(J)V"' lorie/src/main/cpp/lorie/activity.cpp
           grep -Fq 'xw11_surface_generation.cpp' lorie/src/main/cpp/recipes/xserver.cmake
           grep -Fq 'xw11_input_event.cpp' lorie/src/main/cpp/recipes/xserver.cmake
+          grep -Fq 'Xw11NativeSurfaceView' lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java
+          grep -Fq 'nativeAttachSurface' lorie/src/main/cpp/lorie/activity.cpp
+          grep -Fq 'xw11_presenter_set_window' lorie/src/main/cpp/lorie/activity.cpp
           bash tools/build-xwayland-android.sh --help
           python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py tools/tests/test_android_graphics_probe.py
           python3 -m unittest discover -s tools/tests -v
