@@ -39,6 +39,12 @@ The transport-neutral framing primitive lives in `tools/native-transport/`:
 
 The control-frame transport remains standalone: it is not connected to Weston, Android/gralloc buffers, fences, or XWayland process startup. Passing an FD successfully does not prove that the FD represents an importable graphics buffer. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The protocol module exposes a per-connection sequence tracker, but it is not wired into an Android/Weston producer or consumer. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
 
+## Graphics buffer wire metadata codec (implemented; transport integration pending)
+
+`xw11_buffer_wire.h/.cpp` defines a fixed 36-byte, big-endian encoding for the existing `xw11_buffer_descriptor`: buffer ID, Surface generation, dimensions, stride, DRM fourcc, and modifier. Encode and decode both validate the descriptor before accepting it; the decoder requires an exact payload length and does not publish partially decoded state. A host test covers round-trip values, byte order, invalid sizes, null arguments, and invalid descriptors.
+
+The codec is intended for the bounded `BUFFER_SUBMIT` control message while the actual graphics handle is transferred separately using `SCM_RIGHTS`. It does not send pixels, transfer an FD, prove that an FD is a graphics allocation, negotiate import support, or provide fences. The producer and consumer are still not connected to Weston or the Android presenter. The 1 MiB control-frame payload limit remains suitable for this small metadata record—not for raw display frames.
+
 ## Experimental Android Surface presenter (partial implementation)
 
 The native helper `xw11_presenter_set_window`, `xw11_presenter_present_rgba8888`, and `xw11_presenter_clear_window` provide a first consumer-side implementation:
