@@ -122,6 +122,22 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         return submitted || super.onTouchEvent(event);
     }
 
+    @Override
+    public boolean onGenericMotionEvent(@NonNull MotionEvent event) {
+        // Mouse hover and button transitions are delivered through generic motion,
+        // not reliably through onTouchEvent. Keep all input on the same native path.
+        if ((event.getSource() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
+            final int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_HOVER_MOVE ||
+                    action == MotionEvent.ACTION_MOVE ||
+                    action == MotionEvent.ACTION_BUTTON_PRESS ||
+                    action == MotionEvent.ACTION_BUTTON_RELEASE) {
+                return submitMouse(event, action) || super.onGenericMotionEvent(event);
+            }
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
     private boolean submitMouse(MotionEvent event, int masked) {
         final long current = generation;
         if (current == 0) return false;
@@ -132,12 +148,15 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
             return nativeSubmitInputEvent(current, timeNs, INPUT_POINTER_MOTION, MOVE,
                     0, x, y, event.getMetaState(), event.getDeviceId());
         }
-        if (masked != MotionEvent.ACTION_DOWN && masked != MotionEvent.ACTION_UP) return false;
+        final boolean pressed = masked == MotionEvent.ACTION_DOWN ||
+                masked == MotionEvent.ACTION_BUTTON_PRESS;
+        final boolean released = masked == MotionEvent.ACTION_UP ||
+                masked == MotionEvent.ACTION_BUTTON_RELEASE;
+        if (!pressed && !released) return false;
         final int button = linuxButtonCode(event.getActionButton());
         if (button == 0) return false;
-        final int action = masked == MotionEvent.ACTION_DOWN ? DOWN : UP;
-        return nativeSubmitInputEvent(current, timeNs, INPUT_POINTER_BUTTON, action,
-                button, x, y, event.getMetaState(), event.getDeviceId());
+        return nativeSubmitInputEvent(current, timeNs, INPUT_POINTER_BUTTON,
+                pressed ? DOWN : UP, button, x, y, event.getMetaState(), event.getDeviceId());
     }
 
     private static int linuxButtonCode(int androidButton) {
