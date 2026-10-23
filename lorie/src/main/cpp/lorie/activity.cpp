@@ -630,7 +630,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 ANativeWindow_release(window);
                 return (jint) result;
             }},
-            {"nativePresentRgbaFrame","(Ljava/nio/ByteBuffer;IIII IJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject pixels, jint offset, jint length, jint width, jint height, jint strideBytes, jlong generation) -> jint {
+            {"nativePresentRgbaFrame","(Ljava/nio/ByteBuffer;IIIIIJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject pixels, jint offset, jint length, jint width, jint height, jint strideBytes, jlong generation) -> jint {
                 if (!pixels || offset < 0 || length < 0 || width <= 0 || height <= 0 ||
                     width > 8192 || height > 8192 || strideBytes <= 0 ||
                     strideBytes > 256 * 1024 * 1024 || generation <= 0)
