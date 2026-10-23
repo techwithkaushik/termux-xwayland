@@ -69,9 +69,9 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           dpkg-deb --extract "$package" "$tmp"
-          test -x "$tmp/data/data/org.techwithkaushik.termuxxw11/files/usr/bin/termux-xw11"
-          test -x "$tmp/data/data/org.techwithkaushik.termuxxw11/files/usr/bin/termux-xw11-preference"
-          test -s "$tmp/data/data/org.techwithkaushik.termuxxw11/files/usr/libexec/termux-xw11/loader.apk"
+          test -x "$tmp/data/data/com.termux/files/usr/bin/termux-xw11"
+          test -x "$tmp/data/data/com.termux/files/usr/bin/termux-xw11-preference"
+          test -s "$tmp/data/data/com.termux/files/usr/libexec/termux-xw11/loader.apk"
           echo "Validated installable Termux-XW11 companion .deb: $package"
           sha256sum "$package"
 
