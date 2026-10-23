@@ -17,6 +17,7 @@
 #include <new>
 #include "lorie.h"
 #include "xw11_surface_generation.h"
+#include "xw11_surface_presenter_android.h"
 
 #pragma clang diagnostic ignored "-Wunknown-pragmas"
 #pragma ide diagnostic ignored "cppcoreguidelines-narrowing-conversions"
@@ -598,6 +599,38 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
     ActivityOptions.setLaunchWindowingMode = (jmethodID) freeformMethod;
     if (!ActivityOptions.setLaunchWindowingMode)
         log(ERROR, "ActivityOptions.setLaunchWindowingMode(int) not found");
+
+    static JNINativeMethod xw11SurfaceMethods[] = {
+            {"nativeAttachSurface", "(Landroid/view/Surface;J)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject surface, jlong generation) -> jint {
+                if (!surface || generation <= 0)
+                    return (jint) XW11_PRESENT_ERR_ARGUMENT;
+                ANativeWindow *window = ANativeWindow_fromSurface(env, surface);
+                if (!window) {
+                    if (env->ExceptionCheck())
+                        env->ExceptionClear();
+                    return (jint) XW11_PRESENT_ERR_ARGUMENT;
+                }
+                xw11_present_result result = xw11_presenter_set_window(
+                        window, (uint64_t) generation);
+                ANativeWindow_release(window);
+                return (jint) result;
+            }},
+            {"nativeDetachSurface", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
+                if (generation > 0)
+                    xw11_presenter_clear_window((uint64_t) generation);
+            }},
+    };
+    jclass xw11SurfaceClass = env->FindClass("com/termux/x11/Xw11NativeSurfaceView");
+    if (xw11SurfaceClass) {
+        if (env->RegisterNatives(xw11SurfaceClass, xw11SurfaceMethods,
+                sizeof(xw11SurfaceMethods) / sizeof(xw11SurfaceMethods[0])) != JNI_OK) {
+            log(ERROR, "Failed to register XW11 native Surface bridge");
+            return JNI_ERR;
+        }
+    } else {
+        log(ERROR, "XW11 native Surface bridge class not found");
+        return JNI_ERR;
+    }
 
     static JNINativeMethod mainActivityMethods[] = {
             {"nativeSetLaunchWindowingModeFreeform", "(Ljava/lang/Object;)V", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject options) {
