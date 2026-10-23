@@ -293,6 +293,7 @@ add_library(Xlorie SHARED
         "lorie/workqueue.cpp"
         "../../../../tools/native-transport/xw11_surface_generation.cpp"
         "../../../../tools/native-transport/xw11_buffer_descriptor.cpp"
+        "../../../../tools/native-transport/xw11_buffer_wire.cpp"
         "../../../../tools/native-transport/xw11_buffer_registry.cpp"
         "../../../../tools/native-transport/xw11_input_transform.cpp"
         "../../../../tools/native-transport/xw11_input_event.cpp"
