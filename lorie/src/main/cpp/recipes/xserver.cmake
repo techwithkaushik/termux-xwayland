@@ -288,6 +288,7 @@ add_library(Xlorie SHARED
         "lorie/renderer.cpp"
         "lorie/buffer.c"
         "lorie/activity.cpp"
+        "lorie/graphics_probe.cpp"
         "lorie/cmdentrypoint.cpp"
         "lorie/workqueue.cpp")
 target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include")
