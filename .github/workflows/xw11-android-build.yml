@@ -70,6 +70,7 @@ jobs:
           bash -n tools/build-xwayland-android.sh
           bash -n tools/probe-android-buffer-transport.sh
           bash -n tools/test-weston-xwayland-runtime.sh
+          bash -n shell-loader/scripts/termux-xw11-wayland.in
           bash tools/build-xwayland-android.sh --help
           python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py tools/tests/test_android_graphics_probe.py
           python3 -m unittest discover -s tools/tests -v
@@ -163,12 +164,14 @@ jobs:
           listing="$(dpkg-deb --contents "$package")"
           grep -Fq '/bin/termux-xw11' <<<"$listing"
           grep -Fq '/bin/termux-xw11-preference' <<<"$listing"
+          grep -Fq '/bin/termux-xw11-wayland' <<<"$listing"
           grep -Fq '/libexec/termux-xw11/loader.apk' <<<"$listing"
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           dpkg-deb --extract "$package" "$tmp"
           test -x "$tmp/data/data/com.termux/files/usr/bin/termux-xw11"
           test -x "$tmp/data/data/com.termux/files/usr/bin/termux-xw11-preference"
+          test -x "$tmp/data/data/com.termux/files/usr/bin/termux-xw11-wayland"
           test -s "$tmp/data/data/com.termux/files/usr/libexec/termux-xw11/loader.apk"
           echo "Validated installable Termux-XW11 companion .deb: $package"
           {
