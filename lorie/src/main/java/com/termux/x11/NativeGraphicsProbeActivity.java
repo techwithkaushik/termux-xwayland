@@ -61,7 +61,13 @@ public final class NativeGraphicsProbeActivity extends Activity {
             String capabilities = NativeGraphicsProbe.probeEglCapabilities();
             String window = NativeGraphicsProbe.probeWindowSurface(holder.getSurface());
             report = capabilities + "\n" + window;
-            Log.i(TAG, report);
+            Log.i(TAG, "PROBE_REPORT_BEGIN");
+            for (String line : report.split("\\n")) {
+                if (!line.isEmpty()) {
+                    Log.i(TAG, line);
+                }
+            }
+            Log.i(TAG, "PROBE_REPORT_END");
             status.setText(report + "\n\nProbe complete. You may return to the desktop.");
         } catch (Throwable error) {
             Log.e(TAG, "Native EGL probe failed", error);
