@@ -1,21 +1,113 @@
-name: Termux-XW11 Android packages
+name: Termux-XW11 unified CI
 
 on:
   push:
     branches:
       - xwayland/replace-xorg
+  pull_request:
+    branches:
+      - termux-x11-port
+    paths:
+      - ".github/workflows/**"
+      - "tools/**"
+      - "docs/XWAYLAND_REPLACEMENT.md"
+      - "docs/NATIVE_PRESENTATION_INPUT_CONTRACT.md"
+      - ".gitmodules"
+      - "lorie/**"
+      - "lorie-app/**"
+      - "shell-loader/**"
+      - "build.gradle*"
+      - "settings.gradle*"
+      - "gradle/**"
   workflow_dispatch:
+    inputs:
+      build_xwayland:
+        description: "Also build the upstream XWayland Termux package (long-running)"
+        type: boolean
+        required: true
+        default: false
+      arch:
+        description: "Termux target architecture for optional XWayland package build"
+        type: choice
+        required: true
+        default: arm
+        options:
+          - arm
+          - aarch64
+      force_dependencies:
+        description: "Force rebuilding all XWayland dependency packages (very slow)"
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: xw11-android-build-${{ github.ref }}
+  group: xw11-unified-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build XW11 APKs and launcher package
+  source-preflight:
+    name: Validate XWayland source and native transport
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install host inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes binutils meson ninja-build pkg-config
+
+      - name: Validate scripts, Python tools and native transport
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n tools/probe-xwayland-source.sh
+          bash -n tools/fetch-xwayland-source.sh
+          bash -n tools/audit-xwayland-meson-options.sh
+          bash -n tools/build-xwayland-android.sh
+          bash tools/build-xwayland-android.sh --help
+          python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py
+          python3 -m unittest discover -s tools/tests -v
+          c++ -std=c++17 -Wall -Wextra -Werror \
+            -Itools/native-transport \
+            tools/native-transport/xw11_transport_protocol.cpp \
+            tools/native-transport/tests/test_protocol.cpp \
+            -o /tmp/xw11-transport-protocol-test
+          /tmp/xw11-transport-protocol-test
+          c++ -std=c++17 -Wall -Wextra -Werror \
+            -Itools/native-transport \
+            tools/native-transport/xw11_transport_protocol.cpp \
+            tools/native-transport/xw11_transport_io.cpp \
+            tools/native-transport/tests/test_transport_io.cpp \
+            -o /tmp/xw11-transport-io-test
+          /tmp/xw11-transport-io-test
+
+      - name: Diagnose legacy X server gitlink
+        run: bash tools/probe-xwayland-source.sh --allow-legacy-source
+
+      - name: Fetch pinned upstream XWayland release
+        run: bash tools/fetch-xwayland-source.sh build/third_party
+
+      - name: Verify XWayland source and audit Termux Meson options
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source_dir=build/third_party/xwayland-24.1.14
+          test -f "$source_dir/meson.build"
+          test -f "$source_dir/meson_options.txt"
+          test -f "$source_dir/hw/xwayland/meson.build"
+          grep -Eq "version: ['\"]24.1.14['\"]" "$source_dir/meson.build"
+          bash tools/audit-xwayland-meson-options.sh "$source_dir"
+          bash tools/probe-xwayland-source.sh --host-deps-only
+
+  build-apks:
+    name: Build XW11 APKs and launcher packages
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source and submodules
@@ -100,7 +192,7 @@ jobs:
           if-no-files-found: error
           path: shell-loader/build/outputs/apk/debug/termux-xw11-loader-debug.apk
 
-      - name: Upload standalone Debian package for direct installation
+      - name: Upload standalone Debian package and manifest
         uses: actions/upload-artifact@v4
         with:
           name: termux-xw11-deb
@@ -117,3 +209,83 @@ jobs:
           path: |
             shell-loader/build/outputs/companion/termux-xw11-*-all.deb
             shell-loader/build/outputs/companion/termux-xw11-*-any.pkg.tar.xz
+
+  build-xwayland:
+    name: Build upstream XWayland Termux package
+    if: github.event_name == 'workflow_dispatch' && inputs.build_xwayland
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout pinned official Termux package recipes
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-packages
+          ref: facb27bc85ef36fd1120d4ae990fbd59e134fc61
+          path: termux-packages
+          fetch-depth: 1
+
+      - name: Verify official XWayland recipe baseline
+        working-directory: termux-packages
+        run: |
+          test -f x11-packages/xwayland/build.sh
+          grep -q 'TERMUX_PKG_VERSION="24.1.14"' x11-packages/xwayland/build.sh
+          grep -q 'TERMUX_PKG_SHA256=4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a' x11-packages/xwayland/build.sh
+          echo "Using the official Termux XWayland 24.1.14 recipe."
+
+      - name: Build upstream XWayland with official Termux cross-build system
+        working-directory: termux-packages
+        env:
+          TERMUX_ARCH: ${{ inputs.arch || 'arm' }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${{ inputs.force_dependencies }}" == "true" ]]; then
+            ./scripts/run-docker.sh ./build-package.sh -a "$TERMUX_ARCH" -F x11-packages/xwayland
+          else
+            ./scripts/run-docker.sh ./build-package.sh -a "$TERMUX_ARCH" -i -f x11-packages/xwayland
+          fi
+
+      - name: Validate XWayland package and write manifest
+        working-directory: termux-packages
+        env:
+          TERMUX_ARCH: ${{ inputs.arch || 'arm' }}
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+          packages=(output/xwayland_*.deb)
+          if (( ${#packages[@]} != 1 )); then
+            echo "ERROR: expected exactly one xwayland_*.deb package, found ${#packages[@]}" >&2
+            printf 'Found: %s\n' "${packages[@]}" >&2
+            exit 1
+          fi
+          package="${packages[0]}"
+          actual_arch="$(dpkg-deb -f "$package" Architecture)"
+          if [[ "$actual_arch" != "$TERMUX_ARCH" ]]; then
+            echo "ERROR: package architecture mismatch: expected $TERMUX_ARCH, got $actual_arch" >&2
+            exit 1
+          fi
+          test "$(dpkg-deb -f "$package" Package)" = "xwayland"
+          dpkg-deb --contents "$package" | grep -E "/bin/Xwayland$" >/dev/null
+          {
+            echo "Package: xwayland"
+            echo "Version: $(dpkg-deb -f "$package" Version)"
+            echo "Architecture: $actual_arch"
+            echo "Workflow target: $TERMUX_ARCH"
+            echo "SHA256:"
+            sha256sum "$package"
+          } > output/xwayland-build-manifest.txt
+          cat output/xwayland-build-manifest.txt
+
+      - name: Upload XWayland package
+        uses: actions/upload-artifact@v4
+        with:
+          name: xwayland-termux-${{ inputs.arch || 'arm' }}
+          path: |
+            termux-packages/output/xwayland_*.deb
+            termux-packages/output/xwayland-build-manifest.txt
+          if-no-files-found: error
+          retention-days: 14
