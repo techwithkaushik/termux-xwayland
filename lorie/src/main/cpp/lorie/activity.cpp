@@ -630,9 +630,10 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 ANativeWindow_release(window);
                 return (jint) result;
             }},
-            {"nativePresentRgbaFrame", "(Ljava/nio/ByteBuffer;IIIIIIJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject pixels, jint offset, jint length, jint width, jint height, jint strideBytes, jlong generation) -> jint {
+            {"nativePresentRgbaFrame","(Ljava/nio/ByteBuffer;IIII IJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jobject pixels, jint offset, jint length, jint width, jint height, jint strideBytes, jlong generation) -> jint {
                 if (!pixels || offset < 0 || length < 0 || width <= 0 || height <= 0 ||
-                    strideBytes <= 0 || generation <= 0)
+                    width > 8192 || height > 8192 || strideBytes <= 0 ||
+                    strideBytes > 256 * 1024 * 1024 || generation <= 0)
                     return (jint) XW11_PRESENT_ERR_ARGUMENT;
                 void *base = env->GetDirectBufferAddress(pixels);
                 jlong capacity = env->GetDirectBufferCapacity(pixels);
