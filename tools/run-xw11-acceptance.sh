@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${XW11_BUILD_DIR:-${TMPDIR:-/tmp}/xw11-native-transport-build}"
 RUN_WESTON="${XW11_RUN_WESTON:-0}"
 RUN_ANDROID="${XW11_RUN_ANDROID_PRESENTER:-0}"
+RUN_ANDROID_EGL="${XW11_RUN_ANDROID_EGL_PROBE:-0}"
 
 for cmd in python3 cmake ctest; do
   command -v "$cmd" >/dev/null 2>&1 || {
@@ -48,6 +49,12 @@ if [[ "$RUN_ANDROID" == "1" ]]; then
   run_optional_gate "Android presenter probe" bash "$ROOT/tools/run-android-presenter-probe.sh"
 else
   echo "SKIP: Android presenter probe (set XW11_RUN_ANDROID_PRESENTER=1 on-device)."
+fi
+
+if [[ "$RUN_ANDROID_EGL" == "1" ]]; then
+  run_optional_gate "Android app-process EGL probe" bash "$ROOT/tools/run-android-egl-probe.sh"
+else
+  echo "SKIP: Android app-process EGL probe (set XW11_RUN_ANDROID_EGL_PROBE=1 on-device)."
 fi
 
 if (( optional_failures > 0 )); then
