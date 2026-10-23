@@ -298,14 +298,23 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         // Explicit opt-in diagnostic mode avoids touching EGL during normal
-        // display startup. Launch with --ez org.techwithkaushik.termuxxw11.RUN_EGL_PROBE true.
+        // display startup. Keep the Surface alive while native EGL tests it.
         if (getIntent().getBooleanExtra("org.techwithkaushik.termuxxw11.RUN_EGL_PROBE", false)) {
-            try {
-                Log.i("XW11-EGL-PROBE", NativeGraphicsProbe.probeEglCapabilities());
-            } catch (Throwable error) {
-                Log.e("XW11-EGL-PROBE", "Native EGL probe failed", error);
-            }
-            finish();
+            SurfaceView probeView = new SurfaceView(this);
+            setContentView(probeView);
+            probeView.getHolder().addCallback(new SurfaceHolder.Callback() {
+                @Override public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                    try {
+                        Log.i("XW11-EGL-PROBE", NativeGraphicsProbe.probeEglCapabilities());
+                        Log.i("XW11-EGL-PROBE", NativeGraphicsProbe.probeWindowSurface(holder.getSurface()));
+                    } catch (Throwable error) {
+                        Log.e("XW11-EGL-PROBE", "Native EGL probe failed", error);
+                    }
+                }
+                @Override public void surfaceChanged(@NonNull SurfaceHolder holder, int format,
+                                                     int width, int height) {}
+                @Override public void surfaceDestroyed(@NonNull SurfaceHolder holder) {}
+            });
             return;
         }
 
