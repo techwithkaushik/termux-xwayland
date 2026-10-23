@@ -17,6 +17,9 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         cls.activity = (ROOT / "lorie/src/main/java/com/termux/x11/MainActivity.java").read_text()
         cls.native = (ROOT / "lorie/src/main/cpp/lorie/graphics_probe.cpp").read_text()
         cls.cmake = (ROOT / "lorie/src/main/cpp/recipes/xserver.cmake").read_text()
+        cls.probe_activity = (ROOT / "lorie/src/main/java/com/termux/x11/NativeGraphicsProbeActivity.java").read_text()
+        cls.manifest = (ROOT / "lorie/src/main/AndroidManifest.xml").read_text()
+        cls.runner = (ROOT / "tools/run-android-egl-probe.sh").read_text()
 
     def test_java_and_jni_entry_points_match(self):
         self.assertIn("native String probeEglCapabilities();", self.java_probe)
@@ -36,6 +39,15 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn("eglSwapBuffers(display, egl_surface)", self.native)
         self.assertIn("ANativeWindow_release(window)", self.native)
         self.assertIn("eglDestroySurface(display, egl_surface)", self.native)
+
+    def test_diagnostic_has_an_isolated_activity_and_runner(self):
+        self.assertIn('android:name=".NativeGraphicsProbeActivity"', self.manifest)
+        self.assertIn('android:exported="true"', self.manifest)
+        self.assertIn("NativeGraphicsProbe.probeEglCapabilities()", self.probe_activity)
+        self.assertIn("NativeGraphicsProbe.probeWindowSurface(holder.getSurface())", self.probe_activity)
+        self.assertIn('ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativeGraphicsProbeActivity}"', self.runner)
+        self.assertNotIn("RUN_EGL_PROBE", self.runner)
+        self.assertIn("window surface swap: passed", self.runner)
 
     def test_diagnostic_is_opt_in_and_surface_lifecycle_scoped(self):
         key = 'getBooleanExtra("org.techwithkaushik.termuxxw11.RUN_EGL_PROBE", false)'
