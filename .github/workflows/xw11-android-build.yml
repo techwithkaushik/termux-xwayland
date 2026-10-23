@@ -1,6 +1,9 @@
 name: Termux-XW11 unified CI
 
 on:
+  pull_request:
+    branches:
+      - termux-x11-port
   push:
     branches:
       - xwayland/replace-xorg
