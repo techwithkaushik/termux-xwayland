@@ -163,14 +163,21 @@ After installing a build containing this change, request a one-shot report from 
 
 This diagnostic is deliberately limited: it tests whether the app process can initialize EGL and create a pbuffer. It does not access an Android `Surface`, allocate Android gralloc buffers, enumerate DMA-BUF formats/modifiers, transfer graphics-buffer FDs, or validate acquire/release fences. A successful result is only the prerequisite for a separate surface-backed buffer interoperability test. Device execution and report review are still pending.
 
-### Android Surface-backed EGL probe (code added; device result pending)
+### Android Surface-backed EGL probe (device run passed; Weston integration pending)
 
-The opt-in diagnostic now also creates a Java `SurfaceView` and passes its live `Surface` to native code. The native path obtains an `ANativeWindow`, selects an EGL window configuration, creates an EGL window surface and ES2 context, clears one frame, and calls `eglSwapBuffers`. It then releases the EGL objects and native-window reference. This tests the app's ability to render to its own Android surface; it still does not import a buffer produced by Weston.
+The opt-in diagnostic creates a Java `SurfaceView` and passes its live `Surface` to native code. The native path obtains an `ANativeWindow`, selects an EGL window configuration, creates an EGL window surface and ES2 context, clears one frame, and calls `eglSwapBuffers`. It then releases the EGL objects and native-window reference.
 
-Launch the app's exported main activity with the existing boolean extra `org.techwithkaushik.termuxxw11.RUN_EGL_PROBE=true`. Keep the diagnostic activity in the foreground while the surface is created. Collect the `XW11-EGL-PROBE` log entries from logcat. Verify both the pbuffer report and the separate `window surface swap: passed` line. A failure should be recorded with its EGL error code; do not infer support from SurfaceFlinger extension strings alone.
+**Target-device result (Redmi 9 Active, Android 10 / API 29, 2026-10-23):**
+- App-process EGL initialization and pbuffer/context probe completed.
+- EGL version: 1.4; GL vendor: Imagination Technologies; renderer: PowerVR Rogue GE8320; GL version: OpenGL ES 3.2.
+- `EGL_ANDROID_image_native_buffer`: reported yes.
+- `EGL_ANDROID_native_fence_sync`, `EGL_EXT_image_dma_buf_import`, and `EGL_EXT_image_dma_buf_import_modifiers`: reported no by this app-process probe.
+- `window surface swap: passed` on the app-owned Android Surface.
+- The script initially could not see tagged logs as the ordinary Termux UID. Root-visible logcat confirmed the report; the runner now retries through `su` when ordinary logcat access is filtered.
 
-No device run or successful APK build is asserted by this commit. The next acceptance stage is explicit Weston-buffer export/import and fence/lifetime validation.
+This is evidence that the app process can render a clear operation to its own Android Surface. It is **not** evidence that Weston buffers can be exported/imported, that SurfaceFlinger and the app expose identical EGL capabilities, or that the path is GPU zero-copy. In particular, the app-process extension result differs from the broader SurfaceFlinger dump above; treat each result as belonging to its queried process/context.
 
+Next acceptance stage: implement and test a bounded native bridge from an actual Weston frame producer to a separate Android Surface owner. First verify a supported buffer allocation/export/import mechanism and correct acquire/release synchronization on this device. Keep the existing Lorie renderer isolated until the new producer/consumer path passes visual, lifecycle, input, and performance tests.
 
 ## On-device Weston/XWayland protocol smoke test (2026-10-23)
 
