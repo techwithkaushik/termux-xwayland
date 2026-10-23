@@ -39,6 +39,14 @@ The transport-neutral framing primitive lives in `tools/native-transport/`:
 
 The control-frame transport remains standalone: it is not connected to Weston, Android/gralloc buffers, fences, or XWayland process startup. Passing an FD successfully does not prove that the FD represents an importable graphics buffer. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The protocol module exposes a per-connection sequence tracker, but it is not wired into an Android/Weston producer or consumer. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
 
+## Buffer submission transport (implemented; graphics import pending)
+
+`xw11_buffer_transport.h/.cpp` now composes the existing FD-passing and frame-protocol primitives into one buffer submission operation. The sender transfers one descriptor with `SCM_RIGHTS` first, then sends a `BUFFER_SUBMIT` frame containing the fixed-size buffer metadata. The receiver reads the ancillary FD with `recvmsg()` before reading the framed metadata, verifies message type, expected session, monotonic sequence, descriptor validity, and the active Surface generation, and transfers FD ownership to the caller only on success. On any receive error it closes the received FD; the caller must close the connection because stream resynchronization is not guaranteed.
+
+A host socket-pair test verifies the FD-plus-metadata round trip, close-on-exec, metadata fields, and actual descriptor usability. The module is included in the portable CMake target and Android native source list. A single writer per socket is required; callers must close the connection if either half of a submission fails.
+
+This remains a generic descriptor transport test. The test uses a pipe FD, not a graphics allocation. It does not establish DMA-BUF/gralloc import, DRM modifier compatibility, fence synchronization, buffer release/reuse, a Weston output producer, or Android Surface presentation. The producer and consumer still need to be integrated with the actual compositor/backend and validated on the target device.
+
 ## Graphics buffer wire metadata codec (implemented; transport integration pending)
 
 `xw11_buffer_wire.h/.cpp` defines a fixed 36-byte, big-endian encoding for the existing `xw11_buffer_descriptor`: buffer ID, Surface generation, dimensions, stride, DRM fourcc, and modifier. Encode and decode both validate the descriptor before accepting it; the decoder requires an exact payload length and does not publish partially decoded state. A host test covers round-trip values, byte order, invalid sizes, null arguments, and invalid descriptors.
