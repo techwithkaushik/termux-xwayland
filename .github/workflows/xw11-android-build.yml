@@ -71,6 +71,7 @@ jobs:
           bash -n tools/probe-android-buffer-transport.sh
           bash -n tools/test-weston-xwayland-runtime.sh
           bash -n tools/test-existing-xwayland-display.sh
+          bash -n tools/run-android-egl-probe.sh
           # Exercise the real Weston -> XWayland -> X11-client startup path on CI.
           # This is a headless protocol smoke test, not Android Surface/GPU validation.
           PREFIX=/usr TMPDIR=/tmp HOME="$RUNNER_TEMP" bash tools/test-weston-xwayland-runtime.sh --headless
