@@ -39,6 +39,12 @@ The transport-neutral framing primitive lives in `tools/native-transport/`:
 
 This is still a standalone transport module. It is not connected to Android JNI, Weston, Android/gralloc buffers, fences, or XWayland process startup. Passing an FD successfully does not prove that the FD represents an importable graphics buffer. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The protocol module now exposes a per-connection sequence tracker that rejects duplicate/decreasing sequence IDs and frames from a different session ID; callers must reset it with the negotiated session ID and invoke it for each decoded frame. It is still not wired into an Android/Weston producer or consumer. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
 
+## Surface generation guard
+
+A portable state-machine primitive now lives in `tools/native-transport/xw11_surface_generation.h/.cpp`. It issues a new nonzero generation for each successful surface creation, rejects events submitted against stale generations, stops accepting the destroyed generation, makes repeated teardown idempotent, and refuses generation-counter wraparound. Its host test covers create/destroy/recreate, stale-event rejection, null arguments, and exhaustion.
+
+This is a unit-tested lifecycle primitive, not Android integration: `LorieView`, JNI, `ANativeWindow`, Weston output, and the native transport do not call it yet. The Android presentation adapter must own one instance, call `created`/ `destroyed` from the actual Surface lifecycle, and check `accepts` before every frame/input submission. Do not treat this test as proof of rendering or input on-device.
+
 ## Control protocol requirements
 
 Every message must include:
