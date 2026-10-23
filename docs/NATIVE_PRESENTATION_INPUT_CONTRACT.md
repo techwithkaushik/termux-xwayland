@@ -130,3 +130,11 @@ The library now contains `NativeGraphicsProbe`, a JNI-backed diagnostic that ini
 After installing a build containing this change, request a one-shot report from the host activity with the intent extra `org.techwithkaushik.termuxxw11.RUN_EGL_PROBE=true`. Read logcat entries tagged `XW11-EGL-PROBE`. Use the installed package ID and activity component for the current build; debug variants may use a suffix.
 
 This diagnostic is deliberately limited: it tests whether the app process can initialize EGL and create a pbuffer. It does not access an Android `Surface`, allocate Android gralloc buffers, enumerate DMA-BUF formats/modifiers, transfer graphics-buffer FDs, or validate acquire/release fences. A successful result is only the prerequisite for a separate surface-backed buffer interoperability test. Device execution and report review are still pending.
+
+### Android Surface-backed EGL probe (code added; device result pending)
+
+The opt-in diagnostic now also creates a Java `SurfaceView` and passes its live `Surface` to native code. The native path obtains an `ANativeWindow`, selects an EGL window configuration, creates an EGL window surface and ES2 context, clears one frame, and calls `eglSwapBuffers`. It then releases the EGL objects and native-window reference. This tests the app's ability to render to its own Android surface; it still does not import a buffer produced by Weston.
+
+Launch the app's exported main activity with the existing boolean extra `org.techwithkaushik.termuxxw11.RUN_EGL_PROBE=true`. Keep the diagnostic activity in the foreground while the surface is created. Collect the `XW11-EGL-PROBE` log entries from logcat. Verify both the pbuffer report and the separate `window surface swap: passed` line. A failure should be recorded with its EGL error code; do not infer support from SurfaceFlinger extension strings alone.
+
+No device run or successful APK build is asserted by this commit. The next acceptance stage is explicit Weston-buffer export/import and fence/lifetime validation.
