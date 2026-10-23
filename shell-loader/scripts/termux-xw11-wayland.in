@@ -48,6 +48,7 @@ esac
 pid_file="$STATE/weston.pid"
 runtime_file="$STATE/runtime"
 log_file="$STATE/weston.log"
+console_log="$STATE/weston-console.log"
 display_file="$STATE/display"
 socket_file="$STATE/socket"
 
@@ -131,6 +132,7 @@ case "$ACTION" in
     RUNTIME="$(mktemp -d "$RUNTIME_ROOT/xw11-wayland.XXXXXX")"
     chmod 700 "$RUNTIME"
     : > "$log_file"
+    : > "$console_log"
     SESSION_SOCKET="$SOCKET"
     WESTON_ARGS=(--renderer=pixman --shell=kiosk --xwayland "--socket=$SESSION_SOCKET" --no-config "--log=$log_file")
     if [[ "$BACKEND" == "x11" ]]; then
@@ -141,7 +143,7 @@ case "$ACTION" in
 
     if [[ "$BACKEND" == "x11" ]]; then
       env DISPLAY="$PARENT_DISPLAY" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
-        "$WESTON" "${WESTON_ARGS[@]}" >> "$log_file" 2>&1 &
+        "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     else
       env XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
         "$WESTON" "${WESTON_ARGS[@]}" >> "$log_file" 2>&1 &
@@ -165,7 +167,7 @@ case "$ACTION" in
 
     if (( ! ready )); then
       echo "ERROR: Weston/XWayland failed to become ready; see $log_file" >&2
-      tail -n 60 "$log_file" >&2 || true
+      tail -n 60 "$log_file" "$console_log" >&2 || true
       stop_owned_session
       exit 1
     fi
