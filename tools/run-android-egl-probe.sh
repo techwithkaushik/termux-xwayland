@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Launch the app-process EGL/Android-Surface probe and collect tagged diagnostics.
-# Never clear logcat: preserve unrelated Android diagnostic history.
+# Android 10 may restrict an ordinary app shell's logcat view; retry with su
+# when available. Never clear logcat or modify Android logging permissions.
 set -Eeuo pipefail
 
 PACKAGE="${XW11_PACKAGE:-org.techwithkaushik.termuxxw11}"
@@ -24,19 +25,24 @@ if ! am start -W -n "$PACKAGE/$ACTIVITY"; then
     exit 1
 fi
 
-# The Activity reports its result to the screen and Android logcat. Use a
-# post-run dump rather than a long-lived reader: logcat -T 1 can miss messages
-# on some Android 10/vendor logd builds when the reader starts near launch.
 sleep "${XW11_PROBE_WAIT_SECONDS:-5}"
-logcat -d -v brief -s "$TAG" > "$OUT" 2>&1 || true
+
+# First try the current Termux UID. On rooted devices, retry through su if
+# logd access is filtered. Capture only our tag; do not clear global log buffers.
+if ! logcat -d -v brief -s "$TAG" > "$OUT" 2>&1 ||
+   ! grep -q "$TAG" "$OUT"; then
+    if command -v su >/dev/null 2>&1; then
+        su -c "logcat -d -v brief -s $TAG" > "$OUT" 2>&1 || true
+    fi
+fi
 
 echo
 echo "Probe log: $OUT"
 if ! grep -q "$TAG" "$OUT"; then
-    echo "FAIL: no $TAG messages captured from logcat." >&2
-    echo "The on-screen report may still indicate success; verify that this APK logs the probe result." >&2
-    echo "Recent app logs (filtered):" >&2
-    logcat -d -v brief -s AndroidRuntime:E System.err:W "$TAG:V" 2>&1 | tail -n 80 >&2 || true
+    echo "INCOMPLETE: no $TAG messages are visible to this shell." >&2
+    echo "If the report is visible on screen, the EGL probe may still have passed." >&2
+    echo "On rooted devices, check manually with:" >&2
+    echo "  su -c \"logcat -d -v brief | grep -F '$TAG' | tail -n 40\"" >&2
     exit 1
 fi
 cat "$OUT"
