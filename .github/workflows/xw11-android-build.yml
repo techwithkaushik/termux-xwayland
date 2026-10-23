@@ -1,0 +1,81 @@
+name: Termux-XW11 Android packages
+
+on:
+  push:
+    branches:
+      - xwayland/replace-xorg
+  pull_request:
+    branches:
+      - termux-x11-port
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xw11-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build XW11 APKs and launcher package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .git/modules
+          key: ${{ runner.os }}-xw11-gradle-${{ hashFiles('**/*.gradle*', '.gitmodules') }}
+          restore-keys: |
+            ${{ runner.os }}-xw11-gradle-
+
+      - name: Build main APK, loader APK and companion package
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload standalone main APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xw11-main-apk
+          if-no-files-found: error
+          path: lorie-app/build/outputs/apk/standalone/debug/termux-xw11-universal-debug.apk
+
+      - name: Upload shared-UID main APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xw11-shareduid-apk
+          if-no-files-found: error
+          path: lorie-app/build/outputs/apk/sharedUid/debug/termux-xw11-universal-sharedUid-debug.apk
+
+      - name: Upload loader APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xw11-loader-apk
+          if-no-files-found: error
+          path: shell-loader/build/outputs/apk/debug/termux-xw11-loader-debug.apk
+
+      - name: Upload Termux launcher companion packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-xw11-launcher-package
+          if-no-files-found: error
+          path: |
+            shell-loader/build/outputs/companion/termux-xw11-*-all.deb
+            shell-loader/build/outputs/companion/termux-xw11-*-any.pkg.tar.xz

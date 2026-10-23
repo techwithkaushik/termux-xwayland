@@ -1,13 +1,13 @@
 #!/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/bin/bash
 if [ ! -e /system/bin/getprop ] || [ ! -e /system/bin/app_process ]; then
-  echo "Headless system detected. Termux:X11 requires standard Android to work,"
+  echo "Headless system detected. Termux-XW11 requires standard Android to work,"
   echo "and depends on APKs and system properties."
   echo "If you are using termux-docker, the 'vncserver' command"
   echo "from 'pkg install tigervnc' is recommended instead."
   exit 1
 fi
 if [ "$(getprop ro.build.version.sdk)" -lt "24" ]; then
-  echo "Termux:X11 requires at least Android 7 or newer."
+  echo "Termux-XW11 requires at least Android 7 or newer."
   echo "Please upgrade your Android device."
   echo "If you cannot upgrade, the 'vncserver' command"
   echo "from 'pkg install tigervnc' is recommended instead."
@@ -15,7 +15,7 @@ if [ "$(getprop ro.build.version.sdk)" -lt "24" ]; then
 fi
 if [ "$(getprop ro.build.version.sdk)" -ge "34" ]; then
   unset LD_LIBRARY_PATH LD_PRELOAD
-  export CLASSPATH=/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/libexec/termux-x11/loader.apk
+  export CLASSPATH=/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/libexec/termux-xw11/loader.apk
   export TERMUX_X11_LOADER_OVERRIDE_CMDENTRYPOINT_CLASS=com.termux.x11.LoriePreferences\$Receiver
   exec /system/bin/app_process -Xnoimage-dex2oat / com.termux.x11.Loader "$@"
 fi

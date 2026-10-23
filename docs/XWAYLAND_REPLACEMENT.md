@@ -15,6 +15,12 @@ Replace the current Lorie-specific X.Org server build with a genuine upstream XW
 - The source fetch script verifies the archive against the fixed SHA-256 `4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a`, taken from the official Termux XWayland 24.1.14 package recipe, before extraction. Detached OpenPGP release-signature verification is still not configured, so the checksum trust root remains the reviewed repository pin.
 - The current Android native build is CMake-based, while upstream XWayland uses Meson. The integration must explicitly bridge this build-system boundary.
 
+## XW11 Android package identity
+
+- The Android application ID is `org.techwithkaushik.termuxxw11`. Android application IDs cannot contain a hyphen, so the requested display/product name is written as **Termux-XW11**, while the valid ID omits the hyphen.
+- The launcher command and companion package use the `termux-xw11` name. The loader still invokes the existing Java entry-point class in the app; internal `com.termux.x11` Java namespaces and protocol action strings are intentionally not renamed just to change the install identity.
+- Building these APKs and launcher artifacts validates packaging only. It does **not** mean the legacy Lorie X.Org backend has been replaced: the new standalone XWayland backend must be connected to the Android presentation/input transport and pass device acceptance tests before the APK can be described as a functional XWayland replacement.
+
 ## Target architecture
 
 ```text

@@ -1,10 +1,10 @@
 <!DOCTYPE resources [
     <!ENTITY TERMUX_PACKAGE_NAME "com.termux">
     <!ENTITY TERMUX_APP_NAME "Termux">
-    <!ENTITY TERMUX_X11_APP_NAME "Termux:X11">
+    <!ENTITY TERMUX_XW11_APP_NAME "Termux-XW11">
     ]>
 <resources>
-    <string name="lorie_app_name">&TERMUX_X11_APP_NAME;</string>
+    <string name="lorie_app_name">&TERMUX_XW11_APP_NAME;</string>
 
     <string name="not_connected">Not connected</string>
     <string name="no_server_signal">X server stalled</string>
