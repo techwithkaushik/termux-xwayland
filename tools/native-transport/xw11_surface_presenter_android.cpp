@@ -61,7 +61,7 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
 
     const size_t row_bytes = (size_t)width * 4u;
     if (source_stride < row_bytes || source_stride > kMaxFrameBytes ||
-        source_stride > SIZE_MAX / height)
+        source_stride > kMaxFrameBytes / height || source_stride > SIZE_MAX / height)
         return XW11_PRESENT_ERR_STRIDE;
 
     pthread_mutex_lock(&g_lock);
