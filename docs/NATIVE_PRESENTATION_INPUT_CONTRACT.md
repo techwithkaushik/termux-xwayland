@@ -160,3 +160,18 @@ bash tools/test-weston-xwayland-runtime.sh --nested
 This starts a uniquely isolated nested Weston instance, waits for the XWayland display, checks `xdpyinfo`, launches a test XTerm, verifies the window tree, and cleans up only the instance it started. Use `--headless` for a protocol-only test. It intentionally uses Pixman and is not an Android-native presentation acceptance test.
 
 Next device gate: run the opt-in app-process EGL pbuffer and Surface-backed EGL probes described above, then implement and validate actual Weston buffer export/import, synchronization fences, buffer lifetime, and input forwarding. Do not remove the Lorie fallback until visible X11 output and input pass on the target Android device.
+
+
+### Repeatable nested smoke-test result (2026-10-23)
+
+The committed `tools/test-weston-xwayland-runtime.sh --nested` was executed on the target Termux device and passed all scripted checks:
+
+- The test created its private runtime directory and started nested Weston.
+- Weston selected XWayland display `:1`.
+- `DISPLAY=:1 xdpyinfo` succeeded.
+- `xwininfo -root -tree` found the exact window title `XW11 Acceptance Smoke Test`.
+- The script reported `PASS: Weston + XWayland smoke test complete.`
+
+The unified CI run for this change also completed successfully: [run 39931512759](https://github.com/techwithkaushik/termux-xwayland/actions/runs/39931512759). CI validates repository checks and packaging; it does not run on the Android device and is not evidence of native graphics-buffer interoperability.
+
+The next concrete device measurement is the app-process EGL pbuffer plus Android Surface-backed EGL probe. It should be run on the installed XW11 APK before writing a buffer-import bridge; it will establish whether this app can render to its own Surface, not whether Weston buffers can be imported.
