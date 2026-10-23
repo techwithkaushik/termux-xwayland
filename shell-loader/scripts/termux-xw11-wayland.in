@@ -1,0 +1,187 @@
+#!/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/bin/bash
+# Experimental Weston/XWayland supervisor.
+# This prepares a Wayland/X11 server only; it does not launch a desktop and
+# does not replace the Android Lorie renderer or provide Android Surface output.
+set -Eeuo pipefail
+
+PREFIX="${PREFIX:-/data/data/@EMBEDDED_APPLICATION_ID@/files/usr}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/termux-xw11-wayland"
+RUNTIME_ROOT="${TMPDIR:-$PREFIX/tmp}"
+ACTION="${1:-status}"
+BACKEND="headless"
+PARENT_DISPLAY="${DISPLAY:-:0}"
+SOCKET="wayland-xw11"
+mkdir -p "$STATE" "$RUNTIME_ROOT"
+chmod 700 "$STATE"
+
+usage() {
+  cat <<'USAGE'
+Usage: termux-xw11-wayland {start|stop|status} [--nested]
+
+  start          Start Weston + its managed upstream XWayland server.
+                 Headless is the safe default; no desktop is launched.
+  start --nested Start Weston inside the current DISPLAY (diagnostics only).
+  status         Show the recorded Weston/XWayland session.
+  stop           Stop only the Weston process owned by this supervisor.
+
+This is an experimental process supervisor, not yet the Android Surface
+presentation backend. The existing Termux-XW11/Lorie session is untouched.
+USAGE
+}
+
+shift || true
+while (($#)); do
+  case "$1" in
+    --nested) BACKEND="x11" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+case "$ACTION" in
+  start|stop|status) ;;
+  -h|--help|help) usage; exit 0 ;;
+  *) echo "Unknown action: $ACTION" >&2; usage >&2; exit 2 ;;
+esac
+
+pid_file="$STATE/weston.pid"
+runtime_file="$STATE/runtime"
+log_file="$STATE/weston.log"
+display_file="$STATE/display"
+socket_file="$STATE/socket"
+
+is_owned_weston() {
+  local pid="${1:-}"
+  [[ "$pid" =~ ^[0-9]+$ && -r "/proc/$pid/cmdline" ]] || return 1
+  tr '\0' ' ' < "/proc/$pid/cmdline" | grep -Eq '(^|/|[[:space:]])weston([[:space:]]|$)'
+}
+
+read_session() {
+  SESSION_PID=""
+  SESSION_RUNTIME=""
+  [[ -r "$pid_file" ]] && IFS= read -r SESSION_PID < "$pid_file" || true
+  [[ -r "$runtime_file" ]] && IFS= read -r SESSION_RUNTIME < "$runtime_file" || true
+}
+
+stop_owned_session() {
+  read_session
+  if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
+    kill -TERM "$SESSION_PID" 2>/dev/null || true
+    for _ in {1..30}; do
+      is_owned_weston "$SESSION_PID" || break
+      sleep 0.1
+    done
+    if is_owned_weston "$SESSION_PID"; then
+      kill -KILL "$SESSION_PID" 2>/dev/null || true
+    fi
+  fi
+  if [[ -n "$SESSION_RUNTIME" && "$SESSION_RUNTIME" == "$RUNTIME_ROOT"/xw11-wayland.* ]]; then
+    rm -rf -- "$SESSION_RUNTIME"
+  fi
+  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file"
+}
+
+case "$ACTION" in
+  stop)
+    stop_owned_session
+    echo "Stopped the supervised Weston/XWayland session (if it was running)."
+    exit 0
+    ;;
+  status)
+    read_session
+    if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
+      DISPLAY_VALUE="$(cat "$display_file" 2>/dev/null || true)"
+      SOCKET_VALUE="$(cat "$socket_file" 2>/dev/null || true)"
+      echo "status=running"
+      echo "weston_pid=$SESSION_PID"
+      echo "DISPLAY=$DISPLAY_VALUE"
+      echo "WAYLAND_DISPLAY=$SOCKET_VALUE"
+      echo "log=$log_file"
+      exit 0
+    fi
+    echo "status=stopped"
+    exit 1
+    ;;
+  start)
+    if [[ -x "$PREFIX/bin/weston" ]]; then
+      WESTON="$PREFIX/bin/weston"
+    else
+      WESTON="$(command -v weston || true)"
+    fi
+    [[ -n "$WESTON" ]] || { echo "ERROR: weston not found; install it with pkg install weston." >&2; exit 127; }
+    command -v xdpyinfo >/dev/null 2>&1 || { echo "ERROR: xdpyinfo is required for readiness checks (pkg install xorg-xdpyinfo)." >&2; exit 127; }
+
+    read_session
+    if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
+      echo "ERROR: supervised Weston is already running (PID $SESSION_PID)." >&2
+      echo "Use: termux-xw11-wayland status|stop" >&2
+      exit 1
+    fi
+    stop_owned_session
+
+    if [[ "$BACKEND" == "x11" ]]; then
+      DISPLAY="$PARENT_DISPLAY" xdpyinfo >/dev/null 2>&1 || {
+        echo "ERROR: parent X11 display is not reachable: $PARENT_DISPLAY" >&2
+        exit 1
+      }
+    fi
+
+    RUNTIME="$(mktemp -d "$RUNTIME_ROOT/xw11-wayland.XXXXXX")"
+    chmod 700 "$RUNTIME"
+    SESSION_SOCKET="$SOCKET"
+    WESTON_ARGS=(--renderer=pixman --shell=kiosk --xwayland "--socket=$SESSION_SOCKET" --no-config "--log=$log_file")
+    if [[ "$BACKEND" == "x11" ]]; then
+      WESTON_ARGS+=(--backend=x11)
+    else
+      WESTON_ARGS+=(--backend=headless)
+    fi
+
+    if [[ "$BACKEND" == "x11" ]]; then
+      env DISPLAY="$PARENT_DISPLAY" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
+        "$WESTON" "${WESTON_ARGS[@]}" >> "$log_file" 2>&1 &
+    else
+      env XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
+        "$WESTON" "${WESTON_ARGS[@]}" >> "$log_file" 2>&1 &
+    fi
+    WESTON_PID=$!
+    printf '%s\n' "$WESTON_PID" > "$pid_file"
+    printf '%s\n' "$RUNTIME" > "$runtime_file"
+    printf '%s\n' "$SESSION_SOCKET" > "$socket_file"
+
+    ready=0
+    for _ in {1..80}; do
+      if ! is_owned_weston "$WESTON_PID"; then
+        break
+      fi
+      if [[ -S "$RUNTIME/$SESSION_SOCKET" ]] && grep -q 'xserver listening on display' "$log_file" 2>/dev/null; then
+        ready=1
+        break
+      fi
+      sleep 0.25
+    done
+
+    if (( ! ready )); then
+      echo "ERROR: Weston/XWayland failed to become ready; see $log_file" >&2
+      tail -n 60 "$log_file" >&2 || true
+      stop_owned_session
+      exit 1
+    fi
+
+    XDISPLAY="$(sed -n 's/.*xserver listening on display :\([0-9][0-9]*\).*/\1/p' "$log_file" | tail -n 1)"
+    if [[ -z "$XDISPLAY" ]] || ! DISPLAY=":$XDISPLAY" xdpyinfo >/dev/null 2>&1; then
+      echo "ERROR: XWayland display did not accept an X11 client; see $log_file" >&2
+      stop_owned_session
+      exit 1
+    fi
+    printf '%s\n' ":$XDISPLAY" > "$display_file"
+    echo "status=running"
+    echo "weston_pid=$WESTON_PID"
+    echo "DISPLAY=:$XDISPLAY"
+    echo "WAYLAND_DISPLAY=$SESSION_SOCKET"
+    echo "XDG_RUNTIME_DIR=$RUNTIME"
+    echo "log=$log_file"
+    echo "NOTE: server is ready; no desktop was launched."
+    echo "NOTE: this does not present Weston output on the Android app Surface."
+    ;;
+esac
