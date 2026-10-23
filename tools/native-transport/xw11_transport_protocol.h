@@ -63,6 +63,21 @@ xw11_protocol_error xw11_decode_header(const uint8_t *bytes, size_t size,
 xw11_protocol_error xw11_encode_header(const xw11_frame_header *header,
                                        uint8_t *out, size_t out_size);
 
+/*
+ * Per-connection replay/order guard. Reset it with the negotiated nonzero
+ * session ID when a new connection is established. A sequence is accepted
+ * only when it strictly increases within that session.
+ */
+typedef struct xw11_sequence_tracker {
+    uint32_t session_id;
+    uint64_t last_sequence_id;
+} xw11_sequence_tracker;
+
+xw11_protocol_error xw11_sequence_tracker_reset(xw11_sequence_tracker *tracker,
+                                                uint32_t session_id);
+xw11_protocol_error xw11_sequence_tracker_accept(xw11_sequence_tracker *tracker,
+                                                 const xw11_frame_header *header);
+
 #ifdef __cplusplus
 }
 #endif
