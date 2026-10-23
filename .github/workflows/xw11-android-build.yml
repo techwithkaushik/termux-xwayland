@@ -89,6 +89,10 @@ jobs:
           python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py tools/tests/test_android_graphics_probe.py
           python3 -m unittest discover -s tools/tests -v
           python3 tools/tests/test_android_graphics_probe.py
+          # Prove the portable native transport builds and tests without the legacy X.Org graph.
+          cmake -S tools/native-transport -B /tmp/xw11-native-transport-build -DCMAKE_BUILD_TYPE=Debug
+          cmake --build /tmp/xw11-native-transport-build --parallel 2
+          ctest --test-dir /tmp/xw11-native-transport-build --output-on-failure
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
