@@ -19,4 +19,25 @@ fi
 export CLASSPATH=/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/libexec/termux-xw11/loader.apk
 unset LD_LIBRARY_PATH LD_PRELOAD
 [ -n "$(trap -p USR1)" ] && export TERMUX_X11_NOTIFY_PARENT=1
+
+# Android 10+ can block an Activity launch initiated indirectly by the
+# background app_process broadcast receiver. Open the default display UI
+# explicitly from the user's Termux command; MainActivity retries connection
+# while the native server initializes. Set TERMUX_XW11_NO_AUTO_ACTIVITY=1 for
+# headless/server-only sessions.
+if [ "${TERMUX_XW11_NO_AUTO_ACTIVITY:-0}" != "1" ]; then
+  has_tag=0
+  for arg in "$@"; do
+    if [ "$arg" = "-tag" ]; then
+      has_tag=1
+      break
+    fi
+  done
+  if [ "$has_tag" -eq 0 ]; then
+    if ! am start -n "@APPLICATION_ID@/com.termux.x11.MainActivity" >/dev/null 2>&1; then
+      echo "WARNING: could not open the Termux-XW11 display Activity; the native server will still start." >&2
+      echo "Try: am start -n @APPLICATION_ID@/com.termux.x11.MainActivity" >&2
+    fi
+  fi
+fi
 exec /system/bin/app_process -Xnoimage-dex2oat / --nice-name="termux-xw11 @APPLICATION_ID@ $*" com.termux.x11.Loader "$@"
