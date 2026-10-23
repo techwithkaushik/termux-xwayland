@@ -21,6 +21,10 @@ Replace the current Lorie-specific X.Org server build with a genuine upstream XW
 - The launcher command and companion package use the `termux-xw11` name. The loader still invokes the existing Java entry-point class in the app; internal `com.termux.x11` Java namespaces and protocol action strings are intentionally not renamed just to change the install identity.
 - Building these APKs and launcher artifacts validates packaging only. It does **not** mean the legacy Lorie X.Org backend has been replaced: the new standalone XWayland backend must be connected to the Android presentation/input transport and pass device acceptance tests before the APK can be described as a functional XWayland replacement.
 
+## Native presentation/input contract
+
+The transport boundaries, versioning requirements, buffer/fence ownership rules, lifecycle invariants, and test gates are specified in [`NATIVE_PRESENTATION_INPUT_CONTRACT.md`](./NATIVE_PRESENTATION_INPUT_CONTRACT.md). Treat that file as the contract to implement before connecting Weston output to the Android host; it is a design document, not evidence that the transport is already implemented.
+
 ## Target architecture
 
 ```text
