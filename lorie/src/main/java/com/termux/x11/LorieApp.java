@@ -163,6 +163,13 @@ public class LorieApp extends Application {
                 } catch (RemoteException ignored) {}
 
                 if (activity != null) {
+                    // The command entry point retries ACTION_START while the display socket
+                    // is not connected yet. Rebinding the exact same live Binder on every retry
+                    // repeatedly starts logcat readers and restarts MainActivity's connect loop.
+                    // Its existing 250 ms retry already handles a pending X connection.
+                    if (binder.equals(activeService)) {
+                        break;
+                    }
                     try {
                         Log.v("LorieApp", "Got new ACTION_START intent");
                         activity.connectToService(binder);
