@@ -110,6 +110,7 @@ case "$ACTION" in
       WESTON="$(command -v weston || true)"
     fi
     [[ -n "$WESTON" ]] || { echo "ERROR: weston not found; install it with pkg install weston." >&2; exit 127; }
+    command -v Xwayland >/dev/null 2>&1 || { echo "ERROR: Xwayland not found; install the Termux xwayland package." >&2; exit 127; }
     command -v xdpyinfo >/dev/null 2>&1 || { echo "ERROR: xdpyinfo is required for readiness checks (pkg install xorg-xdpyinfo)." >&2; exit 127; }
 
     read_session
@@ -129,6 +130,7 @@ case "$ACTION" in
 
     RUNTIME="$(mktemp -d "$RUNTIME_ROOT/xw11-wayland.XXXXXX")"
     chmod 700 "$RUNTIME"
+    : > "$log_file"
     SESSION_SOCKET="$SOCKET"
     WESTON_ARGS=(--renderer=pixman --shell=kiosk --xwayland "--socket=$SESSION_SOCKET" --no-config "--log=$log_file")
     if [[ "$BACKEND" == "x11" ]]; then
