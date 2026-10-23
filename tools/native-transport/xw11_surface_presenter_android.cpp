@@ -118,7 +118,10 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
 
     xw11_present_result result = XW11_PRESENT_OK;
     if (buffer.bits == nullptr || buffer.width != (int32_t)width ||
-        buffer.height != (int32_t)height || buffer.stride < (int32_t)width) {
+        buffer.height != (int32_t)height || buffer.stride < (int32_t)width ||
+        static_cast<size_t>(buffer.stride) > SIZE_MAX / 4u) {
+        // ANativeWindow_Buffer::stride is an int32 pixel count. On 32-bit
+        // ABIs, multiplying a malformed stride by four can overflow size_t.
         result = XW11_PRESENT_ERR_WINDOW_SIZE;
     } else {
         uint8_t *destination = static_cast<uint8_t *>(buffer.bits);
