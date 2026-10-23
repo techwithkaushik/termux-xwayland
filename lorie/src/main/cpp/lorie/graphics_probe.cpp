@@ -77,7 +77,8 @@ Java_com_termux_x11_NativeGraphicsProbe_probeEglCapabilities(JNIEnv *env,
 
     const char *egl_extensions = eglQueryString(display, EGL_EXTENSIONS);
     append_line(report, sizeof(report), "EGL vendor", eglQueryString(display, EGL_VENDOR));
-    append_line(report, sizeof(report), "EGL extensions", egl_extensions);
+    append_line(report, sizeof(report), "EGL extensions",
+                egl_extensions != nullptr ? "queried; selected capabilities below" : "(unavailable)");
     append_capability(report, sizeof(report), "EGL_ANDROID_image_native_buffer",
                       has_extension(egl_extensions, "EGL_ANDROID_image_native_buffer"));
     append_capability(report, sizeof(report), "EGL_ANDROID_native_fence_sync",
