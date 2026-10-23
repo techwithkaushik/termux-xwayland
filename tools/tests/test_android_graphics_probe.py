@@ -88,6 +88,10 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn("Repeated surfaceChanged callbacks", presenter_cpp)
         self.assertIn("XW11_PRESENT_ERR_STALE_ATTACH", presenter_cpp)
         self.assertIn("XW11_PRESENT_ERR_STALE_ATTACH", presenter_header)
+        # Pixel stride is multiplied by four for RGBA8888; guard size_t overflow
+        # explicitly because the target device uses a 32-bit ARM userspace.
+        self.assertIn("static_cast<size_t>(buffer.stride) > SIZE_MAX / 4u", presenter_cpp)
+        self.assertIn("malformed stride by four can overflow size_t", presenter_cpp)
         self.assertIn('ACTIVITY="${XW11_ACTIVITY:-com.termux.x11.NativePresenterProbeActivity}"', self.presenter_runner)
         self.assertIn("PASS: native ANativeWindow CPU-copy frame posted", self.presenter_runner)
         self.assertIn("no Weston frame producer is connected", self.presenter_runner)
