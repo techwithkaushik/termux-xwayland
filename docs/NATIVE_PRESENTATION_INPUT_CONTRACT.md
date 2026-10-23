@@ -32,9 +32,11 @@ A shared-memory pixel buffer may be used as a separately named diagnostic fallba
 The transport-neutral framing primitive lives in `tools/native-transport/`:
 - `xw11_transport_protocol.h/.cpp` defines a 28-byte, big-endian v1 header with explicit magic, version, type, flags, payload length, session ID, and sequence ID.
 - `tests/test_protocol.cpp` covers round-trip encoding/decoding and rejects invalid magic, unsupported versions/types, nonzero reserved flags, oversized payloads, zero session/sequence IDs, and truncated headers.
-- The XWayland preflight workflow compiles this code with C++17 warnings-as-errors and runs the test executable.
+- `xw11_transport_io.h/.cpp` adds bounded stream-socket frame send/receive with partial-I/O and EINTR handling, payload-capacity checks, and explicit EOF/system/protocol errors. It does not pass file descriptors.
+- `tests/test_transport_io.cpp` exercises payload round trips, empty frames, too-small receive buffers, and truncated connections using a local Unix socket pair.
+- The XWayland preflight workflow compiles both test executables with C++17 warnings-as-errors and runs them.
 
-This is deliberately only a protocol primitive. It is not connected to Android JNI, Weston, native buffers, FD passing, or XWayland process startup. Do not describe the frame transport as integrated until those producer/consumer paths and device tests exist.
+This is still a standalone transport module. It is not connected to Android JNI, Weston, native buffers, FD passing, or XWayland process startup. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The current module does not enforce per-session sequence monotonicity. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
 
 ## Control protocol requirements
 
