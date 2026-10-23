@@ -232,3 +232,9 @@ This view is deliberately **not added to the current Activity layout**: with no 
 
 This queue is deliberately bounded and non-blocking at the API boundary. Callers must handle `ERR_FULL`, avoid losing matching key/button release events, and reset or filter events by Surface generation when a view is destroyed. It is a reusable queue primitive, not evidence that Android input currently reaches Weston or XWayland.
 
+## Framed input transport adapter (implemented; caller and Weston receiver pending)
+
+`xw11_input_transport.h/.cpp` bridges one validated input-event payload to the versioned XW11 stream protocol. It serializes the fixed-size event, wraps it as `XW11_MSG_INPUT_EVENT`, attaches the negotiated nonzero session ID and monotonically increasing sequence ID, and sends the complete frame through the partial-I/O-safe socket helper. Sequence values advance only after a successful send; zero and exhausted sequence state are rejected. The API contract requires a single dedicated writer per socket so concurrent writers cannot interleave frame bytes.
+
+CI has a socket-pair round-trip test that validates message type, session, sequence, payload and event values. The adapter and its protocol/I/O dependencies are included in the native Xlorie source list for compile coverage. **It is not yet called by Android event callbacks or a running transport thread, and there is no Weston-side receiver/injector.** A successful socket-pair test proves wire framing only, not live input delivery.
+
