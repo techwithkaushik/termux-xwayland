@@ -76,6 +76,21 @@ bash tools/probe-android-buffer-transport.sh "$HOME/xw11-device-probe.txt"
 
 It records Android API/ABI hints, graphics device nodes, relevant EGL/GLES/Vulkan/DRM/gralloc library paths, available diagnostic tools, and a filtered SurfaceFlinger graphics summary. It does not change system settings or dump the full environment. The report is evidence for selecting follow-up tests only: device-node/library presence or EGL extension strings do not prove that the Weston producer and Android consumer can import the same buffers with correct fences. The probe must be followed by a real buffer import/export and synchronization test before the transport is selected.
 
+## Redmi 9 Active probe findings (2026-10-23)
+
+The first successful on-device report was collected from Termux on Android 10 / API 29, kernel 4.9.190, ABI `armeabi-v7a`, MediaTek platform `mt6765`.
+
+Observed:
+- `/dev/ion` exists, while `/dev/dri`, `/dev/dma_heap`, `/dev/kgsl-3d0`, `/dev/mali0`, and `/dev/pvr` were not visible in the Termux shell.
+- Vendor graphics components include `/vendor/lib/egl/libEGL_mtk.so`, `libGLESv2_mtk.so`, `/vendor/lib/hw/gralloc.mt6765.so`, and the Android graphics allocator/mapper HAL libraries.
+- Termux has Weston, Xwayland, Mesa EGL/GLES/GBM and Wayland libraries. The optional `eglinfo` and `vulkaninfo` diagnostics are not installed.
+- `dumpsys` is unavailable in the ordinary Termux shell, so this run did not capture SurfaceFlinger renderer details.
+
+Interpretation and next probe:
+- These observations are consistent with a vendor-managed Android graphics stack, but do not prove that Termux can allocate, export, import, or synchronize shareable buffers. In particular, `/dev/ion` visibility alone does not establish a usable zero-copy path.
+- Do not hard-code a DRM/GBM or DMA-BUF path based on this report. Next, inspect the actual Android host's `Surface`/EGL capability from the app process and test buffer allocation/import plus acquire/release synchronization on-device. Keep the transport behind an adapter so an unsupported path fails clearly.
+- The report is diagnostic evidence, not an acceptance test. No rendering/input integration or X.Org removal is implied by these findings.
+
 ## Test gates before enabling the new path
 
 ### Host/unit tests
