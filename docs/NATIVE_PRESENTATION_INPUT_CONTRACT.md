@@ -238,3 +238,8 @@ This queue is deliberately bounded and non-blocking at the API boundary. Callers
 
 CI has a socket-pair round-trip test that validates message type, session, sequence, payload and event values. The adapter and its protocol/I/O dependencies are included in the native Xlorie source list for compile coverage. **It is not yet called by Android event callbacks or a running transport thread, and there is no Weston-side receiver/injector.** A successful socket-pair test proves wire framing only, not live input delivery.
 
+## Input frame receiver (implemented; compositor injection pending)
+
+`xw11_input_receiver.h/.cpp` now receives one framed input message, enforces the expected session, checks the message type and exact fixed-size payload, decodes the event, and applies the per-connection monotonic sequence tracker before returning the event to its caller. The receiver rejects replayed/out-of-order frames and does not publish a partially decoded event. Its host test covers a valid event, duplicate sequence, wrong session, and wrong message type; CI compiles it with warnings-as-errors.
+
+This is a protocol endpoint primitive only. It is not yet attached to a listening socket in Weston, does not create Wayland seats/devices, and does not inject pointer, touch, keyboard, or focus events into the compositor. The Android event callbacks are also not connected to the queue/transport. The receiver's caller must close the connection after a framing/validation error because a stream may no longer be safely resynchronized. Do not describe input forwarding as end-to-end until the Android producer, socket lifecycle, receiver, and compositor input adapter are connected and tested together.
