@@ -293,7 +293,8 @@ add_library(Xlorie SHARED
         "lorie/workqueue.cpp"
         "../../../../tools/native-transport/xw11_surface_generation.cpp"
         "../../../../tools/native-transport/xw11_buffer_descriptor.cpp"
-        "../../../../tools/native-transport/xw11_buffer_registry.cpp")
+        "../../../../tools/native-transport/xw11_buffer_registry.cpp"
+        "../../../../tools/native-transport/xw11_input_transform.cpp")
 target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include" "../../../../tools/native-transport")
 # -nostdlib++ keeps this shared object free of any libc++ dependency; renderer.cpp, activity.cpp,
 # and cmdentrypoint.cpp are restricted to a runtime-free subset of C++ (no exceptions, no RTTI, no
