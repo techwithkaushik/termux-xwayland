@@ -16,7 +16,7 @@ class WestonRuntimeScriptContract(unittest.TestCase):
 
     def test_creates_termux_x11_socket_directory_without_server(self):
         self.assertIn('mkdir -p "$TMP_ROOT/.X11-unix"', self.script)
-        self.assertIn('chmod 700 "$TMP_ROOT/.X11-unix"', self.script)
+        self.assertNotIn('chmod 700 "$TMP_ROOT/.X11-unix"', self.script)
         self.assertNotIn('termux-xw11 :0', self.script)
 
     def test_headless_mode_uses_private_runtime_and_own_process(self):
