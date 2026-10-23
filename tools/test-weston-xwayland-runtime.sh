@@ -47,11 +47,10 @@ if [[ "$MODE" == "nested" ]]; then
 fi
 
 mkdir -p "$LOG_ROOT"
-# XWayland binds its Unix-domain X11 socket below Termux's TMPDIR.
-# A clean Termux session may not have this directory until :0 was started,
-# so create it explicitly; the test must not depend on a pre-existing X server.
+# XWayland binds its Unix-domain X11 socket below TMPDIR. Create the directory
+# if absent, but never chmod a shared/system-owned directory such as /tmp/.X11-unix
+# on Linux CI. The private XDG_RUNTIME_DIR below remains mode 0700.
 mkdir -p "$TMP_ROOT/.X11-unix"
-chmod 700 "$TMP_ROOT/.X11-unix"
 RUNTIME="$(mktemp -d "$TMP_ROOT/xw11-acceptance.XXXXXX")"
 chmod 700 "$RUNTIME"
 LOG="$LOG_ROOT/weston-xwayland-acceptance-$(basename "$RUNTIME").log"
