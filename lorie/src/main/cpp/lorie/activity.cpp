@@ -18,6 +18,9 @@
 #include "lorie.h"
 #include "xw11_surface_generation.h"
 #include "xw11_surface_presenter_android.h"
+#include "xw11_input_dispatcher.h"
+#include "xw11_input_event.h"
+#include <mutex>
 
 #pragma clang diagnostic ignored "-Wunknown-pragmas"
 #pragma ide diagnostic ignored "cppcoreguidelines-narrowing-conversions"
@@ -25,6 +28,11 @@
 #define log(prio, ...) __android_log_print(ANDROID_LOG_ ## prio, "LorieNative", __VA_ARGS__)
 // `r` must be a LorieViewResources* — the connection fd is per-instance state, not a process global.
 #define sendEvent(r, ...) do { if ((r) && (r)->connFd != -1) { lorieEvent e = { __VA_ARGS__ }; write((r)->connFd, &e, sizeof(e)); } } while (0)
+
+// Experimental XW11 input transport; disabled until a connected session socket is supplied.
+static std::mutex xw11InputMutex;
+static xw11_input_dispatcher *xw11InputDispatcher = nullptr;
+static uint64_t xw11InputGeneration = 0;
 
 bool lorieDebugEnabled = false;
 
@@ -618,6 +626,54 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
             {"nativeDetachSurface", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
                 if (generation > 0)
                     xw11_presenter_clear_window((uint64_t) generation);
+            }},
+            {"nativeAttachInputTransport", "(IJJ)I", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint {
+                if (fd < 0 || sessionId <= 0 || (uint64_t) sessionId > UINT32_MAX || generation <= 0)
+                    return (jint) XW11_INPUT_DISPATCHER_ERR_ARGUMENT;
+                int ownedFd = dup(fd);
+                if (ownedFd < 0) return (jint) XW11_INPUT_DISPATCHER_ERR_TRANSPORT;
+                xw11_input_dispatcher *next = xw11_input_dispatcher_create(ownedFd, (uint32_t) sessionId);
+                if (!next) {
+                    close(ownedFd);
+                    return (jint) XW11_INPUT_DISPATCHER_ERR_MEMORY;
+                }
+                xw11_input_dispatcher_result started = xw11_input_dispatcher_start(next);
+                if (started != XW11_INPUT_DISPATCHER_OK) {
+                    xw11_input_dispatcher_destroy(next);
+                    return (jint) started;
+                }
+                std::lock_guard<std::mutex> lock(xw11InputMutex);
+                if (xw11InputDispatcher) xw11_input_dispatcher_destroy(xw11InputDispatcher);
+                xw11InputDispatcher = next;
+                xw11InputGeneration = (uint64_t) generation;
+                return 0;
+            }},
+            {"nativeSubmitInputEvent", "(JJIIIIIII)Z", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation, jlong timeNs, jint type, jint action, jint code, jint x, jint y, jint modifiers, jint deviceId) -> jboolean {
+                if (generation <= 0 || timeNs < 0) return JNI_FALSE;
+                xw11_input_event event = {};
+                event.surface_generation = (uint64_t) generation;
+                event.monotonic_time_ns = (uint64_t) timeNs;
+                event.type = (uint16_t) type;
+                event.action = (uint16_t) action;
+                event.code = (uint32_t) code;
+                event.x = (int32_t) x;
+                event.y = (int32_t) y;
+                event.modifiers = (uint32_t) modifiers;
+                event.device_id = (uint32_t) deviceId;
+                std::lock_guard<std::mutex> lock(xw11InputMutex);
+                if (!xw11InputDispatcher || xw11InputGeneration != (uint64_t) generation)
+                    return JNI_FALSE;
+                return xw11_input_dispatcher_submit(xw11InputDispatcher, &event) == XW11_INPUT_DISPATCHER_OK
+                        ? JNI_TRUE : JNI_FALSE;
+            }},
+            {"nativeDetachInputTransport", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
+                if (generation <= 0) return;
+                std::lock_guard<std::mutex> lock(xw11InputMutex);
+                if (xw11InputDispatcher && xw11InputGeneration == (uint64_t) generation) {
+                    xw11_input_dispatcher_destroy(xw11InputDispatcher);
+                    xw11InputDispatcher = nullptr;
+                    xw11InputGeneration = 0;
+                }
             }},
     };
     jclass xw11SurfaceClass = env->FindClass("com/termux/x11/Xw11NativeSurfaceView");
