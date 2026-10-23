@@ -666,7 +666,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 event.y = (int32_t) y;
                 event.modifiers = (uint32_t) modifiers;
                 event.device_id = (uint32_t) deviceId;
-                std::lock_guard<std::mutex> lock(xw11InputMutex);
+                Xw11InputLock lock;
                 if (!xw11InputDispatcher || xw11InputGeneration != (uint64_t) generation)
                     return JNI_FALSE;
                 return xw11_input_dispatcher_submit(xw11InputDispatcher, &event) == XW11_INPUT_DISPATCHER_OK
@@ -674,7 +674,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
             }},
             {"nativeDetachInputTransport", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
                 if (generation <= 0) return;
-                std::lock_guard<std::mutex> lock(xw11InputMutex);
+                Xw11InputLock lock;
                 if (xw11InputDispatcher && xw11InputGeneration == (uint64_t) generation) {
                     xw11_input_dispatcher_destroy(xw11InputDispatcher);
                     xw11InputDispatcher = nullptr;
