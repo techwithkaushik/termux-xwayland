@@ -84,6 +84,12 @@ The manual workflow `.github/workflows/xwayland-termux-build.yml` uses the offic
 
 This package workflow is a separate verification path: it validates the upstream Termux recipe's Android cross-build, but it does not yet populate the custom Meson staging prefix used by `tools/build-xwayland-android.sh`, nor does it integrate the package into the app. A successful package build is not a device rendering/input test.
 
+## Experimental Termux session supervisor
+
+The companion package now includes `termux-xw11-wayland`, a separate process supervisor for Weston and its managed upstream XWayland instance. It supports `start`, `status`, and `stop`; defaults to a headless compositor; offers `start --nested` only for diagnostics; verifies the Wayland socket and XWayland X11 readiness; and does not start a desktop environment. Its stop path only signals a recorded process after checking that its command line identifies Weston.
+
+This is an isolated runtime-management step, not the backend replacement itself. It does not connect Weston buffers to the Android app's `Surface`, forward Android touch/pointer/keyboard events into the new compositor, or change the default `termux-xw11 :0` path. The existing Lorie/X.Org session remains untouched. The supervisor and package contents have regression checks in CI; actual Termux execution and Android device presentation remain to be verified.
+
 ## Migration stages
 
 ### Stage 1 — establish a genuine upstream build
