@@ -67,9 +67,9 @@ jobs:
             exit 2
           fi
           if [[ "$FORCE_DEPENDENCIES" == "true" ]]; then
-            ./scripts/run-docker.sh ./build-package.sh -a "$TARGET_ARCH" xwayland
+            ./scripts/run-docker.sh -d ./build-package.sh -a "$TARGET_ARCH" xwayland
           else
-            ./scripts/run-docker.sh ./build-package.sh -I -a "$TARGET_ARCH" xwayland
+            ./scripts/run-docker.sh -d ./build-package.sh -I -C -a "$TARGET_ARCH" xwayland
           fi
           mapfile -t packages < <(find output -maxdepth 1 -type f -name 'xwayland_*.deb' -print)
           if [[ "${#packages[@]}" -ne 1 ]]; then
