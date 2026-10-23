@@ -43,7 +43,7 @@ run_if_available() {
     done
 
     section "Relevant libraries"
-    for root in /system/lib /system/lib64 /vendor/lib /vendor/lib64 "$PREFIX/lib"; do
+    for root in /system/lib /system/lib64 /vendor/lib /vendor/lib64 "${PREFIX:-}/lib"; do
         [[ -d "$root" ]] || continue
         printf '-- %s --\n' "$root"
         find "$root" -maxdepth 2 -type f \( \
