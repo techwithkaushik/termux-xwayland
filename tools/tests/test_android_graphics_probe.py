@@ -57,7 +57,11 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn('android:name=".NativePresenterProbeActivity"', self.manifest)
         self.assertIn("Xw11NativeSurfaceView(this)", self.presenter_activity)
         self.assertIn("MAX_TEST_PIXELS = 4 * 1024 * 1024", self.presenter_activity)
-        self.assertIn("presentRgbaFrame(pixels, width, height, stride, generation)", self.presenter_activity)
+        # Allow line wrapping and the captured dimensions used by the worker thread.
+        self.assertRegex(
+            self.presenter_activity,
+            r"presentRgbaFrame\(\s*pixels,\s*(?:width|frameWidth),\s*(?:height|frameHeight),\s*stride,\s*generation\s*\)",
+        )
         self.assertIn("generationForDiagnostics()", self.presenter_activity)
         self.assertIn("long generationForDiagnostics()", self.presenter_view)
         self.assertIn("nativePresentRgbaFrame", self.presenter_view)
