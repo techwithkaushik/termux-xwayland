@@ -50,7 +50,7 @@ run_if_available() {
             -iname '*EGL*' -o -iname '*GLES*' -o -iname '*vulkan*' -o \
             -iname '*gralloc*' -o -iname '*hardware*' -o -iname '*drm*' -o \
             -iname '*gbm*' -o -iname '*wayland*' \
-        \) -print 2>/dev/null | sed -n '1,120p'
+        \) -print 2>/dev/null | sed -n '1,120p' || true
     done
 
     section "Available diagnostic tools"
