@@ -295,7 +295,9 @@ public class LorieView extends SurfaceView implements InputStub {
         }
     };
     private final SurfaceHolder.Callback mSurfaceCallback = new SurfaceHolder.Callback() {
-        @Override public void surfaceCreated(@NonNull SurfaceHolder holder) {}
+        @Override public void surfaceCreated(@NonNull SurfaceHolder holder) {
+            LorieView.this.surfaceCreated(mNativeContext);
+        }
 
         @Override public void surfaceChanged(@NonNull SurfaceHolder holder, int f, int width, int height) {
             LorieView.this.surfaceChanged(mNativeContext, holder.getSurface());
@@ -701,6 +703,7 @@ public class LorieView extends SurfaceView implements InputStub {
 
     @FastNative private native long nativeInit();
     @FastNative private native void nativeDestroy(long ptr);
+    @FastNative private native void surfaceCreated(long ptr);
     @FastNative private native void surfaceChanged(long ptr, Surface surface);
     @FastNative private native void setFiltering(long ptr, int filtering);
     @FastNative private native void setClipboardSyncEnabled(long ptr, boolean enabled, boolean ignored);
