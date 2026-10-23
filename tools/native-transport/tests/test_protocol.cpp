@@ -52,6 +52,7 @@ int main(void) {
     assert(xw11_encode_header(&input, bytes, sizeof(bytes)) == XW11_PROTOCOL_ERR_SEQUENCE);
 
     xw11_sequence_tracker tracker = {0, 0};
+    input = valid_header(); /* Use a valid frame to isolate the unset-session check. */
     assert(xw11_sequence_tracker_accept(&tracker, &input) == XW11_PROTOCOL_ERR_SESSION);
     assert(xw11_sequence_tracker_reset(&tracker, 17) == XW11_PROTOCOL_OK);
     input = valid_header();
