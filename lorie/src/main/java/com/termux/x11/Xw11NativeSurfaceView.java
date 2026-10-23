@@ -66,6 +66,11 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         generation = allocateGeneration();
     }
 
+    /** Package-private generation access for the isolated presenter diagnostic only. */
+    long generationForDiagnostics() {
+        return generation;
+    }
+
     @Override
     public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
         final long current = generation;
