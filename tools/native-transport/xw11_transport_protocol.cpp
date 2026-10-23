@@ -57,15 +57,14 @@ xw11_protocol_error xw11_decode_header(const uint8_t *bytes, size_t size,
     if (memcmp(bytes, XW11_PROTOCOL_MAGIC, 4) != 0)
         return XW11_PROTOCOL_ERR_MAGIC;
 
-    xw11_frame_header h = {
-        .major = bytes[4],
-        .minor = bytes[5],
-        .type = read_be16(bytes + 6),
-        .flags = read_be32(bytes + 8),
-        .payload_length = read_be32(bytes + 12),
-        .session_id = read_be32(bytes + 16),
-        .sequence_id = read_be64(bytes + 20)
-    };
+    xw11_frame_header h;
+    h.major = bytes[4];
+    h.minor = bytes[5];
+    h.type = read_be16(bytes + 6);
+    h.flags = read_be32(bytes + 8);
+    h.payload_length = read_be32(bytes + 12);
+    h.session_id = read_be32(bytes + 16);
+    h.sequence_id = read_be64(bytes + 20);
     xw11_protocol_error result = validate(&h);
     if (result != XW11_PROTOCOL_OK)
         return result;
