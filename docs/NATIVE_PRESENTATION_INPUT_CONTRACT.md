@@ -1,6 +1,6 @@
 # Native presentation/input transport contract (draft)
 
-Status: design contract only. No producer/consumer transport is wired into the APK yet.
+Status: partial implementation. A bounded CPU-copy Android `ANativeWindow` presenter now exists in `tools/native-transport/xw11_surface_presenter_android.{h,cpp}` and is added to the Xlorie native build for compile coverage. It is not called by the app, is not connected to a Weston frame producer, and must not share a Surface concurrently with the existing EGL renderer. Input forwarding to Weston is not implemented. This is not yet an end-to-end presentation/input bridge.
 
 ## Boundary and modules
 
@@ -38,6 +38,18 @@ The transport-neutral framing primitive lives in `tools/native-transport/`:
 - The XWayland preflight workflow compiles all three native transport test executables with C++17 warnings-as-errors and runs them.
 
 The control-frame transport remains standalone: it is not connected to Weston, Android/gralloc buffers, fences, or XWayland process startup. Passing an FD successfully does not prove that the FD represents an importable graphics buffer. A too-small receive buffer or framing error requires closing the stream because payload bytes may remain unread. The protocol module exposes a per-connection sequence tracker, but it is not wired into an Android/Weston producer or consumer. Do not describe the frame transport as integrated until producer/consumer paths and device tests exist.
+
+## Experimental Android Surface presenter (partial implementation)
+
+The native helper `xw11_presenter_set_window`, `xw11_presenter_present_rgba8888`, and `xw11_presenter_clear_window` provide a first consumer-side implementation:
+- owns an explicit `ANativeWindow` reference and generation;
+- rejects stale generations, invalid dimensions, invalid source strides, and frames above a bounded memory budget;
+- copies RGBA8888 rows into a locked Android window buffer and posts the buffer;
+- serializes window replacement, frame posting, and teardown under a native mutex.
+
+This is an intentionally CPU-copy diagnostic path, not zero-copy. It is compiled into the native library, but no JNI entry point or dedicated Wayland `SurfaceView` calls it yet. The current `LorieView` Surface is already owned by the legacy EGL renderer, so wiring this presenter to that same Surface would create competing producers and is explicitly prohibited. The next integration must add a separate Surface owner or a controlled renderer-mode switch before a Weston frame producer is connected.
+
+Input is still not forwarded to Weston. Do not assume the generic virtual-keyboard/pointer protocols are available: verify the actual Weston build's advertised globals first. The Android event adapter must preserve key/button down-up transitions, map coordinates using the active surface generation, and enqueue events off the UI thread to a compositor-side input injector. If the selected Weston build has no authorized virtual-input protocol, add and package a narrowly scoped Weston module/protocol rather than silently injecting into the legacy X server.
 
 ## Surface generation guard
 
