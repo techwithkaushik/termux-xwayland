@@ -71,6 +71,9 @@ jobs:
           bash -n tools/probe-android-buffer-transport.sh
           bash -n tools/test-weston-xwayland-runtime.sh
           bash -n shell-loader/scripts/termux-xw11-wayland.in
+          grep -Fq 'LorieView.this.surfaceCreated(mNativeContext)' lorie/src/main/java/com/termux/x11/LorieView.java
+          grep -Fq '{"surfaceCreated", "(J)V"' lorie/src/main/cpp/lorie/activity.cpp
+          grep -Fq 'xw11_surface_generation.cpp' lorie/src/main/cpp/recipes/xserver.cmake
           bash tools/build-xwayland-android.sh --help
           python3 -m py_compile tools/generate-android-meson-cross-file.py tools/check-xwayland-android-prefix.py tools/audit-xwayland-android-stage.py tools/tests/test_generate_android_meson_cross_file.py tools/tests/test_check_xwayland_android_prefix.py tools/tests/test_audit_xwayland_android_stage.py tools/tests/test_android_graphics_probe.py
           python3 -m unittest discover -s tools/tests -v
