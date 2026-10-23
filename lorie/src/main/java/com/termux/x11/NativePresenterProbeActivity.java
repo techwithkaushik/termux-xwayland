@@ -62,42 +62,56 @@ public final class NativePresenterProbeActivity extends Activity
             return;
         }
 
-        final int stride = width * 4;
-        final ByteBuffer pixels;
-        try {
-            pixels = ByteBuffer.allocateDirect(Math.multiplyExact(stride, height));
-        } catch (RuntimeException error) {
-            fail("Frame allocation failed: " + error);
-            return;
-        }
-
-        // A moving-free color-bar pattern makes orientation/stride errors obvious.
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int band = (int) ((long) x * 4 / width);
-                int r = band == 0 || band == 3 ? 220 : 24;
-                int g = band == 1 || band == 3 ? 200 : 36;
-                int b = band == 2 ? 240 : 64;
-                pixels.put((byte) r);
-                pixels.put((byte) g);
-                pixels.put((byte) b);
-                pixels.put((byte) 255);
-            }
-        }
-        pixels.flip();
-
-        boolean passed = surfaceView.presentRgbaFrame(pixels, width, height, stride, generation);
+        // Surface locking/copying and frame preparation must not block Android's UI thread.
         finished = true;
-        if (passed) {
-            String message = "PASS: native ANativeWindow CPU-copy frame posted\n"
-                    + "Dimensions: " + width + " × " + height
-                    + "\nGeneration: " + generation
-                    + "\nThis is not a Weston frame or zero-copy test.";
+        status.setText("Submitting bounded synthetic frame off the UI thread…");
+        final int frameWidth = width;
+        final int frameHeight = height;
+        Thread worker = new Thread(() -> {
+            final int stride = frameWidth * 4;
+            final ByteBuffer pixels;
+            try {
+                pixels = ByteBuffer.allocateDirect(Math.multiplyExact(stride, frameHeight));
+            } catch (RuntimeException error) {
+                postResult("FAIL: frame allocation failed: " + error, false);
+                return;
+            }
+
+            for (int y = 0; y < frameHeight; y++) {
+                for (int x = 0; x < frameWidth; x++) {
+                    int band = (int) ((long) x * 4 / frameWidth);
+                    int r = band == 0 || band == 3 ? 220 : 24;
+                    int g = band == 1 || band == 3 ? 200 : 36;
+                    int b = band == 2 ? 240 : 64;
+                    pixels.put((byte) r);
+                    pixels.put((byte) g);
+                    pixels.put((byte) b);
+                    pixels.put((byte) 255);
+                }
+            }
+            pixels.flip();
+
+            boolean passed = surfaceView.presentRgbaFrame(
+                    pixels, frameWidth, frameHeight, stride, generation);
+            if (passed) {
+                String message = "PASS: native ANativeWindow CPU-copy frame posted"
+                        + " Dimensions: " + frameWidth + " × " + frameHeight
+                        + " Generation: " + generation
+                        + " This is not a Weston frame or zero-copy test.";
+                postResult(message, true);
+            } else {
+                postResult("FAIL: native presenter rejected the frame; inspect XW11Surface logs.", false);
+            }
+        }, "XW11-Presenter-Probe");
+        worker.start();
+    }
+
+    private void postResult(String message, boolean passed) {
+        runOnUiThread(() -> {
             status.setText(message);
-            Log.i(TAG, message.replace('\n', ' '));
-        } else {
-            fail("Native presenter rejected the test frame; inspect XW11Surface logs.");
-        }
+            if (passed) Log.i(TAG, message);
+            else Log.e(TAG, message);
+        });
     }
 
     private void fail(String message) {
