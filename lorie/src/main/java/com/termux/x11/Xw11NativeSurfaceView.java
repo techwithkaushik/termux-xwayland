@@ -187,7 +187,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         if (sizeChanged) detachOutputSafely(current);
         int result = attachSurfaceSafely(surface, current);
         if (result != 0) Log.e(TAG, "Native Surface attach failed: " + result);
-        else if (outputTransport != null && outputSessionId > 0) {
+        else if (sizeChanged && outputTransport != null && outputSessionId > 0) {
             int outputResult = attachOutputSafely(outputTransport.getFd(), outputSessionId, current);
             if (outputResult != 0)
                 Log.e(TAG, "Native output receiver restart failed after Surface resize: " + outputResult);
