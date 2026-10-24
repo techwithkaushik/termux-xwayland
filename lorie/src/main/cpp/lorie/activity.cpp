@@ -116,6 +116,26 @@ static void *xw11OutputWorker(void *) {
                 frame.width, frame.height,
                 (unsigned long long)frame.sequence_id,
                 (unsigned long long)generation);
+            /*
+             * The Binder-FD producer waits for this acknowledgement before it
+             * reports frame_sent=1. This makes supervisor readiness mean that
+             * Android actually presented the frame, not merely that socket
+             * buffering accepted it.
+             */
+            static const char presentedAck[] = "XW11PRESENTED\\n";
+            size_t ackOffset = 0;
+            while (ackOffset < sizeof(presentedAck) - 1) {
+                ssize_t written = send(fd, presentedAck + ackOffset,
+                                       sizeof(presentedAck) - 1 - ackOffset,
+                                       MSG_NOSIGNAL);
+                if (written < 0 && errno == EINTR) continue;
+                if (written <= 0) {
+                    log(WARN, "XW11 first-frame acknowledgement failed: %s",
+                        strerror(errno));
+                    break;
+                }
+                ackOffset += (size_t)written;
+            }
         }
     }
     free(pixels);
