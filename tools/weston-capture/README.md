@@ -31,10 +31,14 @@ descriptor form remains available:
 xw11-weston-capture 7 1234 1 --continuous
 ```
 
-The Android app consumes the authentication line before handing the same socket to the
-native frame receiver. Native validates session, surface generation, frame metadata and
-sequence numbers, converts XRGB/ARGB to RGBA, and presents to the dedicated MainActivity
+The Android app consumes the authentication line, makes its output-only Surface visible,
+and replies with its live generation (`XW11READY`). The producer uses that negotiated
+value before sending frames. Native validates session, surface generation, frame metadata
+and sequence numbers, converts XRGB/ARGB to RGBA, and presents to the dedicated MainActivity
 Surface. The existing Lorie input/touch/keyboard path is separate.
+
+On-device convenience build: `bash tools/build-weston-capture-termux.sh` (run from this
+repository in Termux after installing the required CMake/pkg-config/Wayland development tools).
 
 ## Safety and limitations
 
