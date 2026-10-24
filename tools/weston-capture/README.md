@@ -1,9 +1,11 @@
 # Weston output capture helper
 
-This directory contains a one-shot diagnostic client for Weston 16's privileged
+This directory contains a diagnostic client for Weston 16's privileged
 `weston_capture_v1` protocol. It captures the first advertised `wl_output`
 frame into a compositor-writable `wl_shm` buffer and sends the raw pixels over
 an already-connected XW11 stream socket using the bounded output-frame protocol.
+One-shot mode is the default; `--continuous` requests and sends successive
+frames over the same socket with a strictly increasing sequence number.
 
 ## Build
 
@@ -24,7 +26,7 @@ desktop. Arguments are the connected socket FD, non-zero XW11 session ID and
 non-zero Android Surface generation:
 
 ```sh
-xw11-weston-capture 7 1234 2
+xw11-weston-capture 7 1234 2\n# For continuous capture until the peer disconnects:\nxw11-weston-capture 7 1234 2 --continuous
 ```
 
 The socket peer must use `xw11_output_stream_receive()` with the same session
@@ -33,7 +35,7 @@ and generation, then convert the captured DRM XRGB8888/ARGB8888 bytes through
 
 ## Safety and limitations
 
-- Captures one frame only; it is not a frame-rate loop.
+- One-shot mode sends one frame; `--continuous` sends successive captures until capture fails or the socket disconnects.\n- Continuous mode uses one bounded SHM buffer and does not queue frames.
 - Fails explicitly if `weston_capture_v1` is absent or capture is denied.
 - Captures the first output advertised by the compositor.
 - Rejects dimensions above 8192 or 64 MiB before allocating shared memory.
