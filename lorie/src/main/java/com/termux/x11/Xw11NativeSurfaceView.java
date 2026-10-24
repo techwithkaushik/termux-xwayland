@@ -199,11 +199,15 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         // Surface resize: discard the old receiver before accepting new frames.
         if (sizeChanged) detachOutputSafely(current);
         int result = attachSurfaceSafely(surface, current);
-        if (result != 0) Log.e(TAG, "Native Surface attach failed: " + result);
-        else if (sizeChanged && outputTransport != null && outputSessionId > 0) {
+        if (result != 0) {
+            Log.e(TAG, "Native Surface attach failed: " + result);
+        } else if (outputTransport != null && outputSessionId > 0) {
+            // The output Surface may have been GONE when the launcher handed us
+            // its socket. Attach as soon as Surface lifecycle reaches a valid generation,
+            // and restart the receiver after a size change without touching input.
             int outputResult = attachOutputSafely(outputTransport.getFd(), outputSessionId, current);
             if (outputResult != 0)
-                Log.e(TAG, "Native output receiver restart failed after Surface resize: " + outputResult);
+                Log.e(TAG, "Native output receiver attach/restart failed: " + outputResult);
         }
     }
 
@@ -431,17 +435,20 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
      * Native duplicates the descriptor and consumes frames on a background thread.
      */
     synchronized boolean attachOutputTransport(@NonNull ParcelFileDescriptor connectedSocket, long sessionId) {
-        final long current = generation;
-        if (current == 0 || sessionId <= 0) return false;
+        if (sessionId <= 0) return false;
         ParcelFileDescriptor retained = null;
         try {
-            // Keep a private descriptor so a resize can restart the receiver.
+            // Retain the socket even when the view is still GONE and has no Surface
+            // generation. surfaceChanged() will start the native receiver once visible.
             retained = ParcelFileDescriptor.dup(connectedSocket.getFileDescriptor());
-            int result = attachOutputSafely(retained.getFd(), sessionId, current);
-            if (result != 0) {
-                Log.e(TAG, "Native output transport attach failed: " + result);
-                retained.close();
-                return false;
+            final long current = generation;
+            if (current != 0) {
+                int result = attachOutputSafely(retained.getFd(), sessionId, current);
+                if (result != 0) {
+                    Log.e(TAG, "Native output transport attach failed: " + result);
+                    retained.close();
+                    return false;
+                }
             }
             closeOutputTransport();
             outputTransport = retained;
