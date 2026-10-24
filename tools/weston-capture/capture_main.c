@@ -254,15 +254,24 @@ static void cleanup(struct app *a) {
 
 int main(int argc, char **argv) {
     int continuous = 0;
+    int wait_presented = 0;
     int connect_mode = argc >= 2 && strcmp(argv[1], "--connect") == 0;
     int expected_argc = connect_mode ? 6 : 4;
-    if (argc == expected_argc + 1 && strcmp(argv[argc - 1], "--continuous") == 0)
-        continuous = 1;
-    else if (argc != expected_argc) {
-        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous]\n"
-                        "   or: %s --connect ABSTRACT_SOCKET_NAME TOKEN SESSION_ID SURFACE_GENERATION [--continuous]\n",
+    if (argc < expected_argc) {
+        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous] [--wait-presented]\\n"
+                        "   or: %s --connect ABSTRACT_SOCKET_NAME TOKEN SESSION_ID SURFACE_GENERATION [--continuous] [--wait-presented]\\n",
                 argv[0], argv[0]);
         return 2;
+    }
+    for (int i = expected_argc; i < argc; ++i) {
+        if (strcmp(argv[i], "--continuous") == 0)
+            continuous = 1;
+        else if (strcmp(argv[i], "--wait-presented") == 0)
+            wait_presented = 1;
+        else {
+            fprintf(stderr, "ERROR: unknown capture option: %s\\n", argv[i]);
+            return 2;
+        }
     }
     char *end = NULL;
     int socket_fd = -1;
@@ -395,7 +404,32 @@ int main(int argc, char **argv) {
             break;
         }
         if (sequence == 1) {
-            fprintf(stderr, "frame_sent=1 dimensions=%ux%u generation=%llu\n",
+            if (wait_presented) {
+                static const char expectedAck[] = "XW11PRESENTED\\n";
+                struct pollfd acknowledgement = { .fd = (int)socket_fd, .events = POLLIN };
+                int ready;
+                do {
+                    ready = poll(&acknowledgement, 1, 10000);
+                } while (ready < 0 && errno == EINTR);
+                char receivedAck[sizeof(expectedAck) - 1];
+                size_t ackOffset = 0;
+                while (ready > 0 && ackOffset < sizeof(receivedAck)) {
+                    ssize_t count = read((int)socket_fd, receivedAck + ackOffset,
+                                         sizeof(receivedAck) - ackOffset);
+                    if (count < 0 && errno == EINTR) continue;
+                    if (count <= 0) break;
+                    ackOffset += (size_t)count;
+                }
+                if (ready <= 0 || ackOffset != sizeof(receivedAck) ||
+                    memcmp(receivedAck, expectedAck, sizeof(receivedAck)) != 0) {
+                    fprintf(stderr, "ERROR: Android Surface did not acknowledge first-frame presentation\\n");
+                    sent = XW11_OUTPUT_STREAM_ERR_TRANSPORT;
+                    break;
+                }
+                fprintf(stderr, "first_frame_presented=1 dimensions=%ux%u generation=%llu\\n",
+                        a.width, a.height, (unsigned long long)generation);
+            }
+            fprintf(stderr, "frame_sent=1 dimensions=%ux%u generation=%llu\\n",
                     a.width, a.height, (unsigned long long)generation);
             fflush(stderr);
         }
