@@ -37,6 +37,14 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     public static Context ctx;
     private final Intent intent = createIntent();
     private boolean broadcastPending;
+    private long brokerSessionId;
+    private final IXw11OutputBroker.Stub outputBroker = new IXw11OutputBroker.Stub() {
+        @Override public ParcelFileDescriptor getOutputConnection(long sessionId, long surfaceGeneration) {
+            if (sessionId <= 0 || sessionId != brokerSessionId || surfaceGeneration <= 0)
+                throw new IllegalArgumentException("Invalid XW11 output session or Surface generation");
+            return getXw11OutputConnection(sessionId, surfaceGeneration);
+        }
+    };
 
     /**
      * Command-line entry point.
