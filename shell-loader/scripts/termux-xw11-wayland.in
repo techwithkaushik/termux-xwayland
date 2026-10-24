@@ -261,7 +261,7 @@ case "$ACTION" in
     printf '%s\n' "$OUTPUT_SOCKET" > "$output_socket_file"
     printf '%s\n' "$OUTPUT_TOKEN" > "$output_token_file"
     chmod 600 "$output_socket_file" "$output_token_file"
-    ANDROID_COMPONENT="${XW11_ANDROID_COMPONENT:-com.termux.x11/.MainActivity}"
+    ANDROID_COMPONENT="${XW11_ANDROID_COMPONENT:-org.techwithkaushik.termuxxw11/com.termux.x11.MainActivity}"
     "$AM" start -n "$ANDROID_COMPONENT" \
       -a com.termux.x11.ACTION_XW11_OUTPUT \
       --es org.techwithkaushik.termuxxw11.OUTPUT_SOCKET "$OUTPUT_SOCKET" \
