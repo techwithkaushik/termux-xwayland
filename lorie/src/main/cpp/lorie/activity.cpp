@@ -19,6 +19,8 @@
 #include "xw11_surface_presenter_android.h"
 #include "xw11_input_dispatcher.h"
 #include "xw11_input_event.h"
+#include "xw11_output_stream.h"
+#include "xw11_output_frame.h"
 #include "lorie.h"
 
 #pragma clang diagnostic ignored "-Wunknown-pragmas"
@@ -34,6 +36,71 @@ static xw11_input_dispatcher *xw11InputDispatcher = nullptr;
 static uint64_t xw11InputGeneration = 0;
 // Prevent delayed Surface callbacks from replacing a newer input session.
 static uint64_t xw11LastInputGeneration = 0;
+
+/* Isolated experimental output receiver. It never touches LorieView's renderer. */
+static pthread_mutex_t xw11OutputMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t xw11OutputThread;
+static int xw11OutputFd = -1;
+static uint32_t xw11OutputSession = 0;
+static uint64_t xw11OutputGeneration = 0;
+static bool xw11OutputThreadCreated = false;
+static bool xw11OutputRunning = false;
+
+static void *xw11OutputWorker(void *) {
+    const int fd = xw11OutputFd;
+    const uint32_t session = xw11OutputSession;
+    const uint64_t generation = xw11OutputGeneration;
+    const size_t capacity = XW11_OUTPUT_FRAME_MAX_BYTES;
+    uint8_t *pixels = static_cast<uint8_t *>(malloc(capacity));
+    if (!pixels) {
+        log(ERROR, "XW11 output receiver: allocation failed");
+        return nullptr;
+    }
+    uint64_t lastSequence = 0;
+    while (true) {
+        pthread_mutex_lock(&xw11OutputMutex);
+        const bool running = xw11OutputRunning &&
+            xw11OutputGeneration == generation && xw11OutputFd == fd;
+        pthread_mutex_unlock(&xw11OutputMutex);
+        if (!running) break;
+
+        xw11_output_frame frame = {};
+        const xw11_output_stream_result received = xw11_output_stream_receive(
+            fd, session, generation, pixels, capacity, &frame);
+        if (received != XW11_OUTPUT_STREAM_OK) {
+            log(WARN, "XW11 output receiver stopped (transport result=%d)",
+                (int)received);
+            break;
+        }
+        if (frame.sequence_id <= lastSequence) {
+            log(ERROR, "XW11 output receiver rejected non-monotonic frame sequence");
+            break;
+        }
+        lastSequence = frame.sequence_id;
+
+        /* Convert BGRA memory from DRM XRGB/ARGB to RGBA in place. */
+        const size_t rowBytes = (size_t)frame.width * 4u;
+        for (uint32_t y = 0; y < frame.height; ++y) {
+            uint8_t *row = pixels + (size_t)y * frame.stride_bytes;
+            for (uint32_t x = 0; x < frame.width; ++x) {
+                uint8_t *p = row + (size_t)x * 4u;
+                const uint8_t blue = p[0];
+                p[0] = p[2];
+                p[2] = blue;
+                if (frame.fourcc == XW11_OUTPUT_FORMAT_XRGB8888) p[3] = 255;
+            }
+        }
+        const xw11_present_result presented = xw11_presenter_present_rgba8888(
+            generation, frame.width, frame.height, pixels, rowBytes);
+        if (presented != XW11_PRESENT_OK) {
+            log(WARN, "XW11 output frame not presented (result=%d)", (int)presented);
+            break;
+        }
+    }
+    free(pixels);
+    return nullptr;
+}
+
 
 struct Xw11InputLock {
     Xw11InputLock() { pthread_mutex_lock(&xw11InputMutex); }
@@ -658,6 +725,62 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
             {"nativeDetachSurface", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
                 if (generation > 0)
                     xw11_presenter_clear_window((uint64_t) generation);
+            }},
+            {"nativeAttachOutputTransport", "(IJJ)I", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint {
+                if (fd < 0 || sessionId <= 0 || (uint64_t) sessionId > UINT32_MAX || generation <= 0)
+                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                int socketType = 0;
+                socklen_t socketTypeLength = sizeof(socketType);
+                if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &socketType, &socketTypeLength) != 0 ||
+                    socketType != SOCK_STREAM)
+                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                struct sockaddr_storage peer = {};
+                socklen_t peerLength = sizeof(peer);
+                if (getpeername(fd, reinterpret_cast<struct sockaddr *>(&peer), &peerLength) != 0 ||
+                    peer.ss_family != AF_UNIX)
+                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                int ownedFd = dup(fd);
+                if (ownedFd < 0) return (jint) XW11_OUTPUT_STREAM_ERR_TRANSPORT;
+                pthread_mutex_lock(&xw11OutputMutex);
+                if (xw11OutputThreadCreated || xw11OutputRunning) {
+                    pthread_mutex_unlock(&xw11OutputMutex);
+                    close(ownedFd);
+                    return (jint) XW11_OUTPUT_STREAM_ERR_SESSION;
+                }
+                xw11OutputFd = ownedFd;
+                xw11OutputSession = (uint32_t)sessionId;
+                xw11OutputGeneration = (uint64_t)generation;
+                xw11OutputRunning = true;
+                const int created = pthread_create(&xw11OutputThread, nullptr, xw11OutputWorker, nullptr);
+                if (created != 0) {
+                    xw11OutputRunning = false;
+                    xw11OutputFd = -1;
+                    pthread_mutex_unlock(&xw11OutputMutex);
+                    close(ownedFd);
+                    return (jint) XW11_OUTPUT_STREAM_ERR_TRANSPORT;
+                }
+                xw11OutputThreadCreated = true;
+                pthread_mutex_unlock(&xw11OutputMutex);
+                return 0;
+            }},
+            {"nativeDetachOutputTransport", "(J)V", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation) {
+                pthread_mutex_lock(&xw11OutputMutex);
+                if (!xw11OutputThreadCreated || generation <= 0 ||
+                    xw11OutputGeneration != (uint64_t)generation) {
+                    pthread_mutex_unlock(&xw11OutputMutex);
+                    return;
+                }
+                const pthread_t thread = xw11OutputThread;
+                const int fd = xw11OutputFd;
+                xw11OutputRunning = false;
+                xw11OutputThreadCreated = false;
+                xw11OutputFd = -1;
+                xw11OutputGeneration = 0;
+                xw11OutputSession = 0;
+                pthread_mutex_unlock(&xw11OutputMutex);
+                if (fd >= 0) shutdown(fd, SHUT_RDWR);
+                pthread_join(thread, nullptr);
+                if (fd >= 0) close(fd);
             }},
             {"nativeAttachInputTransport", "(IJJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint {
                 if (fd < 0 || sessionId <= 0 || (uint64_t) sessionId > UINT32_MAX || generation <= 0)
