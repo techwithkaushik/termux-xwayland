@@ -297,7 +297,7 @@ case "$ACTION" in
     echo "OUTPUT_SOCKET=$OUTPUT_SOCKET"
     echo "CAPTURE_PID=$CAPTURE_PID"
     echo "capture_log=$capture_log"
-    echo "NOTE: output capture is connected over authenticated loopback TCP; confirm first-frame presentation in logcat; transport is abstract AF_UNIX IPC (no TCP)."
+    echo "NOTE: output capture is connected over authenticated abstract AF_UNIX IPC (no TCP); confirm first-frame presentation in logcat."
 
     ;;
 esac
