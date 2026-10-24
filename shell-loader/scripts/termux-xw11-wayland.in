@@ -282,8 +282,8 @@ case "$ACTION" in
       /system/bin/app_process -Xnoimage-dex2oat / --nice-name="termux-xw11-wayland-output-broker" \
       com.termux.x11.Loader --xw11-output-broker "$SESSION_ID" >> "$console_log" 2>&1 &
     BROKER_PID=$!
-    printf '%s\\n' "$BROKER_PID" > "$capture_pid_file"
-    printf '%s\\n' "$BROKER_PID" > "$broker_pid_file"
+    printf '%s\n' "$BROKER_PID" > "$capture_pid_file"
+    printf '%s\n' "$BROKER_PID" > "$broker_pid_file"
     frame_ready=0
     for _ in {1..40}; do
       if grep -q '^frame_sent=1 ' "$capture_log" 2>/dev/null; then
