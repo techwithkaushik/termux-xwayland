@@ -51,6 +51,9 @@ log_file="$STATE/weston.log"
 console_log="$STATE/weston-console.log"
 display_file="$STATE/display"
 socket_file="$STATE/socket"
+session_file="$STATE/session-id"
+generation_file="$STATE/surface-generation"
+transport_dir_file="$STATE/transport-dir"
 
 is_owned_weston() {
   local pid="${1:-}"
@@ -85,7 +88,12 @@ stop_owned_session() {
   if [[ -n "$SESSION_RUNTIME" && "$SESSION_RUNTIME" == "$RUNTIME_ROOT"/xw11-wayland.* ]]; then
     rm -rf -- "$SESSION_RUNTIME"
   fi
-  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file"
+  local transport_dir=""
+  [[ -r "$transport_dir_file" ]] && IFS= read -r transport_dir < "$transport_dir_file" || true
+  if [[ -n "$transport_dir" && "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]; then
+    rm -rf -- "$transport_dir"
+  fi
+  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file"
 }
 
 case "$ACTION" in
@@ -103,6 +111,9 @@ case "$ACTION" in
       echo "weston_pid=$SESSION_PID"
       echo "DISPLAY=$DISPLAY_VALUE"
       echo "WAYLAND_DISPLAY=$SOCKET_VALUE"
+      [[ -r "$session_file" ]] && echo "SESSION_ID=$(cat "$session_file")"
+      [[ -r "$generation_file" ]] && echo "SURFACE_GENERATION=$(cat "$generation_file")"
+      [[ -r "$transport_dir_file" ]] && echo "TRANSPORT_DIR=$(cat "$transport_dir_file")"
       echo "log=$log_file"
       exit 0
     fi
@@ -136,6 +147,19 @@ case "$ACTION" in
 
     RUNTIME="$(mktemp -d "$RUNTIME_ROOT/xw11-wayland.XXXXXX")"
     chmod 700 "$RUNTIME"
+    # A fresh ID on every start prevents stale frames crossing sessions.
+    TRANSPORT_DIR="$(mktemp -d "$RUNTIME_ROOT/xw11-transport.XXXXXX")"
+    chmod 700 "$TRANSPORT_DIR"
+    SESSION_ID="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
+    if [[ ! "$SESSION_ID" =~ ^[0-9]+$ || "$SESSION_ID" == 0 ]]; then
+      rm -rf -- "$RUNTIME" "$TRANSPORT_DIR"
+      echo "ERROR: could not allocate a valid transport session ID" >&2
+      exit 1
+    fi
+    printf '%s\n' "$SESSION_ID" > "$session_file"
+    printf '0\n' > "$generation_file"
+    printf '%s\n' "$TRANSPORT_DIR" > "$transport_dir_file"
+    chmod 600 "$session_file" "$generation_file" "$transport_dir_file"
     : > "$log_file"
     : > "$console_log"
     SESSION_SOCKET="$SOCKET"
@@ -189,6 +213,11 @@ case "$ACTION" in
     echo "DISPLAY=:$XDISPLAY"
     echo "WAYLAND_DISPLAY=$SESSION_SOCKET"
     echo "XDG_RUNTIME_DIR=$RUNTIME"
+    echo "SESSION_ID=$SESSION_ID"
+    echo "SURFACE_GENERATION=0"
+    echo "TRANSPORT_DIR=$TRANSPORT_DIR"
+    echo "NOTE: generation 0 means Android Surface has not been bound."
+    echo "NOTE: metadata is private; this does not yet create an Android IPC endpoint."
     echo "log=$log_file"
     echo "NOTE: server is ready; no desktop was launched."
     echo "NOTE: this does not present Weston output on the Android app Surface."
