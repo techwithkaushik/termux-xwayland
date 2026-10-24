@@ -44,7 +44,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static volatile boolean nativeBridgeAvailable = true;
     private static boolean nativeBridgeFailureLogged;
     private static long nextGeneration = 1;
-    private long generation;
+    private volatile long generation;
     private ParcelFileDescriptor outputTransport;
     private long outputSessionId;
     private int surfaceWidth;
