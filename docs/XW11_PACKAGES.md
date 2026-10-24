@@ -42,7 +42,7 @@ The CI workflow validates the package metadata, expected file paths, executable 
 
 ## Important backend status
 
-**The current APK/package build is a packaging milestone, not a completed XWayland migration.** The Android app still contains the legacy Lorie renderer and its current loader entry point. The standalone upstream XWayland `.deb` produced by the separate XWayland package workflow is not yet wired to a tested Android presentation/input transport. Installing the companion package therefore does not prove that Weston/XWayland output will be visible in the Android app.
+**The Binder-based output FD path is implemented on `xwayland/replace-xorg`, but the complete migration is not yet device-verified.** The Android app retains the existing Lorie Surface/input implementation; the new supervisor launches a Termux-side Binder broker, passes a connected AF_UNIX descriptor to the capture helper, and waits for an Android first-frame presentation acknowledgement. Installing the companion package or passing host-side checks does not prove that the device's SELinux policy, Weston module, APK, and Surface lifecycle work together.
 
 Do not remove the legacy backend or treat the app as a functional replacement until the following have been tested on a real device:
 
