@@ -41,6 +41,8 @@ class WestonCaptureModeTests(unittest.TestCase):
     def test_abstract_socket_client_authenticates_before_streaming(self):
         self.assertIn("connect_authenticated_socket", self.source)
         self.assertIn("XW11AUTH %u %s", self.source)
+        self.assertIn("XW11READY %llu", self.source)
+        self.assertIn("*generation_out = (uint64_t)negotiated;", self.source)
         self.assertIn("address.sun_path[0] = '\\0'", self.source)
         self.assertIn('strcmp(argv[1], "--connect") == 0', self.source)
 
