@@ -97,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
     public static Handler handler = new Handler();
     private final Runnable connectRetry = this::tryConnect;
     FrameLayout frm;
+    private Xw11NativeSurfaceView xw11OutputView;
     TouchInputHandler mInputHandler;
     protected ICmdEntryInterface service = null;
     public TermuxX11ExtraKeys mExtraKeys;
@@ -344,6 +345,15 @@ public class MainActivity extends AppCompatActivity {
         applyWindowSettings();
 
         frm = findViewById(R.id.frame);
+        // Mount a dedicated XW11 output Surface directly in MainActivity. It stays
+        // hidden until a trusted output transport is attached; existing Lorie input
+        // listeners and keyboard routing below are deliberately left unchanged.
+        xw11OutputView = new Xw11NativeSurfaceView(this, true);
+        xw11OutputView.setVisibility(View.GONE);
+        xw11OutputView.setZOrderMediaOverlay(true);
+        xw11OutputView.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frm.addView(xw11OutputView);
         findViewById(R.id.preferences_button).setOnClickListener((l) -> startActivity(new Intent(this, LoriePreferences.class) {{ setAction(Intent.ACTION_MAIN); }}));
         findViewById(R.id.help_button).setOnClickListener((l) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-x11/blob/master/README.md#running-graphical-applications"))));
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
@@ -885,6 +895,20 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
 
         app.onActivityPaused();
+    }
+
+    /**
+     * Bind the authenticated XW11 output stream to MainActivity's own Surface.
+     * Call only after the view has received surfaceCreated/surfaceChanged and the
+     * session launcher has authenticated the socket and session id. Input remains
+     * on the existing TouchInputHandler/LorieView path.
+     */
+    boolean attachXw11OutputTransport(@NonNull ParcelFileDescriptor connectedSocket,
+                                      long sessionId) {
+        if (xw11OutputView == null || sessionId <= 0) return false;
+        if (!xw11OutputView.attachOutputTransport(connectedSocket, sessionId)) return false;
+        xw11OutputView.setVisibility(View.VISIBLE);
+        return true;
     }
 
     public LorieView getLorieView() {
