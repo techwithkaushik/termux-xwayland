@@ -27,6 +27,23 @@ class OptionalXw11JniStartupTests(unittest.TestCase):
         self.assertIn("++registered", self.bridge_registration)
         self.assertIn("++failed", self.bridge_registration)
 
+    def test_input_attach_jni_signature_matches_java_declaration(self):
+        java_path = ROOT / "lorie/src/main/java/com/termux/x11/Xw11NativeSurfaceView.java"
+        java = java_path.read_text(encoding="utf-8")
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn(
+            "native int nativeAttachInputTransport(int fd, long sessionId, long generation)",
+            java,
+        )
+        self.assertIn(
+            '{"nativeAttachInputTransport", "(IJJ)I"',
+            source,
+        )
+        self.assertIn(
+            'JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint',
+            source,
+        )
+
     def test_output_receiver_slot_is_reserved_until_worker_join(self):
         source = SOURCE.read_text(encoding="utf-8")
         start = source.index('{"nativeDetachOutputTransport"')
