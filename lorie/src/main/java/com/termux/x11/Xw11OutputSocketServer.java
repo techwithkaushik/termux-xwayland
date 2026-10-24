@@ -2,7 +2,6 @@ package com.termux.x11;
 
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
-import android.net.LocalSocketAddress;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -44,8 +43,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
 
     synchronized void start() throws IOException {
         if (server != null) return;
-        server = new LocalServerSocket(new LocalSocketAddress(
-                socketName, LocalSocketAddress.Namespace.ABSTRACT));
+        server = new LocalServerSocket(socketName);
         thread = new Thread(this::acceptLoop, "XW11-output-ipc");
         thread.setDaemon(true);
         thread.start();
