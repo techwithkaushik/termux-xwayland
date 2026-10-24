@@ -272,6 +272,7 @@ case "$ACTION" in
         stop_owned_session
         exit 1
       }
+    : > "$capture_log"
     env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" PATH="$PREFIX/bin:$PATH" \
       "$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous \
       >> "$capture_log" 2>&1 &
