@@ -105,7 +105,13 @@ extern "C" xw11_output_stream_result xw11_output_stream_receive(
             if (source_bytes > pixel_capacity)
                 return XW11_OUTPUT_STREAM_ERR_BUFFER_TOO_SMALL;
             first = false;
-        } else if (memcmp(&frame, &chunk_frame, sizeof(frame)) != 0) {
+        } else if (frame.surface_generation != chunk_frame.surface_generation ||
+                   frame.sequence_id != chunk_frame.sequence_id ||
+                   frame.width != chunk_frame.width ||
+                   frame.height != chunk_frame.height ||
+                   frame.stride_bytes != chunk_frame.stride_bytes ||
+                   frame.fourcc != chunk_frame.fourcc ||
+                   frame.pixel_bytes != chunk_frame.pixel_bytes) {
             return XW11_OUTPUT_STREAM_ERR_FRAME;
         }
         if (chunk_offset != offset || chunk_bytes == 0 ||
