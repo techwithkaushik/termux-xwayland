@@ -65,8 +65,12 @@ static void source_failed(void *data, struct weston_capture_source_v1 *source,
              message ? message : "no compositor message");
 }
 static const struct weston_capture_source_v1_listener source_listener = {
-    source_format, source_size, source_complete, source_failed,
-    source_formats_done, source_retry
+    .format = source_format,
+    .size = source_size,
+    .complete = source_complete,
+    .retry = source_retry,
+    .failed = source_failed,
+    .formats_done = source_formats_done,
 };
 
 static void registry_global(void *data, struct wl_registry *registry,
