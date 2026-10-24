@@ -19,6 +19,7 @@
 #include <sys/syscall.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
 
 #define MAX_DIM 8192u
@@ -133,8 +134,31 @@ static int connect_authenticated_socket(const char *port_text, const char *token
     address.sin_family = AF_INET;
     address.sin_port = htons((uint16_t)port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
-        perror("connect Android XW11 loopback output socket");
+    /* am start returns before Android has necessarily created MainActivity's
+     * listener. Retry only transient startup failures, with a bounded deadline;
+     * do not retry authentication or protocol errors after a connection succeeds. */
+    int connected = 0;
+    for (unsigned int attempt = 0; attempt < 80; ++attempt) {
+        if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+            connected = 1;
+            break;
+        }
+        int connect_error = errno;
+        if (connect_error != ECONNREFUSED && connect_error != EINTR &&
+            connect_error != EAGAIN) {
+            errno = connect_error;
+            perror("connect Android XW11 loopback output socket");
+            close(fd);
+            return -1;
+        }
+        if (attempt + 1 < 80) {
+            struct timespec delay = { .tv_sec = 0, .tv_nsec = 125000000L };
+            while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {}
+        }
+    }
+    if (!connected) {
+        errno = ETIMEDOUT;
+        perror("connect Android XW11 loopback output socket (startup timeout)");
         close(fd);
         return -1;
     }
