@@ -16,6 +16,21 @@ fi
 [ -z "${LD_LIBRARY_PATH+x}" ] || export XSTARTUP_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 [ -z "${LD_PRELOAD+x}" ] || export XSTARTUP_LD_PRELOAD="$LD_PRELOAD"
 [ -z "${CLASSPATH+x}" ] || export XSTARTUP_CLASSPATH="$CLASSPATH"
+
+# Explicitly route sessions through the native Weston/XWayland -> Android Surface
+# presenter. Keep the legacy entry point available until packaged dependencies
+# and device-side first-frame presentation are verified on all supported builds.
+if [ "${TERMUX_XW11_BACKEND:-legacy}" = "wayland" ]; then
+  WAYLAND_LAUNCHER="@PREFIX@/bin/termux-xw11-wayland"
+  if [ ! -x "$WAYLAND_LAUNCHER" ]; then
+    echo "ERROR: native XWayland launcher is missing: $WAYLAND_LAUNCHER" >&2
+    echo "Install/update the Termux-XW11 package containing termux-xw11-wayland." >&2
+    exit 127
+  fi
+  # The Wayland supervisor owns Weston/XWayland and the output IPC handshake.
+  # Do not start the legacy Loader/Lorie renderer in parallel.
+  exec "$WAYLAND_LAUNCHER" start
+fi
 export CLASSPATH=/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/libexec/termux-xw11/loader.apk
 unset LD_LIBRARY_PATH LD_PRELOAD
 [ -n "$(trap -p USR1)" ] && export TERMUX_X11_NOTIFY_PARENT=1
