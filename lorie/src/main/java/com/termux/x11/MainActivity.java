@@ -442,6 +442,7 @@ public class MainActivity extends AppCompatActivity {
 
         findViewById(android.R.id.content).addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> makeSureHelpersAreVisibleAndInScreenBounds());
         startXw11OutputBridge(getIntent());
+        ((LorieApp) getApplication()).onMainActivityReady(this);
     }
 
     @Override
