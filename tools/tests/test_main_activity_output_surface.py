@@ -36,6 +36,14 @@ class MainActivityOutputSurfaceTests(unittest.TestCase):
         for method in ("onTouchEvent", "onGenericMotionEvent", "onKeyDown", "onKeyUp", "onFocusChanged"):
             self.assertIn(method, self.view)
 
+    def test_output_only_teardown_never_calls_input_jni(self):
+        teardown = self.view.split("public void surfaceDestroyed", 1)[1].split(
+            "Attach a connected AF_UNIX", 1
+        )[0]
+        self.assertIn("if (!outputOnly) detachInputSafely(current);", teardown)
+        self.assertIn("detachOutputSafely(current);", teardown)
+        self.assertIn("detachSurfaceSafely(current);", teardown)
+
     def test_existing_input_handler_and_keyboard_listener_are_kept(self):
         self.assertIn("new TouchInputHandler(this, new InputEventSender(this, lorieView))", self.activity)
         self.assertIn("lorieView.setOnKeyListener(mLorieKeyListener);", self.activity)
