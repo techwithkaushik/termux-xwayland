@@ -120,10 +120,15 @@ afterEvaluate {
     preBuild.dependsOn generatePrefs
 
     tasks.register("generateShortcuts") {
-        def out = file('build/generated/templateRes/xml/lorie_shortcuts.xml')
-        out.getParentFile().exists() || out.getParentFile().mkdirs()
-        out.text = file('src/main/templates/xml/shortcuts.xml').text
-                .replace('@@APPLICATION_ID@@', hostApplicationId)
+        inputs.file(file('src/main/templates/xml/shortcuts.xml'))
+        inputs.property('hostApplicationId', hostApplicationId)
+        outputs.file(layout.buildDirectory.file('generated/templateRes/xml/lorie_shortcuts.xml'))
+        doLast {
+            def out = file('build/generated/templateRes/xml/lorie_shortcuts.xml')
+            out.getParentFile().mkdirs()
+            out.text = file('src/main/templates/xml/shortcuts.xml').text
+                    .replace('@@APPLICATION_ID@@', hostApplicationId)
+        }
     }
     android.sourceSets.main.res.srcDirs += 'build/generated/templateRes'
     preBuild.dependsOn generateShortcuts
