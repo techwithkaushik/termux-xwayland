@@ -251,7 +251,7 @@ case "$ACTION" in
       stop_owned_session
       exit 1
     fi
-    OUTPUT_SOCKET="xw11-output-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+    OUTPUT_SOCKET="$((20000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 40000))"
     OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     [[ "$OUTPUT_TOKEN" =~ ^[0-9a-f]{64}$ ]] || {
       echo "ERROR: could not allocate output authentication token" >&2
@@ -293,10 +293,10 @@ case "$ACTION" in
       exit 1
     fi
     echo "status=running"
-    echo "OUTPUT_SOCKET=$OUTPUT_SOCKET"
+    echo "OUTPUT_PORT=$OUTPUT_SOCKET"
     echo "CAPTURE_PID=$CAPTURE_PID"
     echo "capture_log=$capture_log"
-    echo "NOTE: output capture is connected; confirm first-frame presentation in logcat."
+    echo "NOTE: output capture is connected over authenticated loopback TCP; confirm first-frame presentation in logcat."
 
     ;;
 esac
