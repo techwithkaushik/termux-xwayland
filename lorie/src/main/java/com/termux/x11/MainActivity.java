@@ -906,8 +906,13 @@ public class MainActivity extends AppCompatActivity {
     boolean attachXw11OutputTransport(@NonNull ParcelFileDescriptor connectedSocket,
                                       long sessionId) {
         if (xw11OutputView == null || sessionId <= 0) return false;
-        if (!xw11OutputView.attachOutputTransport(connectedSocket, sessionId)) return false;
+        // A GONE Surface has no valid generation yet. Make it visible first;
+        // the view retains the socket and starts its receiver from surfaceChanged().
         xw11OutputView.setVisibility(View.VISIBLE);
+        if (!xw11OutputView.attachOutputTransport(connectedSocket, sessionId)) {
+            xw11OutputView.setVisibility(View.GONE);
+            return false;
+        }
         return true;
     }
 
