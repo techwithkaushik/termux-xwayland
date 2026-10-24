@@ -35,7 +35,7 @@ class SupervisorTransportLifecycleTest(unittest.TestCase):
         self.assertIn('OUTPUT_TOKEN "$OUTPUT_TOKEN"', self.source)
         self.assertIn('"$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous', self.source)
         self.assertIn('NOTE: output capture is connected; confirm first-frame presentation in logcat.', self.source)
-        self.assertIn("no desktop was launched", self.source)
+        self.assertIn("no desktop is launched", self.source)
 
 
 if __name__ == "__main__":
