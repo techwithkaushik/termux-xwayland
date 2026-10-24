@@ -58,10 +58,17 @@ Weston’s headless backend calls its renderer’s `repaint_output()` and keeps 
 - Weston 16.0 reference client: `clients/screenshot.c`
 - Weston 16.0 capture implementation: `libweston/output-capture.c`
 
-The protocol is a viable API seam, not proof that a particular packaged Weston build enables it or grants capture access. The producer executable, transport receiver, and device validation remain to be implemented.
+The protocol is a viable API seam, not proof that a particular packaged Weston build enables it or grants capture access. A one-shot producer executable now exists under `tools/weston-capture/` and is built in CI. It captures the first advertised output into writable `wl_shm` and sends one frame through the bounded XW11 output stream. It is not yet wired into the supervisor or Android JNI receiver; the socket must be connected and authenticated by an external caller, and device validation remains pending.
 
 ## Native frame contract (implemented; producer/consumer wiring pending)
 
 The portable module `tools/native-transport/xw11_output_frame.h/.cpp` now defines a fixed 40-byte big-endian frame metadata record and validates generation, sequence, dimensions, stride, format, and byte count before conversion. It explicitly converts little-endian XRGB8888/ARGB8888 source pixels into the Android presenter's RGBA8888 byte order and supplies a host unit test for round-trip metadata, padded rows, conversion, and malformed metadata. CMake includes the module and test in the portable transport suite.
 
 This is a real implementation of the frame metadata/conversion boundary, but it is not yet a socket sender, Weston capture client, or Android receiver. The next code milestone is the Weston output-capture client and bounded frame delivery into the JNI bridge; until that exists, do not claim that compositor frames are displayed on the Android Surface.
+
+
+## One-shot producer implementation
+
+`tools/weston-capture/capture_main.c` implements the Weston 16 capture protocol lifecycle: registry discovery, explicit failure when the privileged global is unavailable, output capture source setup, supported XRGB8888/ARGB8888 format and size negotiation, bounded SHM allocation, one capture request, and chunked output transport. The `tools/weston-capture` CMake target generates client bindings from the vendored protocol XML using `wayland-scanner`. CI builds this target against `wayland-client`.
+
+The producer is deliberately one-shot rather than a permanent frame loop. It validates the actual compositor protocol and frame delivery seam first. It currently chooses the first output, and does not yet attach the stream to the Android Surface consumer or automatically restart capture after resize.
