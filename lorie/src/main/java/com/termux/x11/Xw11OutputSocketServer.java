@@ -84,7 +84,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                 if (generation <= 0)
                     throw new IOException("Android output Surface did not become ready");
                 OutputStream output = peer.getOutputStream();
-                output.write(("XW11READY " + generation + "\\n").getBytes(StandardCharsets.US_ASCII));
+                output.write(("XW11READY " + generation + "\n").getBytes(StandardCharsets.US_ASCII));
                 output.flush();
                 peer.setSoTimeout(0);
                 // Duplicate the connected AF_UNIX fd before handing ownership to
