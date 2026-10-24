@@ -1,0 +1,173 @@
+# XWayland replacement plan
+
+## Goal
+
+Replace the current Lorie-specific X.Org server build with a genuine upstream XWayland backend. This is a backend replacement, not a rename of the existing `Xlorie` library or executable.
+
+## Verified current build facts
+
+- `lorie/src/main/cpp/CMakeLists.txt` includes `recipes/xserver.cmake`.
+- `recipes/xserver.cmake` assembles X.Org server core libraries and links them into the Lorie Android native implementation. It does not currently build upstream `hw/xwayland`.
+- The current Android rendering path includes Lorie-specific screen setup and EGL/GLES rendering. That path must not be assumed to be the XWayland backend.
+- The `.gitmodules` entry points `lorie/src/main/cpp/xserver` to `https://gitlab.freedesktop.org/xorg/xserver.git`; `termux-x11-port` pins it at `65d790bd208ec380b196eb98f144abb0b32e334d`.
+- CI on 2026-10-22 confirmed that this pinned gitlink does not contain top-level `meson.build` or `hw/xwayland/meson.build`. It cannot directly provide the Meson-based XWayland backend.
+- The official standalone XWayland release archive `xwayland-24.1.14.tar.xz` is available from the X.Org release directory. The repository now has `tools/fetch-xwayland-source.sh`, which fetches this pinned release over HTTPS, checks archive paths, extracts it under `build/third_party/xwayland-24.1.14`, and validates the version and required Meson files.
+- The source fetch script verifies the archive against the fixed SHA-256 `4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a`, taken from the official Termux XWayland 24.1.14 package recipe, before extraction. Detached OpenPGP release-signature verification is still not configured, so the checksum trust root remains the reviewed repository pin.
+- The current Android native build is CMake-based, while upstream XWayland uses Meson. The integration must explicitly bridge this build-system boundary.
+
+## XW11 Android package identity
+
+- The Android application ID is `org.techwithkaushik.termuxxw11`. Android application IDs cannot contain a hyphen, so the requested display/product name is written as **Termux-XW11**, while the valid ID omits the hyphen.
+- The launcher command and companion package use the `termux-xw11` name. The loader still invokes the existing Java entry-point class in the app; internal `com.termux.x11` Java namespaces and protocol action strings are intentionally not renamed just to change the install identity.
+- Building these APKs and launcher artifacts validates packaging only. It does **not** mean the legacy Lorie X.Org backend has been replaced: the new standalone XWayland backend must be connected to the Android presentation/input transport and pass device acceptance tests before the APK can be described as a functional XWayland replacement.
+
+## Native presentation/input contract
+
+The transport boundaries, versioning requirements, buffer/fence ownership rules, lifecycle invariants, and test gates are specified in [`NATIVE_PRESENTATION_INPUT_CONTRACT.md`](./NATIVE_PRESENTATION_INPUT_CONTRACT.md). Treat that file as the contract to implement before connecting Weston output to the Android host; it is a design document, not evidence that the transport is already implemented.
+
+## Target architecture
+
+```text
+X11 applications
+      |
+      v
+Upstream XWayland (X11 server + hw/xwayland backend)
+      |
+      | Wayland client protocol: surfaces, buffers, input
+      v
+Wayland compositor (Weston or another compatible compositor)
+      |
+      v
+Android native display/output integration
+```
+
+## Current source-validation workflow
+
+The workflow `.github/workflows/xwayland-preflight.yml` now:
+1. Checks shell-script syntax and Python syntax.
+2. Runs unit tests for the Android Meson cross-file generator against a synthetic NDK layout for all four Android ABIs.
+3. Tests `tools/check-xwayland-android-prefix.py` against host-built shared libraries, static archives, malformed ELF files, and escaping symlinks.
+4. Tests `tools/audit-xwayland-android-stage.py` against synthetic pkg-config metadata, including missing modules and prefixes that leak outside the staging root.
+5. Reports the legacy submodule's missing standalone XWayland backend as an explicit expected warning (`--allow-legacy-source`), while keeping the standalone release-source validation as a separate, required check.
+6. Fetches the pinned official XWayland 24.1.14 release and verifies the Meson build files and embedded version.
+7. Audits all 19 Meson option names and reports host dependency availability independently of the known legacy-submodule blocker.
+
+Run locally:
+
+```sh
+bash tools/fetch-xwayland-source.sh
+python3 tools/generate-android-meson-cross-file.py \\
+  --abi armeabi-v7a --api 24 \\
+  --ndk "$ANDROID_NDK_HOME" \\
+  --prefix "$PWD/build/android-stage/armeabi-v7a" \\
+  --output "$PWD/build/meson/armeabi-v7a.ini"
+```
+
+The cross-file generator validates the NDK toolchain and target staging prefix, writes an Android Meson cross file, and creates an isolated `pkg-config` wrapper that only searches the supplied staging prefix and avoids applying the NDK sysroot a second time to staged dependency paths. The staging prefix must contain dependencies already built for the selected ABI. This is configuration scaffolding, not an XWayland cross-build.
+
+The explicit build driver `tools/build-xwayland-android.sh` now wires these steps together: it validates the requested ABI/API and staged prefix, audits ELF machine types (including static archive members) to reject host-architecture objects, checks that required pkg-config modules exist and that their metadata/flags do not escape the staging prefix, prepares the cross file outside the Meson build directory, configures XWayland with the Termux-derived Meson options, applies the Termux recipe's Android compiler/linker flags (`-fcommon`, `-fPIC`, Android `FNDELAY` compatibility, the staged libdrm include directory, and `-landroid-shmem`), runs `meson compile`, and verifies that Meson target metadata includes `Xwayland`. If an explicitly supplied `--source` path is invalid, the driver now fails directly instead of fetching source to a different default directory. Example (after dependencies have been staged for 32-bit ARM):
+
+```sh
+TERMUX_PREFIX="$PREFIX" bash tools/build-xwayland-android.sh \\
+  --abi armeabi-v7a --api 24 --ndk "$ANDROID_NDK_HOME" \\
+  --prefix "$PWD/build/android-stage/armeabi-v7a" \\
+  --font-path "$PREFIX/share/fonts"
+```
+
+This driver is not itself evidence of a successful Android build: it cannot proceed until the prefix contains ABI-correct libraries and `.pc` metadata for every enabled XWayland dependency.
+
+The script downloads source into `build/third_party`; it does not modify the existing native target. The release archive should be excluded from commits/build outputs as appropriate.
+
+### Reproducible upstream Android package build
+
+The manual workflow `.github/workflows/xwayland-termux-build.yml` uses the official `termux/termux-packages` build container and XWayland package recipe rather than pretending that a host preflight is an Android cross-build. The recipe repository is pinned to commit `facb27bc85ef36fd1120d4ae990fbd59e134fc61`, and the workflow verifies the XWayland version and source checksum before building. Run it from the Actions tab with `arm` selected first for the Redmi 9 Active's 32-bit ABI; `aarch64` is also available. By default it builds XWayland against published Termux dependency packages and uploads the resulting `.deb` plus a manifest containing package identity, architecture, version, and SHA-256. The artifact validation fails if the package count, architecture, package name, or expected Xwayland executable does not match. The optional force-dependencies input requests a much longer rebuild of the full dependency chain.
+
+This package workflow is a separate verification path: it validates the upstream Termux recipe's Android cross-build, but it does not yet populate the custom Meson staging prefix used by `tools/build-xwayland-android.sh`, nor does it integrate the package into the app. A successful package build is not a device rendering/input test.
+
+## Experimental Termux session supervisor
+
+The companion package now includes `termux-xw11-wayland`, a separate process supervisor for Weston and its managed upstream XWayland instance. It supports `start`, `status`, and `stop`; defaults to a headless compositor; offers `start --nested` only for diagnostics; verifies the Wayland socket and XWayland X11 readiness; and does not start a desktop environment. Its stop path only signals a recorded process after checking that its command line identifies Weston.
+
+This is an isolated runtime-management step, not the backend replacement itself. It does not connect Weston buffers to the Android app's `Surface`, forward Android touch/pointer/keyboard events into the new compositor, or change the default `termux-xw11 :0` path. The existing Lorie/X.Org session remains untouched. The supervisor and package contents have regression checks in CI; actual Termux execution and Android device presentation remain to be verified.
+
+## Migration stages
+
+### Stage 1 — establish a genuine upstream build
+
+1. Validate the pinned standalone XWayland source; checksum verification is implemented, while detached release-signature verification remains outstanding.
+2. Use the official Termux XWayland 24.1.14 recipe as the concrete dependency/options baseline. Target dependencies are `libandroid-shmem`, `libdrm`, `libepoxy`, `libpciaccess`, `libpixman`, `libwayland`, `libwayland-protocols`, `libx11`, `libxau`, `libxcvt`, `libxfont2`, `libxinerama`, `libxkbfile`, `libxshmfence`, OpenGL, OpenSSL, `xkeyboard-config`, `xorg-protocol-txt`, and `xorg-xkbcomp`; build dependency: `libwayland-cross-scanner`. The recipe explicitly configures `mitshm`, `xres`, `xv`, `screensaver`, `xdmcp`, `glx`, `dri3`, `xinerama`, `xace`, `xcsecurity`, `xf86bigfont`, `drm`, and IPv6 on; `secure-rpc`, `glamor`, `xvfb`, and `libunwind` off; SHA-1 via `libcrypto`; and the default font path under `$TERMUX_PREFIX/share/fonts`. The Android build must use target-ABI dependencies and a Wayland cross-pkg-config wrapper; host pkg-config results are not sufficient.
+3. Build target-ABI Wayland client/protocol and X server dependencies with the Android NDK; never use host libraries for an Android target.
+4. Add an Android Meson cross file and a separate, explicit XWayland build target without deleting the working Lorie target.
+5. Build for supported Android ABIs in CI.
+
+**Exit criteria:** CI proves that the upstream XWayland backend is compiled and linked for the target ABI. Merely compiling X.Org core or producing a library named `Xwayland` does not satisfy this stage.
+
+### Stage 2 — connect to a Wayland compositor
+
+1. Start or connect to a compositor and pass its Wayland socket to XWayland.
+2. Implement the XWayland startup handshake and X11 display socket/readiness checks.
+3. Verify a minimal X11 client can connect and create a window.
+4. Keep server startup separate from launching a desktop environment.
+
+**Exit criteria:** an X11 test client runs through XWayland with no Lorie DDX in the active server path.
+
+### Stage 3 — Android presentation and input
+
+1. Decide and document the compositor output backend that presents frames on Android.
+2. Route Android touch, mouse, keyboard, focus, resize, clipboard, and lifecycle events through the appropriate Wayland/XWayland paths.
+3. Validate frame pacing, buffer lifetime, synchronization, and teardown before optimizing.
+
+**Exit criteria:** visible output and working input on a real Android device, including repeated start/stop and resize tests.
+
+### Stage 4 — remove the legacy backend
+
+Only after Stages 1–3 pass, remove obsolete Lorie-specific X server build wiring and native rendering code.
+
+## Guardrails
+
+- Do not rename `Xlorie` and call it XWayland.
+- Do not delete the current build before the replacement builds and passes smoke tests.
+- Do not claim Android rendering works based only on a successful native compile.
+- Keep XWayland, compositor/output integration, and Android UI as separate modules with explicit interfaces.
+- Validate 32-bit ARM and other supported ABIs before changing release defaults.
+
+## Validation checklist
+
+- [x] Archive SHA-256 is checked against the official Termux 24.1.14 package recipe.
+- [ ] Detached release signature is verified against a trusted X.Org signing key.
+- [ ] Android Meson cross-build succeeds for target ABI(s).
+- [ ] Compositor connection and XWayland startup handshake succeed.
+- [ ] X11 socket becomes ready and a minimal client connects.
+- [ ] Window contents are visibly presented on Android.
+- [ ] Pointer, keyboard, touch, resize, clipboard, and focus are tested.
+- [ ] Stop/restart and error cleanup are tested.
+- [ ] CI passes; device validation is reported separately from CI.
+
+## Current status
+
+The source-preflight workflow validates shell syntax, Python compilation and unit tests (including the staging-metadata audit), the standalone release archive/layout, all 19 Meson option-presence checks, and host dependency availability. The legacy source diagnostic emits an explicit warning for the expected old gitlink and exits successfully only when invoked with `--allow-legacy-source`; without that opt-in, it remains strict. The official Termux package workflow `.github/workflows/xwayland-termux-build.yml` was dispatched for 32-bit ARM and completed successfully on 2026-10-23: [run #8](https://github.com/techwithkaushik/termux-xwayland/actions/runs/39950415315). It built and validated exactly one `xwayland` Debian package for architecture `arm`, confirmed the Xwayland executable is present, and uploaded artifact `xwayland-termux-arm` with a SHA-256 manifest. This verifies the upstream Termux recipe's 32-bit ARM package build, but it is not the custom `tools/build-xwayland-android.sh` staging-prefix build and does not prove Android app integration or device rendering. The aarch64 package build has not yet been verified.
+
+The target-prefix architecture guard now checks ELF headers in shared libraries and static archive members, and rejects malformed ELF shared libraries, broken symlinks, and library symlinks escaping the staging prefix. Regression tests cover these cases. The new staging audit also checks the required pkg-config modules and rejects metadata/compiler/linker paths outside the target staging prefix (or an explicitly allowed NDK sysroot). OpenSSL is checked through its actual pkg-config modules, `libcrypto` and `libssl`, rather than a non-portable `openssl` module name. These are safety checks only: they do not prove full Android ABI compatibility, dependency completeness beyond the listed modules, or final linkability.
+
+The Android Meson build driver and cross-file generator are scaffolding only until a target-ABI staging prefix is populated. No real Android target build, compositor handshake, X11 client session, or device rendering/input test has been completed. The build driver now fails fast on missing required pkg-config modules or metadata paths that leak outside the staging prefix. Next work is still to create/populate a real target-ABI dependency staging prefix, run the actual cross-build (prioritizing `armeabi-v7a`), then validate compositor/XWayland startup on the Android device. Detached release-signature verification is also outstanding. Keep this PR Draft and preserve the existing `Xlorie` backend until those acceptance tests pass.
+
+## Repository architecture audit (2026-10-24)
+
+The current branch contains useful transport primitives, but the data paths are not yet connected end to end. The following boundaries are confirmed from the current implementation:
+
+- The Android app still starts the legacy X.Org server through `CmdEntryPoint` / `cmdentrypoint.cpp`; `recipes/xserver.cmake` builds the legacy DIX/X server sources. The standalone upstream XWayland source validation does not replace this runtime.
+- `termux-xw11-wayland` starts Weston with its managed XWayland, checks that the X11 display accepts clients, launches `xw11-weston-capture`, and waits for the producer to report its first frame over authenticated abstract `AF_UNIX` IPC. The frame-received milestone proves transport activity, not that the Android Surface visibly presents correct pixels; device-side visual validation remains required.
+- The Weston capture producer now feeds the Android output transport and native Surface presenter. Confirm first-frame presentation and sustained frame updates in Logcat on Android 10 before treating the output path as accepted; do not describe this as GPU zero-copy, since frames are still captured and copied through the current RGBA transport.
+- The Java `Xw11NativeSurfaceView` can submit input only after a connected socket and nonzero session ID are supplied. The native dispatcher frames events, but there is no packaged Weston-side receiver that converts those events into a Wayland seat/device. Do not route the existing Lorie input callbacks to this path before that receiver exists.
+- The current legacy `LorieView` remains the working display/input path. Keep it intact until the new output and input paths are connected and the runtime can select the new backend without starting the legacy X server.
+
+### Native safety work completed during this audit
+
+- The Android Surface presenter now separates the short Surface-state mutex from serialized frame presentation. Each in-flight frame retains its own `ANativeWindow` reference, so a concurrent detach/re-attach cannot release a window while a frame is using it. Presentation cache state is protected by the presentation mutex and keyed by Surface generation.
+- JNI input transport attachment now rejects non-stream and non-connected/non-Unix socket descriptors before starting a writer. It also maintains a monotonic input-generation high-water mark and rechecks it after dispatcher creation, preventing a delayed older attach from replacing a newer input session.
+
+These changes improve lifetime and session safety but do not claim that compositor output or input injection is integrated.
+
+### Next implementation dependency
+
+The next blocking component is a real Weston output producer that can deliver a negotiated pixel/buffer representation to the Android presenter. In parallel, input needs a private connected-socket lifecycle plus a Weston/libweston input adapter. These must be implemented as compositor-side components; the Android presenter and event serializer alone cannot create them. Only after both sides exist should the app add an explicit backend mode and retire the legacy X.Org startup.

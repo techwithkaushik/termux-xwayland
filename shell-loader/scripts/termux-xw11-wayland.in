@@ -1,0 +1,309 @@
+#!/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/bin/bash
+# Weston/XWayland supervisor with Binder-transferred FD output to the Android Surface.
+# Capture is spawned by the Termux-side Binder broker; no cross-domain abstract
+# socket connect or TCP transport is used.
+set -Eeuo pipefail
+
+PREFIX="${PREFIX:-/data/data/@EMBEDDED_APPLICATION_ID@/files/usr}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/termux-xw11-wayland"
+RUNTIME_ROOT="${TMPDIR:-$PREFIX/tmp}"
+ACTION="${1:-status}"
+BACKEND="headless"
+PARENT_DISPLAY="${DISPLAY:-:0}"
+SOCKET="wayland-xw11"
+mkdir -p "$STATE" "$RUNTIME_ROOT"
+chmod 700 "$STATE"
+
+usage() {
+  cat <<'USAGE'
+Usage: termux-xw11-wayland {start|stop|status} [--nested]
+
+  start          Start Weston + its managed upstream XWayland server.
+                 Headless is the safe default; no desktop is launched.
+  start --nested Start Weston inside the current DISPLAY (diagnostics only).
+  status         Show the recorded Weston/XWayland session.
+  stop           Stop only the Weston process owned by this supervisor.
+
+This is an experimental process supervisor, not yet the Android Surface
+presentation backend. The existing Termux-XW11/Lorie session is untouched.
+USAGE
+}
+
+shift || true
+while (($#)); do
+  case "$1" in
+    --nested) BACKEND="x11" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+case "$ACTION" in
+  start|stop|status) ;;
+  -h|--help|help) usage; exit 0 ;;
+  *) echo "Unknown action: $ACTION" >&2; usage >&2; exit 2 ;;
+esac
+
+pid_file="$STATE/weston.pid"
+runtime_file="$STATE/runtime"
+log_file="$STATE/weston.log"
+console_log="$STATE/weston-console.log"
+display_file="$STATE/display"
+socket_file="$STATE/socket"
+session_file="$STATE/session-id"
+generation_file="$STATE/surface-generation"
+transport_dir_file="$STATE/transport-dir"
+capture_pid_file="$STATE/capture.pid"
+broker_pid_file="$STATE/output-broker.pid"
+capture_log="$STATE/capture.log"
+output_socket_file="$STATE/output-socket"
+output_token_file="$STATE/output-token"
+capture_auth_pid_file="$STATE/capture-client.pid"
+
+is_owned_weston() {
+  local pid="${1:-}"
+  [[ "$pid" =~ ^[0-9]+$ && -r "/proc/$pid/cmdline" ]] || return 1
+  local cmdline
+  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")" || return 1
+  # PID files can be stale or modified. Require both the Weston executable and
+  # this supervisor's unique socket argument before sending signals.
+  [[ "$cmdline" =~ (^|/|[[:space:]])weston([[:space:]]|$) ]] || return 1
+  [[ "$cmdline" == *"--socket=$SOCKET"* ]]
+}
+
+read_session() {
+  SESSION_PID=""
+  SESSION_RUNTIME=""
+  [[ -r "$pid_file" ]] && IFS= read -r SESSION_PID < "$pid_file" || true
+  [[ -r "$runtime_file" ]] && IFS= read -r SESSION_RUNTIME < "$runtime_file" || true
+}
+
+stop_owned_session() {
+  local capture_pid=""
+  [[ -r "$capture_pid_file" ]] && IFS= read -r capture_pid < "$capture_pid_file" || true
+  if [[ "$capture_pid" =~ ^[0-9]+$ && -r "/proc/$capture_pid/cmdline" ]]; then
+    local capture_cmdline
+    capture_cmdline="$(tr '\0' ' ' < "/proc/$capture_pid/cmdline" 2>/dev/null || true)"
+    if [[ "$capture_cmdline" == *"--xw11-output-broker"* || "$capture_cmdline" == *"termux-xw11-wayland-output-broker"* ]]; then
+      kill -TERM "$capture_pid" 2>/dev/null || true
+      for _ in {1..30}; do
+        [[ -r "/proc/$capture_pid/cmdline" ]] || break
+        sleep 0.1
+      done
+      [[ ! -r "/proc/$capture_pid/cmdline" ]] || kill -KILL "$capture_pid" 2>/dev/null || true
+    fi
+  fi
+  read_session
+  if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
+    kill -TERM "$SESSION_PID" 2>/dev/null || true
+    for _ in {1..30}; do
+      is_owned_weston "$SESSION_PID" || break
+      sleep 0.1
+    done
+    if is_owned_weston "$SESSION_PID"; then
+      kill -KILL "$SESSION_PID" 2>/dev/null || true
+    fi
+  fi
+  if [[ -n "$SESSION_RUNTIME" && "$SESSION_RUNTIME" == "$RUNTIME_ROOT"/xw11-wayland.* ]]; then
+    rm -rf -- "$SESSION_RUNTIME"
+  fi
+  local transport_dir=""
+  [[ -r "$transport_dir_file" ]] && IFS= read -r transport_dir < "$transport_dir_file" || true
+  if [[ -n "$transport_dir" && "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]; then
+    rm -rf -- "$transport_dir"
+  fi
+  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file" "$capture_pid_file" "$broker_pid_file" "$output_socket_file" "$output_token_file" "$capture_auth_pid_file"
+}
+
+case "$ACTION" in
+  stop)
+    stop_owned_session
+    echo "Stopped the supervised Weston/XWayland session (if it was running)."
+    exit 0
+    ;;
+  status)
+    read_session
+    if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
+      DISPLAY_VALUE="$(cat "$display_file" 2>/dev/null || true)"
+      SOCKET_VALUE="$(cat "$socket_file" 2>/dev/null || true)"
+      echo "status=running"
+      echo "weston_pid=$SESSION_PID"
+      echo "DISPLAY=$DISPLAY_VALUE"
+      echo "WAYLAND_DISPLAY=$SOCKET_VALUE"
+      [[ -r "$session_file" ]] && echo "SESSION_ID=$(cat "$session_file")"
+      [[ -r "$generation_file" ]] && echo "SURFACE_GENERATION=$(cat "$generation_file")"
+      [[ -r "$transport_dir_file" ]] && echo "TRANSPORT_DIR=$(cat "$transport_dir_file")"
+      [[ -r "$capture_pid_file" ]] && echo "CAPTURE_BROKER_PID=$(cat "$capture_pid_file")"
+      [[ -r "$capture_log" ]] && echo "capture_log=$capture_log"
+      echo "log=$log_file"
+      exit 0
+    fi
+    echo "status=stopped"
+    exit 1
+    ;;
+  start)
+    if [[ -x "$PREFIX/bin/weston" ]]; then
+      WESTON="$PREFIX/bin/weston"
+    else
+      WESTON="$(command -v weston || true)"
+    fi
+    [[ -n "$WESTON" ]] || { echo "ERROR: weston not found; install it with pkg install weston." >&2; exit 127; }
+    command -v Xwayland >/dev/null 2>&1 || { echo "ERROR: Xwayland not found; install the Termux xwayland package." >&2; exit 127; }
+    command -v xdpyinfo >/dev/null 2>&1 || { echo "ERROR: xdpyinfo is required for readiness checks (pkg install xorg-xdpyinfo)." >&2; exit 127; }
+
+    read_session
+    if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
+      echo "ERROR: supervised Weston is already running (PID $SESSION_PID)." >&2
+      echo "Use: termux-xw11-wayland status|stop" >&2
+      exit 1
+    fi
+    stop_owned_session
+
+    if [[ "$BACKEND" == "x11" ]]; then
+      DISPLAY="$PARENT_DISPLAY" xdpyinfo >/dev/null 2>&1 || {
+        echo "ERROR: parent X11 display is not reachable: $PARENT_DISPLAY" >&2
+        exit 1
+      }
+    fi
+
+    # Termux does not guarantee the X11 socket directory exists on a fresh
+    # install. Xwayland fails before Weston becomes ready if X0 cannot be
+    # created under TMPDIR/.X11-unix.
+    X11_SOCKET_DIR="$RUNTIME_ROOT/.X11-unix"
+    mkdir -p "$X11_SOCKET_DIR"
+    chmod 1777 "$X11_SOCKET_DIR"
+
+    RUNTIME="$(mktemp -d "$RUNTIME_ROOT/xw11-wayland.XXXXXX")"
+    chmod 700 "$RUNTIME"
+    # A fresh ID on every start prevents stale frames crossing sessions.
+    TRANSPORT_DIR="$(mktemp -d "$RUNTIME_ROOT/xw11-transport.XXXXXX")"
+    chmod 700 "$TRANSPORT_DIR"
+    SESSION_ID="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
+    if [[ ! "$SESSION_ID" =~ ^[0-9]+$ || "$SESSION_ID" == 0 ]]; then
+      rm -rf -- "$RUNTIME" "$TRANSPORT_DIR"
+      echo "ERROR: could not allocate a valid transport session ID" >&2
+      exit 1
+    fi
+    printf '%s\n' "$SESSION_ID" > "$session_file"
+    printf '0\n' > "$generation_file"
+    printf '%s\n' "$TRANSPORT_DIR" > "$transport_dir_file"
+    chmod 600 "$session_file" "$generation_file" "$transport_dir_file"
+    : > "$log_file"
+    : > "$console_log"
+    SESSION_SOCKET="$SOCKET"
+    CAPTURE_AUTH_MODULE="$PREFIX/lib/weston/xw11-capture-authority.so"
+    CAPTURE_AUTH_PID_FILE="$capture_auth_pid_file"
+    if [[ ! -r "$CAPTURE_AUTH_MODULE" ]]; then
+      echo "ERROR: capture authorization module is missing: $CAPTURE_AUTH_MODULE" >&2
+      echo "Run tools/build-weston-capture-termux.sh to build/install it." >&2
+      rm -rf -- "$RUNTIME" "$TRANSPORT_DIR"
+      exit 1
+    fi
+    rm -f -- "$CAPTURE_AUTH_PID_FILE"
+    WESTON_ARGS=(--renderer=pixman --shell=kiosk --xwayland "--socket=$SESSION_SOCKET" --no-config "--log=$log_file" "--modules=$CAPTURE_AUTH_MODULE")
+    if [[ "$BACKEND" == "x11" ]]; then
+      WESTON_ARGS+=(--backend=x11)
+    else
+      WESTON_ARGS+=(--backend=headless)
+    fi
+
+    if [[ "$BACKEND" == "x11" ]]; then
+      env TMPDIR="$RUNTIME_ROOT" DISPLAY="$PARENT_DISPLAY" XDG_RUNTIME_DIR="$RUNTIME" XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" PATH="$PREFIX/bin:$PATH" \
+        "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
+    else
+      env TMPDIR="$RUNTIME_ROOT" XDG_RUNTIME_DIR="$RUNTIME" XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" PATH="$PREFIX/bin:$PATH" \
+        "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
+    fi
+    WESTON_PID=$!
+    printf '%s\n' "$WESTON_PID" > "$pid_file"
+    printf '%s\n' "$RUNTIME" > "$runtime_file"
+    printf '%s\n' "$SESSION_SOCKET" > "$socket_file"
+
+    ready=0
+    for _ in {1..80}; do
+      if ! is_owned_weston "$WESTON_PID"; then
+        break
+      fi
+      if [[ -S "$RUNTIME/$SESSION_SOCKET" ]] && grep -q 'xserver listening on display' "$log_file" 2>/dev/null; then
+        ready=1
+        break
+      fi
+      sleep 0.25
+    done
+
+    if (( ! ready )); then
+      echo "ERROR: Weston/XWayland failed to become ready; see $log_file" >&2
+      tail -n 60 "$log_file" "$console_log" >&2 || true
+      stop_owned_session
+      exit 1
+    fi
+
+    XDISPLAY="$(sed -n 's/.*xserver listening on display :\([0-9][0-9]*\).*/\1/p' "$log_file" | tail -n 1)"
+    if [[ -z "$XDISPLAY" ]] || ! DISPLAY=":$XDISPLAY" xdpyinfo >/dev/null 2>&1; then
+      echo "ERROR: XWayland display did not accept an X11 client; see $log_file" >&2
+      stop_owned_session
+      exit 1
+    fi
+    printf '%s\n' ":$XDISPLAY" > "$display_file"
+    echo "status=starting-output"
+    echo "weston_pid=$WESTON_PID"
+    echo "DISPLAY=:$XDISPLAY"
+    echo "WAYLAND_DISPLAY=$SESSION_SOCKET"
+    echo "XDG_RUNTIME_DIR=$RUNTIME"
+    echo "SESSION_ID=$SESSION_ID"
+    echo "SURFACE_GENERATION=0"
+    echo "TRANSPORT_DIR=$TRANSPORT_DIR"
+    echo "log=$log_file"
+    # Start Android output IPC only after Weston/XWayland is ready.
+    CAPTURE="$PREFIX/bin/xw11-weston-capture"
+    AM="$(command -v am || true)"
+    if [[ ! -x "$CAPTURE" || -z "$AM" ]]; then
+      echo "ERROR: output rendering requires xw11-weston-capture in PREFIX/bin and Android am." >&2
+      stop_owned_session
+      exit 1
+    fi
+    ANDROID_COMPONENT="${XW11_ANDROID_COMPONENT:-org.techwithkaushik.termuxxw11/com.termux.x11.MainActivity}"
+    "$AM" start -n "$ANDROID_COMPONENT" >> "$console_log" 2>&1 || {
+      echo "ERROR: could not launch MainActivity output Surface" >&2
+      stop_owned_session
+      exit 1
+    }
+    : > "$capture_log"
+    CLASSPATH="$PREFIX/libexec/termux-xw11/loader.apk"
+    if [[ ! -r "$CLASSPATH" ]]; then
+      echo "ERROR: Termux-X11 loader APK is missing: $CLASSPATH" >&2
+      stop_owned_session
+      exit 1
+    fi
+    env TMPDIR="$RUNTIME_ROOT" XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" \
+      XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" XW11_CAPTURE_BINARY="$CAPTURE" \
+      XW11_CAPTURE_LOG="$capture_log" PATH="$PREFIX/bin:$PATH" CLASSPATH="$CLASSPATH" \
+      /system/bin/app_process -Xnoimage-dex2oat / --nice-name="termux-xw11-wayland-output-broker" \
+      com.termux.x11.Loader --xw11-output-broker "$SESSION_ID" >> "$console_log" 2>&1 &
+    BROKER_PID=$!
+    printf '%s\n' "$BROKER_PID" > "$capture_pid_file"
+    printf '%s\n' "$BROKER_PID" > "$broker_pid_file"
+    frame_ready=0
+    for _ in {1..120}; do
+      if grep -q '^frame_sent=1 ' "$capture_log" 2>/dev/null; then
+        frame_ready=1
+        break
+      fi
+      if ! kill -0 "$BROKER_PID" 2>/dev/null; then break; fi
+      sleep 0.25
+    done
+    if (( ! frame_ready )); then
+      echo "ERROR: no first Weston frame reached the Android transport; see $capture_log and $log_file" >&2
+      cat "$capture_log" >&2 || true
+      stop_owned_session
+      exit 1
+    fi
+    echo "status=running"
+    echo "OUTPUT_TRANSPORT=Binder-FD"
+    echo "CAPTURE_BROKER_PID=$BROKER_PID"
+    echo "capture_log=$capture_log"
+    echo "NOTE: output capture uses a Binder-transferred connected AF_UNIX FD (no TCP, no direct cross-domain socket connect). Confirm first-frame presentation in logcat."
+
+    ;;
+esac

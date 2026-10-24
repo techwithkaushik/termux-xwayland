@@ -43,6 +43,8 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
 import android.view.PointerIcon;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
@@ -76,6 +78,7 @@ import com.termux.x11.utils.KeyInterceptor;
 import com.termux.x11.utils.TermuxX11ExtraKeys;
 import com.termux.x11.utils.X11ToolbarViewPager;
 
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -95,6 +98,8 @@ public class MainActivity extends AppCompatActivity {
     public static Handler handler = new Handler();
     private final Runnable connectRetry = this::tryConnect;
     FrameLayout frm;
+    private Xw11NativeSurfaceView xw11OutputView;
+    private Xw11OutputSocketServer xw11OutputSocketServer;
     TouchInputHandler mInputHandler;
     protected ICmdEntryInterface service = null;
     public TermuxX11ExtraKeys mExtraKeys;
@@ -297,6 +302,27 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Explicit opt-in diagnostic mode avoids touching EGL during normal
+        // display startup. Keep the Surface alive while native EGL tests it.
+        if (getIntent().getBooleanExtra("org.techwithkaushik.termuxxw11.RUN_EGL_PROBE", false)) {
+            SurfaceView probeView = new SurfaceView(this);
+            setContentView(probeView);
+            probeView.getHolder().addCallback(new SurfaceHolder.Callback() {
+                @Override public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                    try {
+                        Log.i("XW11-EGL-PROBE", NativeGraphicsProbe.probeEglCapabilities());
+                        Log.i("XW11-EGL-PROBE", NativeGraphicsProbe.probeWindowSurface(holder.getSurface()));
+                    } catch (Throwable error) {
+                        Log.e("XW11-EGL-PROBE", "Native EGL probe failed", error);
+                    }
+                }
+                @Override public void surfaceChanged(@NonNull SurfaceHolder holder, int format,
+                                                     int width, int height) {}
+                @Override public void surfaceDestroyed(@NonNull SurfaceHolder holder) {}
+            });
+            return;
+        }
+
         app = (LorieApp) getApplication();
 
         String parsedTag = relaunchAsTaggedIfNeeded(getIntent(), true);
@@ -321,6 +347,15 @@ public class MainActivity extends AppCompatActivity {
         applyWindowSettings();
 
         frm = findViewById(R.id.frame);
+        // Mount a dedicated XW11 output Surface directly in MainActivity. It stays
+        // hidden until a trusted output transport is attached; existing Lorie input
+        // listeners and keyboard routing below are deliberately left unchanged.
+        xw11OutputView = new Xw11NativeSurfaceView(this, true);
+        xw11OutputView.setVisibility(View.GONE);
+        xw11OutputView.setZOrderMediaOverlay(true);
+        xw11OutputView.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frm.addView(xw11OutputView);
         findViewById(R.id.preferences_button).setOnClickListener((l) -> startActivity(new Intent(this, LoriePreferences.class) {{ setAction(Intent.ACTION_MAIN); }}));
         findViewById(R.id.help_button).setOnClickListener((l) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-x11/blob/master/README.md#running-graphical-applications"))));
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
@@ -406,6 +441,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         findViewById(android.R.id.content).addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> makeSureHelpersAreVisibleAndInScreenBounds());
+        startXw11OutputBridge(getIntent());
+        ((LorieApp) getApplication()).onMainActivityReady(this);
     }
 
     @Override
@@ -413,6 +450,22 @@ public class MainActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         relaunchAsTaggedIfNeeded(intent, false);
+        startXw11OutputBridge(intent);
+    }
+
+    private synchronized void startXw11OutputBridge(Intent intent) {
+        if (intent == null || !intent.hasExtra("org.techwithkaushik.termuxxw11.OUTPUT_SOCKET"))
+            return;
+        String socketName = intent.getStringExtra("org.techwithkaushik.termuxxw11.OUTPUT_SOCKET");
+        String token = intent.getStringExtra("org.techwithkaushik.termuxxw11.OUTPUT_TOKEN");
+        long sessionId = intent.getLongExtra("org.techwithkaushik.termuxxw11.OUTPUT_SESSION", 0L);
+        try {
+            if (xw11OutputSocketServer != null) xw11OutputSocketServer.close();
+            xw11OutputSocketServer = new Xw11OutputSocketServer(this, socketName, token, sessionId);
+            xw11OutputSocketServer.start();
+        } catch (Exception error) {
+            Log.e("XW11OutputIPC", "Could not start authenticated output socket", error);
+        }
     }
 
     @Override
@@ -421,6 +474,10 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacks(serverWatchdog);
         if (mInputHandler != null)
             mInputHandler.onDestroy();
+        if (xw11OutputSocketServer != null) {
+            xw11OutputSocketServer.close();
+            xw11OutputSocketServer = null;
+        }
         instances.values().removeIf(ref -> ref.get() == this);
         super.onDestroy();
     }
@@ -862,6 +919,72 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
 
         app.onActivityPaused();
+    }
+
+    /**
+     * Bind the XW11 output stream to MainActivity's own Surface.
+     * The active supervisor obtains the connected descriptor through Binder and
+     * binds it to this session. Input remains on the existing TouchInputHandler/
+     * LorieView path.
+     */
+    void prepareXw11OutputSurface() {
+        if (xw11OutputView != null) xw11OutputView.setVisibility(View.VISIBLE);
+    }
+
+    long outputSurfaceGenerationForIpc() {
+        return xw11OutputView == null ? 0 : xw11OutputView.generationForDiagnostics();
+    }
+
+    void attachXw11OutputFromBroker(@NonNull IXw11OutputBroker broker, long sessionId) {
+        runOnUiThread(this::prepareXw11OutputSurface);
+        Thread worker = new Thread(() -> {
+            ParcelFileDescriptor descriptor = null;
+            try {
+                long deadline = android.os.SystemClock.uptimeMillis() + 10000;
+                long generation = 0;
+                while (android.os.SystemClock.uptimeMillis() < deadline) {
+                    if (isFinishing()) throw new IOException("Activity is finishing");
+                    generation = outputSurfaceGenerationForIpc();
+                    if (generation > 0) break;
+                    Thread.sleep(25);
+                }
+                if (generation <= 0) throw new IOException("Output Surface did not become ready");
+                descriptor = broker.getOutputConnection(sessionId, generation);
+                if (descriptor == null) throw new IOException("Binder broker returned no output descriptor");
+                ParcelFileDescriptor accepted = descriptor;
+                descriptor = null;
+                long readyGeneration = generation;
+                runOnUiThread(() -> {
+                    try {
+                        if (attachXw11OutputTransport(accepted, sessionId))
+                            Log.i("XW11OutputIPC", "Binder FD attached; generation=" + readyGeneration);
+                        else
+                            Log.e("XW11OutputIPC", "Binder FD could not attach to output Surface");
+                    } finally {
+                        try { accepted.close(); } catch (IOException ignored) {}
+                    }
+                });
+            } catch (Exception error) {
+                Log.e("XW11OutputIPC", "Binder output handoff failed", error);
+            } finally {
+                if (descriptor != null) try { descriptor.close(); } catch (IOException ignored) {}
+            }
+        }, "XW11-binder-output");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    boolean attachXw11OutputTransport(@NonNull ParcelFileDescriptor connectedSocket,
+                                      long sessionId) {
+        if (xw11OutputView == null || sessionId <= 0) return false;
+        // A GONE Surface has no valid generation yet. Make it visible first;
+        // the view retains the socket and starts its receiver from surfaceChanged().
+        xw11OutputView.setVisibility(View.VISIBLE);
+        if (!xw11OutputView.attachOutputTransport(connectedSocket, sessionId)) {
+            xw11OutputView.setVisibility(View.GONE);
+            return false;
+        }
+        return true;
     }
 
     public LorieView getLorieView() {

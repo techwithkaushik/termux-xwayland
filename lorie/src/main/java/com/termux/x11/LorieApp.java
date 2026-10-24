@@ -41,6 +41,8 @@ public class LorieApp extends Application {
     public final Map<String, IBinder> pendingConnections = new HashMap<>();
 
     private Notification baseNotification;
+    private IBinder pendingOutputBroker;
+    private long pendingOutputSession;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener preferencesChangedListener = (__, key) -> {
         for (MainActivity activity : MainActivity.getInstances())
@@ -101,6 +103,24 @@ public class LorieApp extends Application {
                 ? secondaryPrefs : builtInPrefs;
     }
 
+    void onMainActivityReady(MainActivity activity) {
+        IBinder binder;
+        long sessionId;
+        synchronized (this) {
+            binder = pendingOutputBroker;
+            sessionId = pendingOutputSession;
+            pendingOutputBroker = null;
+            pendingOutputSession = 0;
+        }
+        if (binder != null && sessionId > 0) {
+            try {
+                activity.attachXw11OutputFromBroker(IXw11OutputBroker.Stub.asInterface(binder), sessionId);
+            } catch (Exception error) {
+                Log.e("XW11OutputIPC", "Could not attach pending Binder output broker", error);
+            }
+        }
+    }
+
     public void onActivityResumed(MainActivity activity) {
         notificationManager.notify(NOTIFICATION_ID, buildNotification(activity));
     }
@@ -135,6 +155,29 @@ public class LorieApp extends Application {
             activity.prefs = getPrefs(activity);
 
         switch (action == null ? "" : action) {
+            case CmdEntryPoint.ACTION_XW11_OUTPUT_BROKER: {
+                Bundle binderBundle = intent.getBundleExtra(CmdEntryPoint.EXTRA_XW11_BROKER_BINDER);
+                IBinder binder = binderBundle == null ? null : binderBundle.getBinder(CmdEntryPoint.EXTRA_XW11_BROKER_BINDER);
+                long sessionId = intent.getLongExtra(CmdEntryPoint.EXTRA_XW11_SESSION, 0L);
+                if (binder == null || sessionId <= 0) {
+                    Log.e("XW11OutputIPC", "Broker broadcast has invalid Binder/session");
+                    break;
+                }
+                if (activity == null) {
+                    synchronized (this) {
+                        pendingOutputBroker = binder;
+                        pendingOutputSession = sessionId;
+                    }
+                    Log.i("XW11OutputIPC", "Stored Binder output broker until MainActivity is ready");
+                    break;
+                }
+                try {
+                    activity.attachXw11OutputFromBroker(IXw11OutputBroker.Stub.asInterface(binder), sessionId);
+                } catch (Exception error) {
+                    Log.e("XW11OutputIPC", "Could not attach Binder output broker", error);
+                }
+                break;
+            }
             case ACTION_START: {
                 Bundle bundle = intent.getBundleExtra(null);
                 IBinder binder = bundle == null ? null : bundle.getBinder(null);
@@ -163,6 +206,13 @@ public class LorieApp extends Application {
                 } catch (RemoteException ignored) {}
 
                 if (activity != null) {
+                    // The command entry point retries ACTION_START while the display socket
+                    // is not connected yet. Rebinding the exact same live Binder on every retry
+                    // repeatedly starts logcat readers and restarts MainActivity's connect loop.
+                    // Its existing 250 ms retry already handles a pending X connection.
+                    if (binder.equals(activeService)) {
+                        break;
+                    }
                     try {
                         Log.v("LorieApp", "Got new ACTION_START intent");
                         activity.connectToService(binder);

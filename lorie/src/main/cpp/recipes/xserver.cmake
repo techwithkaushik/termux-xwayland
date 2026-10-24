@@ -288,9 +288,26 @@ add_library(Xlorie SHARED
         "lorie/renderer.cpp"
         "lorie/buffer.c"
         "lorie/activity.cpp"
+        "lorie/graphics_probe.cpp"
         "lorie/cmdentrypoint.cpp"
-        "lorie/workqueue.cpp")
-target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include")
+        "lorie/workqueue.cpp"
+        "../../../../tools/native-transport/xw11_surface_generation.cpp"
+        "../../../../tools/native-transport/xw11_buffer_descriptor.cpp"
+        "../../../../tools/native-transport/xw11_buffer_wire.cpp"
+        "../../../../tools/native-transport/xw11_buffer_transport.cpp"
+        "../../../../tools/native-transport/xw11_buffer_registry.cpp"
+        "../../../../tools/native-transport/xw11_input_transform.cpp"
+        "../../../../tools/native-transport/xw11_input_event.cpp"
+        "../../../../tools/native-transport/xw11_input_queue.cpp"
+        "../../../../tools/native-transport/xw11_transport_protocol.cpp"
+        "../../../../tools/native-transport/xw11_transport_io.cpp"
+        "../../../../tools/native-transport/xw11_input_transport.cpp"
+        "../../../../tools/native-transport/xw11_input_receiver.cpp"
+        "../../../../tools/native-transport/xw11_input_dispatcher.cpp"
+        "../../../../tools/native-transport/xw11_surface_presenter_android.cpp"
+        "../../../../tools/native-transport/xw11_output_frame.cpp"
+        "../../../../tools/native-transport/xw11_output_stream.cpp")
+target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include" "../../../../tools/native-transport")
 # -nostdlib++ keeps this shared object free of any libc++ dependency; renderer.cpp, activity.cpp,
 # and cmdentrypoint.cpp are restricted to a runtime-free subset of C++ (no exceptions, no RTTI, no
 # STL) to make that possible.

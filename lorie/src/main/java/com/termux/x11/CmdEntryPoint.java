@@ -31,11 +31,22 @@ import java.net.URL;
 @Keep @SuppressLint({"StaticFieldLeak", "UnsafeDynamicallyLoadedCode"})
 public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     public static final String ACTION_START = "com.termux.x11.CmdEntryPoint.ACTION_START";
+    public static final String ACTION_XW11_OUTPUT_BROKER = "com.termux.x11.ACTION_XW11_OUTPUT_BROKER";
+    public static final String EXTRA_XW11_BROKER_BINDER = "com.termux.x11.EXTRA_XW11_BROKER_BINDER";
+    public static final String EXTRA_XW11_SESSION = "com.termux.x11.EXTRA_XW11_SESSION";
     public static final String EXTRA_DOCUMENT_TAG = "document_tag";
     static final Handler handler;
     public static Context ctx;
     private final Intent intent = createIntent();
     private boolean broadcastPending;
+    private long brokerSessionId;
+    private final IXw11OutputBroker.Stub outputBroker = new IXw11OutputBroker.Stub() {
+        @Override public ParcelFileDescriptor getOutputConnection(long sessionId, long surfaceGeneration) {
+            if (sessionId <= 0 || sessionId != brokerSessionId || surfaceGeneration <= 0)
+                throw new IllegalArgumentException("Invalid XW11 output session or Surface generation");
+            return getXw11OutputConnection(sessionId, surfaceGeneration);
+        }
+    };
 
     /**
      * Command-line entry point.
@@ -45,13 +56,36 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     public static void main(String[] args) {
         initEntryPoint();
         android.util.Log.i("CmdEntryPoint", "commit " + BuildConfig.COMMIT);
-        handler.post(() -> new CmdEntryPoint(args));
+        boolean outputBrokerMode = args.length >= 2 && "--xw11-output-broker".equals(args[0]);
+        handler.post(() -> {
+            if (outputBrokerMode) new CmdEntryPoint(args, true).startOutputBroker(args);
+            else new CmdEntryPoint(args);
+        });
         Looper.loop();
     }
 
-    CmdEntryPoint(String[] args) {
-        if (!start(args))
+    CmdEntryPoint(String[] args) { this(args, false); }
+
+    private CmdEntryPoint(String[] args, boolean brokerOnly) {
+        if (!brokerOnly && !start(args)) System.exit(1);
+    }
+
+    private void startOutputBroker(String[] args) {
+        try {
+            brokerSessionId = Long.parseLong(args[1]);
+            if (brokerSessionId <= 0 || brokerSessionId > 0xffffffffL) throw new IllegalArgumentException("Invalid session id");
+            Bundle binderBundle = new Bundle();
+            binderBundle.putBinder(EXTRA_XW11_BROKER_BINDER, outputBroker);
+            Intent brokerIntent = new Intent(ACTION_XW11_OUTPUT_BROKER).setPackage(BuildConfig.APPLICATION_ID)
+                    .putExtra(EXTRA_XW11_BROKER_BINDER, binderBundle)
+                    .putExtra(EXTRA_XW11_SESSION, brokerSessionId);
+            if (getuid() == 0 || getuid() == 2000) brokerIntent.setFlags(0x00400000 /* FLAG_RECEIVER_FROM_SHELL */);
+            sendBroadcast(brokerIntent);
+            Log.i("XW11OutputBroker", "Published output Binder for session " + brokerSessionId);
+        } catch (Exception error) {
+            Log.e("XW11OutputBroker", "Could not start output broker", error);
             System.exit(1);
+        }
     }
 
     // Called from native once OsVendorInit() resolves the "-tag" argument, if any.
@@ -179,6 +213,7 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
 
     public native boolean start(String[] args);
     public native ParcelFileDescriptor getXConnection();
+    private native ParcelFileDescriptor getXw11OutputConnection(long sessionId, long surfaceGeneration);
     public native ParcelFileDescriptor getLogcatOutput();
     public native void reportFatalError(String message);
     @CriticalNative private static native boolean connected();

@@ -11,6 +11,11 @@
 #include <android/log.h>
 #include <android/native_window_jni.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/prctl.h>
 #include <sys/ioctl.h>
@@ -129,14 +134,14 @@ static jboolean start(JNIEnv *env, jobject self, jobjectArray args) {
         unsetenv("TMPDIR");
 
     if (!getenv("TMPDIR")) {
-        if (access("/tmp", F_OK) == 0)
-            setenv("TMPDIR", "/tmp", 1);
-        else if (access("/data/data/com.termux/files/usr/tmp", F_OK) == 0)
+        // Prefer Termux's writable temporary directory. Android/Termux does
+        // not guarantee a system-wide /tmp directory exists or is writable.
+        if (access("/data/data/com.termux/files/usr/tmp", F_OK | W_OK) == 0)
             setenv("TMPDIR", "/data/data/com.termux/files/usr/tmp", 1);
     }
 
     if (!getenv("TMPDIR")) {
-        char* error = (char*) "$TMPDIR is not set. Normally it is pointing to /tmp of a container.";
+        char* error = (char*) "$TMPDIR is not set and no writable temporary directory was found.";
         log(ERROR, "%s", error);
         dprintf(2, "%s\n", error);
         return JNI_FALSE;
@@ -577,6 +582,76 @@ static jobject getXConnection(JNIEnv *env, __unused jobject cls) {
     return env->CallStaticObjectMethod(ParcelFileDescriptorClass, adoptFd, client[0]);
 }
 
+static jobject getXw11OutputConnection(JNIEnv *env, __unused jobject self,
+                                                   jlong sessionId, jlong surfaceGeneration) {
+    if (sessionId <= 0 || sessionId > 0xffffffffLL || surfaceGeneration <= 0) {
+        errno = EINVAL;
+        return nullptr;
+    }
+    const char *capture = getenv("XW11_CAPTURE_BINARY");
+    const char *pidFile = getenv("XW11_CAPTURE_PID_FILE");
+    const char *runtime = getenv("XDG_RUNTIME_DIR");
+    const char *wayland = getenv("WAYLAND_DISPLAY");
+    if (!capture || capture[0] != '/' || !pidFile || pidFile[0] != '/' ||
+        !runtime || runtime[0] != '/' || !wayland || !*wayland) {
+        log(ERROR, "XW11 output broker environment is incomplete");
+        return nullptr;
+    }
+
+    int pair[2] = {-1, -1};
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0) {
+        log(ERROR, "XW11 output socketpair failed: %s", strerror(errno));
+        return nullptr;
+    }
+    pid_t child = fork();
+    if (child < 0) {
+        log(ERROR, "XW11 capture fork failed: %s", strerror(errno));
+        close(pair[0]); close(pair[1]);
+        return nullptr;
+    }
+    if (child == 0) {
+        close(pair[0]);
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        if (fcntl(pair[1], F_SETFD, 0) != 0) _exit(126);
+        const char *logPath = getenv("XW11_CAPTURE_LOG");
+        if (logPath && logPath[0] == '/') {
+            int logFd = open(logPath, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+            if (logFd >= 0) {
+                dup2(logFd, STDOUT_FILENO);
+                dup2(logFd, STDERR_FILENO);
+                close(logFd);
+            }
+        }
+        char fdText[24], sessionText[24], generationText[24];
+        snprintf(fdText, sizeof(fdText), "%d", pair[1]);
+        snprintf(sessionText, sizeof(sessionText), "%llu", (unsigned long long)sessionId);
+        snprintf(generationText, sizeof(generationText), "%llu", (unsigned long long)surfaceGeneration);
+        char *const childArgv[] = {(char *)capture, fdText, sessionText, generationText,
+                                   (char *)"--continuous", (char *)"--wait-presented", nullptr};
+        execv(capture, childArgv);
+        dprintf(STDERR_FILENO, "XW11 capture exec failed: %s\n", strerror(errno));
+        _exit(127);
+    }
+
+    close(pair[1]);
+    int flags = fcntl(pair[0], F_GETFD);
+    if (flags >= 0) fcntl(pair[0], F_SETFD, flags | FD_CLOEXEC);
+    jclass pfdClass = env->FindClass("android/os/ParcelFileDescriptor");
+    if (!pfdClass) { close(pair[0]); kill(child, SIGTERM); return nullptr; }
+    jmethodID adoptFd = env->GetStaticMethodID(pfdClass, "adoptFd",
+                                               "(I)Landroid/os/ParcelFileDescriptor;");
+    if (!adoptFd) { close(pair[0]); kill(child, SIGTERM); return nullptr; }
+    jobject descriptor = env->CallStaticObjectMethod(pfdClass, adoptFd, pair[0]);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        kill(child, SIGTERM);
+        return nullptr;
+    }
+    log(INFO, "Started XW11 capture helper pid=%ld for Binder session %llu generation %llu",
+        (long)child, (unsigned long long)sessionId, (unsigned long long)surfaceGeneration);
+    return descriptor;
+}
+
 static jobject getLogcatOutput(JNIEnv *env, __unused jobject cls) {
     jclass ParcelFileDescriptorClass = env->FindClass("android/os/ParcelFileDescriptor");
     jmethodID adoptFd = env->GetStaticMethodID(ParcelFileDescriptorClass, "adoptFd", "(I)Landroid/os/ParcelFileDescriptor;");
@@ -681,6 +756,7 @@ void registerCmdEntryPointNatives(JNIEnv *env) {
     static JNINativeMethod methods[] = {
             {"start", "([Ljava/lang/String;)Z", (void *) &start},
             {"getXConnection", "()Landroid/os/ParcelFileDescriptor;", (void *) &getXConnection},
+            {"getXw11OutputConnection", "(JJ)Landroid/os/ParcelFileDescriptor;", (void *) &getXw11OutputConnection},
             {"getLogcatOutput", "()Landroid/os/ParcelFileDescriptor;", (void *) &getLogcatOutput},
             {"reportFatalError", "(Ljava/lang/String;)V", (void *) &reportFatalError},
             {"connected", "()Z", (void *) +[]() -> jboolean { return conn_fd != -1; }}, // @CriticalNative
