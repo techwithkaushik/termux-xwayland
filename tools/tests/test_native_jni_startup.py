@@ -45,6 +45,17 @@ class OptionalXw11JniStartupTests(unittest.TestCase):
         self.assertIn("rgba, rgbaStride", worker)
         self.assertIn("free(rgba);", worker)
 
+    def test_output_receiver_allocates_rgba_for_actual_frame_dimensions(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        worker_start = source.index("static void *xw11OutputWorker")
+        worker_end = source.index("struct Xw11InputLock", worker_start)
+        worker = source[worker_start:worker_end]
+        self.assertIn("const size_t capacity = XW11_OUTPUT_FRAME_MAX_BYTES;", worker)
+        self.assertIn("const size_t rgbaBytes = rgbaStride * (size_t)frame.height;", worker)
+        self.assertIn("malloc(rgbaBytes)", worker)
+        self.assertNotIn("malloc(capacity));\n    if (!pixels || !rgba)", worker)
+        self.assertIn("free(rgba);", worker)
+
 
 if __name__ == "__main__":
     unittest.main()
