@@ -290,7 +290,7 @@ case "$ACTION" in
         frame_ready=1
         break
       fi
-      if ! kill -0 "$CAPTURE_PID" 2>/dev/null; then break; fi
+      if ! kill -0 "$BROKER_PID" 2>/dev/null; then break; fi
       sleep 0.25
     done
     if (( ! frame_ready )); then
@@ -300,8 +300,8 @@ case "$ACTION" in
       exit 1
     fi
     echo "status=running"
-    echo "OUTPUT_SOCKET=$OUTPUT_SOCKET"
-    echo "CAPTURE_PID=$CAPTURE_PID"
+    echo "OUTPUT_TRANSPORT=Binder-FD"
+    echo "CAPTURE_BROKER_PID=$BROKER_PID"
     echo "capture_log=$capture_log"
     echo "NOTE: output capture uses a Binder-transferred connected AF_UNIX FD (no TCP, no direct cross-domain socket connect). Confirm first-frame presentation in logcat."
 
