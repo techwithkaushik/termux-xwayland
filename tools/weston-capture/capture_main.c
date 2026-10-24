@@ -320,6 +320,11 @@ int main(int argc, char **argv) {
             fprintf(stderr, "ERROR: output transport failed (%d)\n", (int)sent);
             break;
         }
+        if (sequence == 1) {
+            fprintf(stderr, "frame_sent=1 dimensions=%ux%u generation=%llu\n",
+                    a.width, a.height, (unsigned long long)generation);
+            fflush(stderr);
+        }
         if (sequence == UINT64_MAX) {
             fprintf(stderr, "ERROR: output frame sequence exhausted\n");
             sent = XW11_OUTPUT_STREAM_ERR_SEQUENCE;
