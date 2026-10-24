@@ -82,6 +82,25 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         }
     }
 
+    private static int attachOutputSafely(int fd, long sessionId, long current) {
+        if (!nativeBridgeAvailable) return -1;
+        try {
+            return nativeAttachOutputTransport(fd, sessionId, current);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+            return -1;
+        }
+    }
+
+    private static void detachOutputSafely(long current) {
+        if (!nativeBridgeAvailable) return;
+        try {
+            nativeDetachOutputTransport(current);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+        }
+    }
+
     private static int attachInputSafely(int fd, long sessionId, long current) {
         if (!nativeBridgeAvailable) return -1;
         try {
@@ -366,8 +385,26 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         generation = 0;
         if (current != 0) {
             // Teardown must always complete even if RegisterNatives failed for this APK.
+            detachOutputSafely(current);
             detachInputSafely(current);
             detachSurfaceSafely(current);
+        }
+    }
+
+    /**
+     * Attach a connected AF_UNIX SOCK_STREAM socket carrying authenticated XW11 output frames.
+     * Native duplicates the descriptor and consumes frames on a background thread.
+     */
+    boolean attachOutputTransport(@NonNull ParcelFileDescriptor connectedSocket, long sessionId) {
+        final long current = generation;
+        if (current == 0 || sessionId <= 0) return false;
+        try {
+            int result = attachOutputSafely(connectedSocket.getFd(), sessionId, current);
+            if (result != 0) Log.e(TAG, "Native output transport attach failed: " + result);
+            return result == 0;
+        } catch (Exception e) {
+            Log.e(TAG, "Unable to obtain output transport descriptor", e);
+            return false;
         }
     }
 
@@ -387,6 +424,8 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static native int nativePresentRgbaFrame(java.nio.ByteBuffer pixels,
             int offset, int length, int width, int height, int strideBytes, long generation);
     private static native int nativeAttachSurface(Surface surface, long generation);
+    private static native int nativeAttachOutputTransport(int fd, long sessionId, long generation);
+    private static native void nativeDetachOutputTransport(long generation);
     private static native void nativeDetachSurface(long generation);
     private static native int nativeAttachInputTransport(int fd, long sessionId, long generation);
     private static native boolean nativeSubmitInputEvent(long generation, long timeNs,
