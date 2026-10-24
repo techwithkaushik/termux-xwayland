@@ -340,6 +340,6 @@ int main(int argc, char **argv) {
     cleanup(&a);
     if (sent != XW11_OUTPUT_STREAM_OK) return 21;
     fprintf(stderr, "captured=%ux%u format=0x%08x frames=%llu bytes/frame=%zu\n",
-            a.width, a.height, (unsigned long long)(sequence - 1), bytes);
+            a.width, a.height, a.format, (unsigned long long)(sequence - 1), bytes);
     return 0;
 }
