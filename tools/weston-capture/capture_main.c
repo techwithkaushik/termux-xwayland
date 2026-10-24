@@ -103,20 +103,20 @@ static int connect_authenticated_socket(const char *port_text, const char *token
                                        uint32_t session, uint64_t *generation_out) {
     if (!port_text || !*port_text || strlen(port_text) > 5 ||
         !token || strlen(token) != 64) {
-        fprintf(stderr, "ERROR: invalid loopback port or authentication token\\n");
+        fprintf(stderr, "ERROR: invalid loopback port or authentication token\n");
         return -1;
     }
     char *end = NULL;
     long port = strtol(port_text, &end, 10);
     if (!end || *end || port < 1024 || port > 65535) {
-        fprintf(stderr, "ERROR: output port must be in range 1024..65535\\n");
+        fprintf(stderr, "ERROR: output port must be in range 1024..65535\n");
         return -1;
     }
     for (size_t i = 0; i < 64; ++i) {
         if (!((token[i] >= '0' && token[i] <= '9') ||
               (token[i] >= 'a' && token[i] <= 'f') ||
               (token[i] >= 'A' && token[i] <= 'F'))) {
-            fprintf(stderr, "ERROR: output token must be 64 hexadecimal characters\\n");
+            fprintf(stderr, "ERROR: output token must be 64 hexadecimal characters\n");
             return -1;
         }
     }
@@ -148,7 +148,7 @@ static int connect_authenticated_socket(const char *port_text, const char *token
         return -1;
     }
     char line[128];
-    int n = snprintf(line, sizeof(line), "XW11AUTH %u %s\\n", session, token);
+    int n = snprintf(line, sizeof(line), "XW11AUTH %u %s\n", session, token);
     if (n <= 0 || (size_t)n >= sizeof(line)) { close(fd); return -1; }
     size_t offset = 0;
     while (offset < (size_t)n) {
@@ -164,16 +164,16 @@ static int connect_authenticated_socket(const char *port_text, const char *token
         ssize_t got = read(fd, &ch, 1);
         if (got < 0 && errno == EINTR) continue;
         if (got <= 0) { perror("read Android output readiness"); close(fd); return -1; }
-        if (ch == '\\n') break;
+        if (ch == '\n') break;
         if (ch < 0x20 || ch > 0x7e) { close(fd); return -1; }
         ready[ready_length++] = ch;
     }
-    ready[ready_length] = '\\0';
+    ready[ready_length] = '\0';
     unsigned long long negotiated = 0;
     char trailing = 0;
     if (sscanf(ready, "XW11READY %llu%c", &negotiated, &trailing) != 1 ||
         negotiated == 0) {
-        fprintf(stderr, "ERROR: Android output Surface did not provide a valid generation\\n");
+        fprintf(stderr, "ERROR: Android output Surface did not provide a valid generation\n");
         close(fd);
         return -1;
     }
