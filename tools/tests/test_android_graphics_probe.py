@@ -73,7 +73,10 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         destroyed_end = self.presenter_view.index("\n    }", destroyed)
         lifecycle = self.presenter_view[destroyed:destroyed_end]
         self.assertIn("generation = 0;", lifecycle)
-        self.assertIn("nativeDetachSurface(current);", lifecycle)
+        self.assertIn("detachSurfaceSafely(current);", lifecycle)
+        self.assertIn("detachInputSafely(current);", lifecycle)
+        self.assertNotIn("nativeDetachSurface(current);", lifecycle)
+        self.assertNotIn("nativeDetachInputTransport(current);", lifecycle)
         self.assertIn("frameGeneration != generation", self.presenter_view)
         self.assertIn("final int frameWidth = width;", self.presenter_activity)
         self.assertIn("final int frameHeight = height;", self.presenter_activity)
