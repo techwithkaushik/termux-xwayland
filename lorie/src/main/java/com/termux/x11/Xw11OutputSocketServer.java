@@ -1,7 +1,5 @@
 package com.termux.x11;
 
-import android.net.LocalServerSocket;
-import android.net.LocalSocket;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -10,32 +8,35 @@ import androidx.annotation.NonNull;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * Authenticated abstract AF_UNIX output bridge. TCP is intentionally not used
- * by this transport; the future X-server-argument TCP path must be validated
- * independently before it is enabled.
- */
+/** Authenticated IPv4-loopback output bridge for Termux/Android IPC. */
 final class Xw11OutputSocketServer implements AutoCloseable {
     private static final String TAG = "XW11OutputIPC";
-    private final String socketName;
+    private final int port;
     private final String expectedHandshake;
     private final long sessionId;
     private final MainActivity activity;
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private LocalServerSocket server;
+    private ServerSocket server;
     private Thread thread;
 
-    Xw11OutputSocketServer(@NonNull MainActivity activity, @NonNull String socketName,
+    Xw11OutputSocketServer(@NonNull MainActivity activity, @NonNull String portText,
                            @NonNull String token, long sessionId) {
-        if (!socketName.matches("[A-Za-z0-9_.-]{1,80}") ||
+        int parsedPort;
+        try { parsedPort = Integer.parseInt(portText); }
+        catch (NumberFormatException error) { throw new IllegalArgumentException("Invalid XW11 loopback port", error); }
+        if (parsedPort < 1024 || parsedPort > 65535 ||
             !token.matches("[A-Fa-f0-9]{64}") || sessionId <= 0 ||
             sessionId > 0xffffffffL) {
             throw new IllegalArgumentException("Invalid XW11 output IPC parameters");
         }
-        this.socketName = socketName;
+        this.port = parsedPort;
         this.expectedHandshake = "XW11AUTH " + sessionId + " " + token;
         this.sessionId = sessionId;
         this.activity = activity;
@@ -43,11 +44,13 @@ final class Xw11OutputSocketServer implements AutoCloseable {
 
     synchronized void start() throws IOException {
         if (server != null) return;
-        server = new LocalServerSocket(socketName);
+        server = new ServerSocket();
+        server.setReuseAddress(false);
+        server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 1);
         thread = new Thread(this::acceptLoop, "XW11-output-ipc");
         thread.setDaemon(true);
         thread.start();
-        Log.i(TAG, "Authenticated abstract AF_UNIX output socket ready for session " + sessionId);
+        Log.i(TAG, "Authenticated loopback TCP output socket ready on 127.0.0.1:" + port + " for session " + sessionId);
     }
 
     private static String readHandshake(InputStream input) throws IOException {
@@ -67,10 +70,12 @@ final class Xw11OutputSocketServer implements AutoCloseable {
 
     private void acceptLoop() {
         while (!closed.get()) {
-            LocalSocket peer = null;
+            Socket peer = null;
             ParcelFileDescriptor descriptor = null;
             try {
                 peer = server.accept();
+                if (!peer.getInetAddress().isLoopbackAddress())
+                    throw new IOException("Rejected non-loopback XW11 output peer");
                 peer.setSoTimeout(3000);
                 String handshake = readHandshake(peer.getInputStream());
                 if (!expectedHandshake.equals(handshake)) {
@@ -91,7 +96,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                 output.write(("XW11READY " + generation + "\n").getBytes(StandardCharsets.US_ASCII));
                 output.flush();
                 peer.setSoTimeout(0);
-                descriptor = ParcelFileDescriptor.dup(peer.getFileDescriptor());
+                descriptor = ParcelFileDescriptor.fromSocket(peer);
                 ParcelFileDescriptor accepted = descriptor;
                 descriptor = null;
                 final long readyGeneration = generation;
@@ -108,7 +113,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                         try { accepted.close(); } catch (IOException ignored) {}
                     }
                 });
-                // Keep peer alive: the duplicated descriptor shares its socket.
+                // Keep the peer alive: the descriptor shares its connected socket.
                 peer = null;
                 break;
             } catch (IOException error) {
