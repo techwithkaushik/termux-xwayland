@@ -16,7 +16,7 @@ class SupervisorTransportLifecycleTest(unittest.TestCase):
         self.assertIn('SESSION_ID="$(od -An -N4 -tu4 /dev/urandom', self.source)
         self.assertIn('chmod 700 "$TRANSPORT_DIR"', self.source)
         self.assertIn('chmod 600 "$session_file" "$generation_file" "$transport_dir_file"', self.source)
-        self.assertIn("OUTPUT_TOKEN=\"$(od -An -N32 -tx1 /dev/urandom", self.source)
+        self.assertIn('OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom', self.source)
         self.assertIn('chmod 600 "$output_socket_file" "$output_token_file"', self.source)
 
     def test_stop_removes_only_recorded_transport_directory_and_capture(self):
@@ -34,8 +34,9 @@ class SupervisorTransportLifecycleTest(unittest.TestCase):
         self.assertIn('"$AM" start -n "$ANDROID_COMPONENT"', self.source)
         self.assertIn('OUTPUT_TOKEN "$OUTPUT_TOKEN"', self.source)
         self.assertIn('"$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous', self.source)
-        self.assertIn('NOTE: output capture is connected over authenticated loopback TCP; confirm first-frame presentation in logcat.', self.source)
+        self.assertIn('NOTE: output capture is connected over authenticated abstract AF_UNIX IPC (no TCP).', self.source)
         self.assertIn("no desktop is launched", self.source)
+        self.assertNotIn("authenticated loopback TCP", self.source)
 
 
 if __name__ == "__main__":
