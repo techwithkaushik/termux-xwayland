@@ -11,10 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/socket.h>
@@ -102,18 +98,11 @@ static const struct wl_registry_listener registry_listener = {
     registry_global, registry_remove
 };
 
-static int connect_authenticated_socket(const char *port_text, const char *token,
+static int connect_authenticated_socket(const char *socket_name, const char *token,
                                        uint32_t session, uint64_t *generation_out) {
-    if (!port_text || !*port_text || strlen(port_text) > 5 ||
+    if (!socket_name || !*socket_name || strlen(socket_name) >= sizeof(((struct sockaddr_un *)0)->sun_path) - 1 ||
         !token || strlen(token) != 64) {
-        fprintf(stderr, "ERROR: invalid loopback port or authentication token\n");
-        return -1;
-    }
-    char *end = NULL;
-    errno = 0;
-    long port = strtol(port_text, &end, 10);
-    if (errno || !end || *end || port < 1024 || port > 65535) {
-        fprintf(stderr, "ERROR: output port must be between 1024 and 65535\n");
+        fprintf(stderr, "ERROR: invalid abstract Unix socket name or authentication token\n");
         return -1;
     }
     for (size_t i = 0; i < 64; ++i) {
@@ -125,29 +114,30 @@ static int connect_authenticated_socket(const char *port_text, const char *token
         }
     }
 
-    /* Loopback TCP is intentional: Android SELinux can reject cross-domain
-     * AF_UNIX abstract-socket connections between Termux and the app. The
-     * per-session token still authenticates the peer before frame transport. */
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) { perror("create output socket"); return -1; }
-    struct sockaddr_in address = {0};
-    address.sin_family = AF_INET;
-    address.sin_port = htons((uint16_t)port);
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    /* am start returns before Android has necessarily created MainActivity's
-     * listener. Retry only transient startup failures, with a bounded deadline;
-     * do not retry authentication or protocol errors after a connection succeeds. */
+    /* Match Android's LocalServerSocket: abstract AF_UNIX, not loopback TCP.
+     * This socket is distinct from both the Wayland and X11 display sockets.
+     * Keep the per-session handshake so another local process cannot inject frames
+     * merely by guessing/observing the abstract socket name. */
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) { perror("create output Unix socket"); return -1; }
+    struct sockaddr_un address = {0};
+    address.sun_family = AF_UNIX;
+    address.sun_path[0] = '\0';
+    memcpy(address.sun_path + 1, socket_name, strlen(socket_name));
+    const socklen_t address_length =
+        (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + strlen(socket_name));
+
     int connected = 0;
     for (unsigned int attempt = 0; attempt < 80; ++attempt) {
-        if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+        if (connect(fd, (struct sockaddr *)&address, address_length) == 0) {
             connected = 1;
             break;
         }
         int connect_error = errno;
-        if (connect_error != ECONNREFUSED && connect_error != EINTR &&
-            connect_error != EAGAIN) {
+        if (connect_error != ECONNREFUSED && connect_error != ENOENT &&
+            connect_error != EINTR && connect_error != EAGAIN) {
             errno = connect_error;
-            perror("connect Android XW11 loopback output socket");
+            perror("connect Android XW11 abstract Unix output socket");
             close(fd);
             return -1;
         }
@@ -158,7 +148,7 @@ static int connect_authenticated_socket(const char *port_text, const char *token
     }
     if (!connected) {
         errno = ETIMEDOUT;
-        perror("connect Android XW11 loopback output socket (startup timeout)");
+        perror("connect Android XW11 abstract Unix output socket (startup timeout)");
         close(fd);
         return -1;
     }
@@ -175,19 +165,20 @@ static int connect_authenticated_socket(const char *port_text, const char *token
     }
     char ready[80];
     size_t ready_length = 0;
+    int got_newline = 0;
     while (ready_length + 1 < sizeof(ready)) {
         char ch;
         ssize_t got = read(fd, &ch, 1);
         if (got < 0 && errno == EINTR) continue;
         if (got <= 0) { perror("read Android output readiness"); close(fd); return -1; }
-        if (ch == '\n') break;
+        if (ch == '\n') { got_newline = 1; break; }
         if (ch < 0x20 || ch > 0x7e) { close(fd); return -1; }
         ready[ready_length++] = ch;
     }
     ready[ready_length] = '\0';
     unsigned long long negotiated = 0;
     char trailing = 0;
-    if (sscanf(ready, "XW11READY %llu%c", &negotiated, &trailing) != 1 ||
+    if (!got_newline || sscanf(ready, "XW11READY %llu%c", &negotiated, &trailing) != 1 ||
         negotiated == 0) {
         fprintf(stderr, "ERROR: Android output Surface did not provide a valid generation\n");
         close(fd);
@@ -272,7 +263,7 @@ int main(int argc, char **argv) {
                    &socket_type, &socket_type_size) != 0 ||
         socket_type != SOCK_STREAM ||
         getpeername((int)socket_fd, (struct sockaddr *)&peer, &peer_size) != 0 ||
-        peer.ss_family != (connect_mode ? AF_INET : AF_UNIX)) {
+        peer.ss_family != AF_UNIX) {
         fprintf(stderr, "ERROR: output FD must be a connected stream socket of the expected family\n");
         return 3;
     }
