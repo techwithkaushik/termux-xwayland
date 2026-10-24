@@ -11,18 +11,21 @@ class OptionalXw11JniStartupTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         source = SOURCE.read_text(encoding="utf-8")
-        start = source.index("// This bridge is experimental and is not part of the legacy :0 startup path.")
+        start = source.index("// Keep this bridge optional so a stale APK cannot prevent legacy :0 startup.")
         end = source.index("static JNINativeMethod mainActivityMethods[]", start)
         cls.bridge_registration = source[start:end]
 
     def test_optional_bridge_failure_does_not_abort_jni_load(self):
         self.assertNotIn("return JNI_ERR", self.bridge_registration)
         self.assertIn("env->ExceptionClear()", self.bridge_registration)
-        self.assertIn("continuing with legacy Lorie", self.bridge_registration)
-        self.assertIn("continuing without it", self.bridge_registration)
+        self.assertIn("Optional XW11 Surface bridge class not found; continuing with legacy Lorie", self.bridge_registration)
+        self.assertIn("env->ExceptionDescribe()", self.bridge_registration)
+        self.assertIn("XW11 JNI registration result: %u registered, %u failed", self.bridge_registration)
 
     def test_successful_bridge_registration_is_logged(self):
-        self.assertIn("Optional XW11 Surface bridge registered", self.bridge_registration)
+        self.assertIn("XW11 JNI registration result: %u registered, %u failed", self.bridge_registration)
+        self.assertIn("++registered", self.bridge_registration)
+        self.assertIn("++failed", self.bridge_registration)
 
     def test_output_receiver_slot_is_reserved_until_worker_join(self):
         source = SOURCE.read_text(encoding="utf-8")
