@@ -903,9 +903,13 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 env->ExceptionClear();
             }
         }
-        log(registered > 0 ? INFO : ERROR,
-            "XW11 JNI registration result: %u registered, %u failed",
-            registered, failed);
+        if (failed == 0) {
+            log(INFO, "XW11 JNI registration result: %u registered, %u failed",
+                registered, failed);
+        } else {
+            log(ERROR, "XW11 JNI registration result: %u registered, %u failed",
+                registered, failed);
+        }
         env->DeleteLocalRef(xw11SurfaceClass);
     } else {
         log(WARN, "Optional XW11 Surface bridge class not found; continuing with legacy Lorie");
