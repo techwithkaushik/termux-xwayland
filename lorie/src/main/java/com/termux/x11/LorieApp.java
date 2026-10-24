@@ -41,6 +41,8 @@ public class LorieApp extends Application {
     public final Map<String, IBinder> pendingConnections = new HashMap<>();
 
     private Notification baseNotification;
+    private IBinder pendingOutputBroker;
+    private long pendingOutputSession;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener preferencesChangedListener = (__, key) -> {
         for (MainActivity activity : MainActivity.getInstances())
@@ -101,6 +103,24 @@ public class LorieApp extends Application {
                 ? secondaryPrefs : builtInPrefs;
     }
 
+    void onMainActivityReady(MainActivity activity) {
+        IBinder binder;
+        long sessionId;
+        synchronized (this) {
+            binder = pendingOutputBroker;
+            sessionId = pendingOutputSession;
+            pendingOutputBroker = null;
+            pendingOutputSession = 0;
+        }
+        if (binder != null && sessionId > 0) {
+            try {
+                activity.attachXw11OutputFromBroker(IXw11OutputBroker.Stub.asInterface(binder), sessionId);
+            } catch (Exception error) {
+                Log.e("XW11OutputIPC", "Could not attach pending Binder output broker", error);
+            }
+        }
+    }
+
     public void onActivityResumed(MainActivity activity) {
         notificationManager.notify(NOTIFICATION_ID, buildNotification(activity));
     }
@@ -143,7 +163,11 @@ public class LorieApp extends Application {
                     break;
                 }
                 if (activity == null) {
-                    Log.e("XW11OutputIPC", "Cannot attach Binder output: MainActivity is not active");
+                    synchronized (this) {
+                        pendingOutputBroker = binder;
+                        pendingOutputSession = sessionId;
+                    }
+                    Log.i("XW11OutputIPC", "Stored Binder output broker until MainActivity is ready");
                     break;
                 }
                 try {
