@@ -95,6 +95,46 @@ static const struct wl_registry_listener registry_listener = {
     registry_global, registry_remove
 };
 
+static int connect_authenticated_socket(const char *name, const char *token,
+                                       uint32_t session) {
+    if (!name || !*name || strlen(name) >= sizeof(((struct sockaddr_un *)0)->sun_path) - 1 ||
+        !token || strlen(token) != 64) {
+        fprintf(stderr, "ERROR: invalid abstract socket name or authentication token\n");
+        return -1;
+    }
+    for (size_t i = 0; i < 64; ++i) {
+        if (!((token[i] >= '0' && token[i] <= '9') ||
+              (token[i] >= 'a' && token[i] <= 'f') ||
+              (token[i] >= 'A' && token[i] <= 'F'))) {
+            fprintf(stderr, "ERROR: output token must be 64 hexadecimal characters\n");
+            return -1;
+        }
+    }
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) { perror("create output socket"); return -1; }
+    struct sockaddr_un address = {0};
+    address.sun_family = AF_UNIX;
+    address.sun_path[0] = '\0'; /* Linux abstract namespace; cross-UID filesystem-independent IPC. */
+    memcpy(address.sun_path + 1, name, strlen(name));
+    socklen_t length = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + strlen(name));
+    if (connect(fd, (struct sockaddr *)&address, length) != 0) {
+        perror("connect Android XW11 output socket");
+        close(fd);
+        return -1;
+    }
+    char line[128];
+    int n = snprintf(line, sizeof(line), "XW11AUTH %u %s\n", session, token);
+    if (n <= 0 || (size_t)n >= sizeof(line)) { close(fd); return -1; }
+    size_t offset = 0;
+    while (offset < (size_t)n) {
+        ssize_t written = write(fd, line + offset, (size_t)n - offset);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) { perror("write output authentication"); close(fd); return -1; }
+        offset += (size_t)written;
+    }
+    return fd;
+}
+
 static int make_shm_fd(void) {
 #ifdef MFD_CLOEXEC
     int fd = memfd_create("xw11-capture", MFD_CLOEXEC);
@@ -120,18 +160,32 @@ static void cleanup(struct app *a) {
 
 int main(int argc, char **argv) {
     int continuous = 0;
-    if (argc == 5 && strcmp(argv[4], "--continuous") == 0) continuous = 1;
-    else if (argc != 4) {
-        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous]\n", argv[0]);
+    int connect_mode = argc >= 2 && strcmp(argv[1], "--connect") == 0;
+    int expected_argc = connect_mode ? 6 : 4;
+    if (argc == expected_argc + 1 && strcmp(argv[argc - 1], "--continuous") == 0)
+        continuous = 1;
+    else if (argc != expected_argc) {
+        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous]\n"
+                        "   or: %s --connect ABSTRACT_SOCKET_NAME TOKEN SESSION_ID SURFACE_GENERATION [--continuous]\n",
+                argv[0], argv[0]);
         return 2;
     }
     char *end = NULL;
-    long socket_fd = strtol(argv[1], &end, 10);
-    if (!end || *end || socket_fd < 0 || socket_fd > INT_MAX) return 2;
-    unsigned long session = strtoul(argv[2], &end, 10);
+    int socket_fd = -1;
+    const char *session_arg = connect_mode ? argv[4] : argv[2];
+    const char *generation_arg = connect_mode ? argv[5] : argv[3];
+    unsigned long session = strtoul(session_arg, &end, 10);
     if (!end || *end || !session || session > UINT32_MAX) return 2;
-    unsigned long long generation = strtoull(argv[3], &end, 10);
+    unsigned long long generation = strtoull(generation_arg, &end, 10);
     if (!end || *end || !generation) return 2;
+    if (connect_mode) {
+        socket_fd = connect_authenticated_socket(argv[2], argv[3], (uint32_t)session);
+        if (socket_fd < 0) return 4;
+    } else {
+        long parsed_fd = strtol(argv[1], &end, 10);
+        if (!end || *end || parsed_fd < 0 || parsed_fd > INT_MAX) return 2;
+        socket_fd = (int)parsed_fd;
+    }
 
     /*
      * The descriptor is a capability supplied by the trusted launcher, not a
