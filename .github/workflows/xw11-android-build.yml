@@ -61,7 +61,7 @@ jobs:
       - name: Install host inspection tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes binutils meson ninja-build pkg-config weston xwayland x11-utils xterm xfonts-base
+          sudo apt-get install --yes binutils meson ninja-build pkg-config libwayland-dev weston xwayland x11-utils xterm xfonts-base
 
       - name: Validate scripts, Python tools and native transport
         shell: bash
@@ -106,6 +106,9 @@ jobs:
           cmake -S tools/native-transport -B /tmp/xw11-native-transport-build -DCMAKE_BUILD_TYPE=Debug
           cmake --build /tmp/xw11-native-transport-build --parallel 2
           ctest --test-dir /tmp/xw11-native-transport-build --output-on-failure
+          # Build the standalone Weston 16 output-capture producer against the generated protocol.
+          cmake -S tools/weston-capture -B /tmp/xw11-weston-capture-build -DCMAKE_BUILD_TYPE=Debug
+          cmake --build /tmp/xw11-weston-capture-build --parallel 2
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
