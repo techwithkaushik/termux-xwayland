@@ -210,6 +210,39 @@ static int make_shm_fd(void) {
     return fd2;
 }
 
+static int publish_capture_pid(void) {
+    const char *path = getenv("XW11_CAPTURE_PID_FILE");
+    if (!path || path[0] != '/') {
+        fprintf(stderr, "ERROR: XW11_CAPTURE_PID_FILE must be an absolute path\\n");
+        return -1;
+    }
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) {
+        perror("open capture authorization PID file");
+        return -1;
+    }
+    char pid_text[32];
+    int length = snprintf(pid_text, sizeof(pid_text), "%ld\\n", (long)getpid());
+    size_t offset = 0;
+    while (offset < (size_t)length) {
+        ssize_t n = write(fd, pid_text + offset, (size_t)length - offset);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) {
+            perror("write capture authorization PID file");
+            close(fd);
+            unlink(path);
+            return -1;
+        }
+        offset += (size_t)n;
+    }
+    if (fchmod(fd, 0600) != 0 || close(fd) != 0) {
+        perror("secure capture authorization PID file");
+        unlink(path);
+        return -1;
+    }
+    return 0;
+}
+
 static void cleanup(struct app *a) {
     if (a->source) weston_capture_source_v1_destroy(a->source);
     if (a->factory) weston_capture_v1_destroy(a->factory);
@@ -273,6 +306,8 @@ int main(int argc, char **argv) {
         perror("configure output socket descriptor");
         return 3;
     }
+
+    if (publish_capture_pid() != 0) return 9;
 
     struct app a = {0};
     a.display = wl_display_connect(NULL);
