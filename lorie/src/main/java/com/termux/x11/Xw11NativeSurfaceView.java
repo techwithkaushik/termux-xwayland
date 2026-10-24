@@ -39,8 +39,82 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static final int UP = 3;
     private static final int CANCEL = 4;
 
+    // Registration is optional during development. A mismatched/stale native library must
+    // degrade this experimental view gracefully instead of crashing Activity lifecycle.
+    private static volatile boolean nativeBridgeAvailable = true;
+    private static boolean nativeBridgeFailureLogged;
     private static long nextGeneration = 1;
     private long generation;
+
+    private static synchronized void markNativeBridgeUnavailable(UnsatisfiedLinkError error) {
+        nativeBridgeAvailable = false;
+        if (!nativeBridgeFailureLogged) {
+            nativeBridgeFailureLogged = true;
+            Log.e(TAG, "XW11 native bridge unavailable; experimental input/presentation disabled", error);
+        }
+    }
+
+    private static int attachSurfaceSafely(Surface surface, long current) {
+        if (!nativeBridgeAvailable) return -1;
+        try {
+            return nativeAttachSurface(surface, current);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+            return -1;
+        }
+    }
+
+    private static void detachSurfaceSafely(long current) {
+        if (!nativeBridgeAvailable) return;
+        try {
+            nativeDetachSurface(current);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+        }
+    }
+
+    private static void detachInputSafely(long current) {
+        if (!nativeBridgeAvailable) return;
+        try {
+            nativeDetachInputTransport(current);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+        }
+    }
+
+    private static int attachInputSafely(int fd, long sessionId, long current) {
+        if (!nativeBridgeAvailable) return -1;
+        try {
+            return nativeAttachInputTransport(fd, sessionId, current);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+            return -1;
+        }
+    }
+
+    private static boolean submitInputSafely(long current, long timeNs, int type, int action,
+            int code, int x, int y, int modifiers, int deviceId) {
+        if (!nativeBridgeAvailable) return false;
+        try {
+            return nativeSubmitInputEvent(current, timeNs, type, action, code, x, y,
+                    modifiers, deviceId);
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+            return false;
+        }
+    }
+
+    private static boolean presentFrameSafely(java.nio.ByteBuffer pixels, int offset, int length,
+            int width, int height, int strideBytes, long current) {
+        if (!nativeBridgeAvailable) return false;
+        try {
+            return nativePresentRgbaFrame(pixels, offset, length, width, height,
+                    strideBytes, current) == 0;
+        } catch (UnsatisfiedLinkError error) {
+            markNativeBridgeUnavailable(error);
+            return false;
+        }
+    }
 
     Xw11NativeSurfaceView(Context context) {
         super(context);
@@ -83,7 +157,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
             Log.w(TAG, "Ignoring invalid Surface lifecycle update");
             return;
         }
-        int result = nativeAttachSurface(surface, current);
+        int result = attachSurfaceSafely(surface, current);
         if (result != 0) Log.e(TAG, "Native Surface attach failed: " + result);
     }
 
@@ -96,7 +170,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         final long current = generation;
         if (current == 0 || sessionId <= 0) return false;
         try {
-            int result = nativeAttachInputTransport(connectedSocket.getFd(), sessionId, current);
+            int result = attachInputSafely(connectedSocket.getFd(), sessionId, current);
             if (result != 0) Log.e(TAG, "Native input transport attach failed: " + result);
             return result == 0;
         } catch (Exception e) {
@@ -154,7 +228,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         final int x = Math.round(event.getX());
         final int y = Math.round(event.getY());
         if (masked == MotionEvent.ACTION_MOVE || masked == MotionEvent.ACTION_HOVER_MOVE) {
-            return nativeSubmitInputEvent(current, timeNs, INPUT_POINTER_MOTION, MOVE,
+            return submitInputSafely(current, timeNs, INPUT_POINTER_MOTION, MOVE,
                     0, x, y, event.getMetaState(), event.getDeviceId());
         }
         final boolean pressed = masked == MotionEvent.ACTION_DOWN ||
@@ -164,7 +238,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         if (!pressed && !released) return false;
         final int button = linuxButtonCode(event.getActionButton());
         if (button == 0) return false;
-        return nativeSubmitInputEvent(current, timeNs, INPUT_POINTER_BUTTON,
+        return submitInputSafely(current, timeNs, INPUT_POINTER_BUTTON,
                 pressed ? DOWN : UP, button, x, y, event.getMetaState(), event.getDeviceId());
     }
 
@@ -182,7 +256,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private boolean submitTouch(MotionEvent event, int index, int action) {
         final long current = generation;
         if (current == 0 || index < 0 || index >= event.getPointerCount()) return false;
-        return nativeSubmitInputEvent(current, event.getEventTime() * NS_PER_MS,
+        return submitInputSafely(current, event.getEventTime() * NS_PER_MS,
                 INPUT_TOUCH, action, event.getPointerId(index),
                 Math.round(event.getX(index)), Math.round(event.getY(index)),
                 event.getMetaState(), event.getDeviceId());
@@ -281,7 +355,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
         final long current = generation;
         if (current != 0) {
-            nativeSubmitInputEvent(current, SystemClock.uptimeMillis() * NS_PER_MS,
+            submitInputSafely(current, SystemClock.uptimeMillis() * NS_PER_MS,
                     INPUT_FOCUS, gainFocus ? DOWN : UP, 0, 0, 0, 0, 0);
         }
     }
@@ -291,8 +365,9 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         final long current = generation;
         generation = 0;
         if (current != 0) {
-            nativeDetachInputTransport(current);
-            nativeDetachSurface(current);
+            // Teardown must always complete even if RegisterNatives failed for this APK.
+            detachInputSafely(current);
+            detachSurfaceSafely(current);
         }
     }
 
@@ -305,8 +380,8 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
                              int strideBytes, long frameGeneration) {
         if (!pixels.isDirect() || frameGeneration == 0 || frameGeneration != generation)
             return false;
-        return nativePresentRgbaFrame(pixels, pixels.position(), pixels.remaining(),
-                width, height, strideBytes, frameGeneration) == 0;
+        return presentFrameSafely(pixels, pixels.position(), pixels.remaining(),
+                width, height, strideBytes, frameGeneration);
     }
 
     private static native int nativePresentRgbaFrame(java.nio.ByteBuffer pixels,
