@@ -159,8 +159,8 @@ static int connect_authenticated_socket(const char *name, const char *token,
 }
 
 static int make_shm_fd(void) {
-#ifdef MFD_CLOEXEC
-    int fd = memfd_create("xw11-capture", MFD_CLOEXEC);
+#if defined(SYS_memfd_create) && defined(MFD_CLOEXEC)
+    int fd = (int)syscall(SYS_memfd_create, "xw11-capture", MFD_CLOEXEC);
     if (fd >= 0) return fd;
 #endif
     char path[] = "/tmp/xw11-capture-XXXXXX";
