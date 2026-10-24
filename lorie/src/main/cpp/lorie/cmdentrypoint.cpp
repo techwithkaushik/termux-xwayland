@@ -138,8 +138,6 @@ static jboolean start(JNIEnv *env, jobject self, jobjectArray args) {
         // not guarantee a system-wide /tmp directory exists or is writable.
         if (access("/data/data/com.termux/files/usr/tmp", F_OK | W_OK) == 0)
             setenv("TMPDIR", "/data/data/com.termux/files/usr/tmp", 1);
-        else if (access("/tmp", F_OK | W_OK) == 0)
-            setenv("TMPDIR", "/tmp", 1);
     }
 
     if (!getenv("TMPDIR")) {
