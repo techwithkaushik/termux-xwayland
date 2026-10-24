@@ -8,35 +8,30 @@ import androidx.annotation.NonNull;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
+import android.net.LocalServerSocket;
+import android.net.LocalSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Authenticated IPv4-loopback output bridge for Termux/Android IPC. */
+/** Authenticated abstract AF_UNIX output bridge shared by Termux and Android. */
 final class Xw11OutputSocketServer implements AutoCloseable {
     private static final String TAG = "XW11OutputIPC";
-    private final int port;
+    private final String socketName;
     private final String expectedHandshake;
     private final long sessionId;
     private final MainActivity activity;
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private ServerSocket server;
+    private LocalServerSocket server;
     private Thread thread;
 
-    Xw11OutputSocketServer(@NonNull MainActivity activity, @NonNull String portText,
+    Xw11OutputSocketServer(@NonNull MainActivity activity, @NonNull String socketName,
                            @NonNull String token, long sessionId) {
-        int parsedPort;
-        try { parsedPort = Integer.parseInt(portText); }
-        catch (NumberFormatException error) { throw new IllegalArgumentException("Invalid XW11 loopback port", error); }
-        if (parsedPort < 1024 || parsedPort > 65535 ||
+        if (!socketName.matches("[A-Za-z0-9_-]{1,80}") ||
             !token.matches("[A-Fa-f0-9]{64}") || sessionId <= 0 ||
             sessionId > 0xffffffffL) {
             throw new IllegalArgumentException("Invalid XW11 output IPC parameters");
         }
-        this.port = parsedPort;
+        this.socketName = socketName;
         this.expectedHandshake = "XW11AUTH " + sessionId + " " + token;
         this.sessionId = sessionId;
         this.activity = activity;
@@ -44,13 +39,11 @@ final class Xw11OutputSocketServer implements AutoCloseable {
 
     synchronized void start() throws IOException {
         if (server != null) return;
-        server = new ServerSocket();
-        server.setReuseAddress(false);
-        server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 1);
+        server = new LocalServerSocket(socketName); // Linux abstract AF_UNIX namespace
         thread = new Thread(this::acceptLoop, "XW11-output-ipc");
         thread.setDaemon(true);
         thread.start();
-        Log.i(TAG, "Authenticated loopback TCP output socket ready on 127.0.0.1:" + port + " for session " + sessionId);
+        Log.i(TAG, "Authenticated abstract AF_UNIX output IPC ready for session " + sessionId);
     }
 
     private static String readHandshake(InputStream input) throws IOException {
@@ -70,12 +63,10 @@ final class Xw11OutputSocketServer implements AutoCloseable {
 
     private void acceptLoop() {
         while (!closed.get()) {
-            Socket peer = null;
+            LocalSocket peer = null;
             ParcelFileDescriptor descriptor = null;
             try {
                 peer = server.accept();
-                if (!peer.getInetAddress().isLoopbackAddress())
-                    throw new IOException("Rejected non-loopback XW11 output peer");
                 peer.setSoTimeout(3000);
                 String handshake = readHandshake(peer.getInputStream());
                 if (!expectedHandshake.equals(handshake)) {
@@ -93,31 +84,33 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                 if (generation <= 0)
                     throw new IOException("Android output Surface did not become ready");
                 OutputStream output = peer.getOutputStream();
-                output.write(("XW11READY " + generation + "\n").getBytes(StandardCharsets.US_ASCII));
+                output.write(("XW11READY " + generation + "\\n").getBytes(StandardCharsets.US_ASCII));
                 output.flush();
                 peer.setSoTimeout(0);
-                descriptor = ParcelFileDescriptor.fromSocket(peer);
+                // Duplicate the connected AF_UNIX fd before handing ownership to
+                // the native receiver. LocalSocket itself can then be closed safely.
+                descriptor = ParcelFileDescriptor.dup(peer.getFileDescriptor());
                 ParcelFileDescriptor accepted = descriptor;
                 descriptor = null;
                 final long readyGeneration = generation;
                 activity.runOnUiThread(() -> {
                     try {
                         if (closed.get() || !activity.attachXw11OutputTransport(accepted, sessionId)) {
-                            Log.e(TAG, "Authenticated output socket could not attach to Surface");
+                            Log.e(TAG, "Authenticated output IPC could not attach to Surface");
                             try { accepted.close(); } catch (IOException ignored) {}
                         } else {
-                            Log.i(TAG, "Output transport attached; generation=" + readyGeneration);
+                            Log.i(TAG, "Output IPC attached; generation=" + readyGeneration);
                         }
                     } catch (RuntimeException error) {
-                        Log.e(TAG, "Output transport attach failed", error);
+                        Log.e(TAG, "Output IPC attach failed", error);
                         try { accepted.close(); } catch (IOException ignored) {}
                     }
                 });
-                // Keep the peer alive: the descriptor shares its connected socket.
+                peer.close();
                 peer = null;
                 break;
             } catch (IOException error) {
-                if (!closed.get()) Log.e(TAG, "XW11 output socket accept failed", error);
+                if (!closed.get()) Log.e(TAG, "XW11 output IPC accept failed", error);
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
                 if (!closed.get()) Log.e(TAG, "Interrupted while waiting for output Surface", error);
