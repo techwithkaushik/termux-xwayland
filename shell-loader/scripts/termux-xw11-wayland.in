@@ -285,7 +285,7 @@ case "$ACTION" in
     printf '%s\n' "$BROKER_PID" > "$capture_pid_file"
     printf '%s\n' "$BROKER_PID" > "$broker_pid_file"
     frame_ready=0
-    for _ in {1..40}; do
+    for _ in {1..120}; do
       if grep -q '^frame_sent=1 ' "$capture_log" 2>/dev/null; then
         frame_ready=1
         break
