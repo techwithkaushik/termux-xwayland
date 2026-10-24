@@ -34,7 +34,9 @@ xw11-weston-capture CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION --continuo
 
 The descriptor is a capability supplied by the trusted Binder broker. The helper
 validates that it is a connected `AF_UNIX` stream before connecting to the private
-Wayland socket. The Weston capture-authority module permits capture only for the helper
+Wayland socket. In broker mode it waits for `XW11PRESENTED` from Android after the first
+frame has actually been presented; `frame_sent=1` therefore represents a successful
+first-frame presentation acknowledgement, not merely a successful socket write. The Weston capture-authority module permits capture only for the helper
 PID published in `XW11_CAPTURE_PID_FILE` and matching the compositor UID.
 
 The old authenticated abstract-socket `--connect` mode remains available for diagnostics,
