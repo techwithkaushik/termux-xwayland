@@ -31,7 +31,7 @@ class SupervisorTransportLifecycleTest(unittest.TestCase):
         self.assertIn('echo "CAPTURE_PID=$(cat "$capture_pid_file")"', self.source)
 
     def test_supervisor_launches_authenticated_output_capture(self):
-        self.assertIn('am start -n "$ANDROID_COMPONENT"', self.source)
+        self.assertIn('"$AM" start -n "$ANDROID_COMPONENT"', self.source)
         self.assertIn('OUTPUT_TOKEN "$OUTPUT_TOKEN"', self.source)
         self.assertIn('"$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous', self.source)
         self.assertIn('NOTE: output capture is connected; confirm first-frame presentation in logcat.', self.source)
