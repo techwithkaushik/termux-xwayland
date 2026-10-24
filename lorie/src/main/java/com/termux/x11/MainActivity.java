@@ -78,6 +78,7 @@ import com.termux.x11.utils.KeyInterceptor;
 import com.termux.x11.utils.TermuxX11ExtraKeys;
 import com.termux.x11.utils.X11ToolbarViewPager;
 
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -931,6 +932,45 @@ public class MainActivity extends AppCompatActivity {
 
     long outputSurfaceGenerationForIpc() {
         return xw11OutputView == null ? 0 : xw11OutputView.generationForDiagnostics();
+    }
+
+    void attachXw11OutputFromBroker(@NonNull IXw11OutputBroker broker, long sessionId) {
+        runOnUiThread(this::prepareXw11OutputSurface);
+        Thread worker = new Thread(() -> {
+            ParcelFileDescriptor descriptor = null;
+            try {
+                long deadline = android.os.SystemClock.uptimeMillis() + 10000;
+                long generation = 0;
+                while (android.os.SystemClock.uptimeMillis() < deadline) {
+                    if (isFinishing()) throw new IOException("Activity is finishing");
+                    generation = outputSurfaceGenerationForIpc();
+                    if (generation > 0) break;
+                    Thread.sleep(25);
+                }
+                if (generation <= 0) throw new IOException("Output Surface did not become ready");
+                descriptor = broker.getOutputConnection(sessionId, generation);
+                if (descriptor == null) throw new IOException("Binder broker returned no output descriptor");
+                ParcelFileDescriptor accepted = descriptor;
+                descriptor = null;
+                long readyGeneration = generation;
+                runOnUiThread(() -> {
+                    try {
+                        if (attachXw11OutputTransport(accepted, sessionId))
+                            Log.i("XW11OutputIPC", "Binder FD attached; generation=" + readyGeneration);
+                        else
+                            Log.e("XW11OutputIPC", "Binder FD could not attach to output Surface");
+                    } finally {
+                        try { accepted.close(); } catch (IOException ignored) {}
+                    }
+                });
+            } catch (Exception error) {
+                Log.e("XW11OutputIPC", "Binder output handoff failed", error);
+            } finally {
+                if (descriptor != null) try { descriptor.close(); } catch (IOException ignored) {}
+            }
+        }, "XW11-binder-output");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     boolean attachXw11OutputTransport(@NonNull ParcelFileDescriptor connectedSocket,
