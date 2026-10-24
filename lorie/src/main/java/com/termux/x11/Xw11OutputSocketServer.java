@@ -7,9 +7,9 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -81,8 +81,20 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                     Log.w(TAG, "Rejected unauthenticated XW11 output peer");
                     continue;
                 }
-                // Consume the authentication line before handing the same stream
-                // to native; no frame bytes are read by Java beyond the newline.
+                // Ask Android to create the output-only Surface, then negotiate its
+                // actual generation. The producer must not guess lifecycle generations.
+                activity.runOnUiThread(activity::prepareXw11OutputSurface);
+                long generation = 0;
+                long deadline = android.os.SystemClock.uptimeMillis() + 5000;
+                while (!closed.get() && android.os.SystemClock.uptimeMillis() < deadline) {
+                    generation = activity.outputSurfaceGenerationForIpc();
+                    if (generation > 0) break;
+                    Thread.sleep(20);
+                }
+                if (generation <= 0) throw new IOException("Android output Surface did not become ready");
+                OutputStream output = peer.getOutputStream();
+                output.write(("XW11READY " + generation + "\\n").getBytes(StandardCharsets.US_ASCII));
+                output.flush();
                 peer.setSoTimeout(0);
                 descriptor = ParcelFileDescriptor.dup(peer.getFileDescriptor());
                 ParcelFileDescriptor accepted = descriptor;
@@ -93,18 +105,19 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                             Log.e(TAG, "Authenticated output socket could not attach to Surface");
                             try { accepted.close(); } catch (IOException ignored) {}
                         } else {
-                            Log.i(TAG, "Output transport attached; awaiting first frame");
+                            Log.i(TAG, "Output transport attached; generation=" + generation);
                         }
                     } catch (RuntimeException error) {
                         Log.e(TAG, "Output transport attach failed", error);
                         try { accepted.close(); } catch (IOException ignored) {}
                     }
                 });
-                // The duplicate FD is now owned by the activity/view. Close this
-                // accepted socket wrapper; the duplicated descriptor stays alive.
                 break;
             } catch (IOException error) {
                 if (!closed.get()) Log.e(TAG, "XW11 output socket accept failed", error);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                if (!closed.get()) Log.e(TAG, "Interrupted while waiting for output Surface", error);
             } finally {
                 if (descriptor != null) try { descriptor.close(); } catch (IOException ignored) {}
                 if (peer != null) try { peer.close(); } catch (IOException ignored) {}
