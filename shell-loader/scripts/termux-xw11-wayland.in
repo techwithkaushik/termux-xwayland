@@ -167,7 +167,7 @@ case "$ACTION" in
     # Termux does not guarantee the X11 socket directory exists on a fresh
     # install. Xwayland fails before Weston becomes ready if X0 cannot be
     # created under TMPDIR/.X11-unix.
-    X11_SOCKET_DIR="$PREFIX/tmp/.X11-unix"
+    X11_SOCKET_DIR="$RUNTIME_ROOT/.X11-unix"
     mkdir -p "$X11_SOCKET_DIR"
     chmod 1777 "$X11_SOCKET_DIR"
 
