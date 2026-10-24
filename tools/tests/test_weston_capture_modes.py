@@ -15,7 +15,8 @@ class WestonCaptureModeTests(unittest.TestCase):
         cls.readme = README.read_text(encoding="utf-8")
 
     def test_one_shot_remains_default_and_continuous_is_opt_in(self):
-        self.assertIn('strcmp(argv[argc - 1], "--continuous") == 0', self.source)
+        self.assertIn('strcmp(argv[i], "--continuous") == 0', self.source)
+        self.assertIn('strcmp(argv[i], "--wait-presented") == 0', self.source)
         self.assertIn("if (!continuous) break;", self.source)
         self.assertIn("xw11-weston-capture --connect", self.readme)
 
