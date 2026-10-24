@@ -258,8 +258,8 @@ int main(int argc, char **argv) {
     int connect_mode = argc >= 2 && strcmp(argv[1], "--connect") == 0;
     int expected_argc = connect_mode ? 6 : 4;
     if (argc < expected_argc) {
-        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous] [--wait-presented]\\n"
-                        "   or: %s --connect ABSTRACT_SOCKET_NAME TOKEN SESSION_ID SURFACE_GENERATION [--continuous] [--wait-presented]\\n",
+        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous] [--wait-presented]\n"
+                        "   or: %s --connect ABSTRACT_SOCKET_NAME TOKEN SESSION_ID SURFACE_GENERATION [--continuous] [--wait-presented]\n",
                 argv[0], argv[0]);
         return 2;
     }
@@ -269,7 +269,7 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[i], "--wait-presented") == 0)
             wait_presented = 1;
         else {
-            fprintf(stderr, "ERROR: unknown capture option: %s\\n", argv[i]);
+            fprintf(stderr, "ERROR: unknown capture option: %s\n", argv[i]);
             return 2;
         }
     }
@@ -405,7 +405,7 @@ int main(int argc, char **argv) {
         }
         if (sequence == 1) {
             if (wait_presented) {
-                static const char expectedAck[] = "XW11PRESENTED\\n";
+                static const char expectedAck[] = "XW11PRESENTED\n";
                 struct pollfd acknowledgement = { .fd = (int)socket_fd, .events = POLLIN };
                 int ready;
                 do {
@@ -422,14 +422,14 @@ int main(int argc, char **argv) {
                 }
                 if (ready <= 0 || ackOffset != sizeof(receivedAck) ||
                     memcmp(receivedAck, expectedAck, sizeof(receivedAck)) != 0) {
-                    fprintf(stderr, "ERROR: Android Surface did not acknowledge first-frame presentation\\n");
+                    fprintf(stderr, "ERROR: Android Surface did not acknowledge first-frame presentation\n");
                     sent = XW11_OUTPUT_STREAM_ERR_TRANSPORT;
                     break;
                 }
-                fprintf(stderr, "first_frame_presented=1 dimensions=%ux%u generation=%llu\\n",
+                fprintf(stderr, "first_frame_presented=1 dimensions=%ux%u generation=%llu\n",
                         a.width, a.height, (unsigned long long)generation);
             }
-            fprintf(stderr, "frame_sent=1 dimensions=%ux%u generation=%llu\\n",
+            fprintf(stderr, "frame_sent=1 dimensions=%ux%u generation=%llu\n",
                     a.width, a.height, (unsigned long long)generation);
             fflush(stderr);
         }
