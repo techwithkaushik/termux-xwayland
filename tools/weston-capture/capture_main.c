@@ -97,7 +97,7 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static int connect_authenticated_socket(const char *name, const char *token,
-                                       uint32_t session) {
+                                       uint32_t session, uint64_t *generation_out) {
     if (!name || !*name || strlen(name) >= sizeof(((struct sockaddr_un *)0)->sun_path) - 1 ||
         !token || strlen(token) != 64) {
         fprintf(stderr, "ERROR: invalid abstract socket name or authentication token\n");
@@ -133,6 +133,27 @@ static int connect_authenticated_socket(const char *name, const char *token,
         if (written <= 0) { perror("write output authentication"); close(fd); return -1; }
         offset += (size_t)written;
     }
+    char ready[80];
+    size_t ready_length = 0;
+    while (ready_length + 1 < sizeof(ready)) {
+        char ch;
+        ssize_t got = read(fd, &ch, 1);
+        if (got < 0 && errno == EINTR) continue;
+        if (got <= 0) { perror("read Android output readiness"); close(fd); return -1; }
+        if (ch == '\\n') break;
+        if (ch < 0x20 || ch > 0x7e) { close(fd); return -1; }
+        ready[ready_length++] = ch;
+    }
+    ready[ready_length] = '\\0';
+    unsigned long long negotiated = 0;
+    char trailing = 0;
+    if (sscanf(ready, "XW11READY %llu%c", &negotiated, &trailing) != 1 ||
+        negotiated == 0) {
+        fprintf(stderr, "ERROR: Android output Surface did not provide a valid generation\n");
+        close(fd);
+        return -1;
+    }
+    *generation_out = (uint64_t)negotiated;
     return fd;
 }
 
@@ -180,7 +201,7 @@ int main(int argc, char **argv) {
     unsigned long long generation = strtoull(generation_arg, &end, 10);
     if (!end || *end || !generation) return 2;
     if (connect_mode) {
-        socket_fd = connect_authenticated_socket(argv[2], argv[3], (uint32_t)session);
+        socket_fd = connect_authenticated_socket(argv[2], argv[3], (uint32_t)session, &generation);
         if (socket_fd < 0) return 4;
     } else {
         long parsed_fd = strtol(argv[1], &end, 10);
