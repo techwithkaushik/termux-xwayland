@@ -98,6 +98,7 @@ public class MainActivity extends AppCompatActivity {
     private final Runnable connectRetry = this::tryConnect;
     FrameLayout frm;
     private Xw11NativeSurfaceView xw11OutputView;
+    private Xw11OutputSocketServer xw11OutputSocketServer;
     TouchInputHandler mInputHandler;
     protected ICmdEntryInterface service = null;
     public TermuxX11ExtraKeys mExtraKeys;
@@ -439,6 +440,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         findViewById(android.R.id.content).addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> makeSureHelpersAreVisibleAndInScreenBounds());
+        startXw11OutputBridge(getIntent());
     }
 
     @Override
@@ -446,6 +448,22 @@ public class MainActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         relaunchAsTaggedIfNeeded(intent, false);
+        startXw11OutputBridge(intent);
+    }
+
+    private synchronized void startXw11OutputBridge(Intent intent) {
+        if (intent == null || !intent.hasExtra("org.techwithkaushik.termuxxw11.OUTPUT_SOCKET"))
+            return;
+        String socketName = intent.getStringExtra("org.techwithkaushik.termuxxw11.OUTPUT_SOCKET");
+        String token = intent.getStringExtra("org.techwithkaushik.termuxxw11.OUTPUT_TOKEN");
+        long sessionId = intent.getLongExtra("org.techwithkaushik.termuxxw11.OUTPUT_SESSION", 0L);
+        try {
+            if (xw11OutputSocketServer != null) xw11OutputSocketServer.close();
+            xw11OutputSocketServer = new Xw11OutputSocketServer(this, socketName, token, sessionId);
+            xw11OutputSocketServer.start();
+        } catch (Exception error) {
+            Log.e("XW11OutputIPC", "Could not start authenticated output socket", error);
+        }
     }
 
     @Override
@@ -454,6 +472,10 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacks(serverWatchdog);
         if (mInputHandler != null)
             mInputHandler.onDestroy();
+        if (xw11OutputSocketServer != null) {
+            xw11OutputSocketServer.close();
+            xw11OutputSocketServer = null;
+        }
         instances.values().removeIf(ref -> ref.get() == this);
         super.onDestroy();
     }
