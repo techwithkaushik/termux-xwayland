@@ -1,6 +1,6 @@
 # Weston output producer for the Android Surface bridge
 
-Status: implementation design backed by the Weston 16.0 source/API audit. This document does not claim that the producer is already implemented or running.
+Status: one-shot Weston capture producer and native Android frame receiver are implemented and build-verified in CI. End-to-end socket wiring, continuous capture, and physical-device rendering validation remain incomplete.
 
 ## Chosen first producer path
 
@@ -64,7 +64,7 @@ The protocol is a viable API seam, not proof that a particular packaged Weston b
 
 The portable module `tools/native-transport/xw11_output_frame.h/.cpp` now defines a fixed 40-byte big-endian frame metadata record and validates generation, sequence, dimensions, stride, format, and byte count before conversion. It explicitly converts little-endian XRGB8888/ARGB8888 source pixels into the Android presenter's RGBA8888 byte order and supplies a host unit test for round-trip metadata, padded rows, conversion, and malformed metadata. CMake includes the module and test in the portable transport suite.
 
-This is a real implementation of the frame metadata/conversion boundary, but it is not yet a socket sender, Weston capture client, or Android receiver. The next code milestone is the Weston output-capture client and bounded frame delivery into the JNI bridge; until that exists, do not claim that compositor frames are displayed on the Android Surface.
+The frame metadata/conversion boundary, Weston one-shot capture client, bounded socket sender/receiver, and JNI Surface presenter now exist. They are separate components and are not yet connected by the session supervisor; therefore, do not claim that compositor frames are displayed on the Android Surface.
 
 
 ## One-shot producer implementation
