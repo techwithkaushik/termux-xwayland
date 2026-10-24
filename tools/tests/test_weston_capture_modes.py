@@ -33,9 +33,9 @@ class WestonCaptureModeTests(unittest.TestCase):
     def test_output_fd_is_validated_before_connecting_to_compositor(self):
         self.assertIn("getsockopt((int)socket_fd, SOL_SOCKET, SO_TYPE", self.source)
         self.assertIn("socket_type != SOCK_STREAM", self.source)
-        self.assertIn("peer.ss_family != AF_UNIX", self.source)
+        self.assertIn("peer.ss_family != (connect_mode ? AF_INET : AF_UNIX)", self.source)
         self.assertIn("FD_CLOEXEC", self.source)
-        self.assertLess(self.source.index("peer.ss_family != AF_UNIX"),
+        self.assertLess(self.source.index("peer.ss_family != (connect_mode ? AF_INET : AF_UNIX)"),
                         self.source.index("wl_display_connect(NULL)"))
 
     def test_abstract_socket_client_authenticates_before_streaming(self):
@@ -43,7 +43,7 @@ class WestonCaptureModeTests(unittest.TestCase):
         self.assertIn("XW11AUTH %u %s", self.source)
         self.assertIn("XW11READY %llu", self.source)
         self.assertIn("*generation_out = (uint64_t)negotiated;", self.source)
-        self.assertIn("address.sun_path[0] = '\\0'", self.source)
+        self.assertIn("address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);", self.source)
         self.assertIn('strcmp(argv[1], "--connect") == 0', self.source)
 
 
