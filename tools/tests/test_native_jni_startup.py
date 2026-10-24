@@ -24,6 +24,16 @@ class OptionalXw11JniStartupTests(unittest.TestCase):
     def test_successful_bridge_registration_is_logged(self):
         self.assertIn("Optional XW11 Surface bridge registered", self.bridge_registration)
 
+    def test_output_receiver_slot_is_reserved_until_worker_join(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        start = source.index('{"nativeDetachOutputTransport"')
+        end = source.index('{"nativeAttachInputTransport"', start)
+        detach = source[start:end]
+        self.assertIn("pthread_join(thread, nullptr)", detach)
+        self.assertLess(detach.index("pthread_join(thread, nullptr)"),
+                        detach.index("xw11OutputThreadCreated = false"))
+        self.assertIn("xw11OutputThread == thread", detach)
+
 
 if __name__ == "__main__":
     unittest.main()
