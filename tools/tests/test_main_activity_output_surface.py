@@ -32,7 +32,9 @@ class MainActivityOutputSurfaceTests(unittest.TestCase):
     def test_output_only_view_does_not_submit_input(self):
         self.assertIn("if (outputOnly) return false;", self.view)
         self.assertIn("Retain the socket even when the view is still GONE", self.view)
-        self.assertIn("else if (outputTransport != null && outputSessionId > 0)", self.view)
+        self.assertIn("return surfaceReady ? generation : 0;", self.view)
+        self.assertIn("surfaceReady = true;", self.view)
+        self.assertIn("surfaceReady = false;", self.view)
         for method in ("onTouchEvent", "onGenericMotionEvent", "onKeyDown", "onKeyUp", "onFocusChanged"):
             self.assertIn(method, self.view)
 
