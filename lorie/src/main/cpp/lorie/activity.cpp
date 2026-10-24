@@ -60,6 +60,7 @@ static void *xw11OutputWorker(void *) {
         return nullptr;
     }
     uint64_t lastSequence = 0;
+    bool firstFramePresented = false;
     while (true) {
         pthread_mutex_lock(&xw11OutputMutex);
         const bool running = xw11OutputRunning &&
@@ -108,6 +109,13 @@ static void *xw11OutputWorker(void *) {
         if (presented != XW11_PRESENT_OK) {
             log(WARN, "XW11 output frame not presented (result=%d)", (int)presented);
             break;
+        }
+        if (!firstFramePresented) {
+            firstFramePresented = true;
+            log(INFO, "XW11 first frame presented to Android Surface: %ux%u sequence=%llu generation=%llu",
+                frame.width, frame.height,
+                (unsigned long long)frame.sequence_id,
+                (unsigned long long)generation);
         }
     }
     free(pixels);
