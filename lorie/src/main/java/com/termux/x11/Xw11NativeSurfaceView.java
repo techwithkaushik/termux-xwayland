@@ -45,6 +45,10 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static boolean nativeBridgeFailureLogged;
     private static long nextGeneration = 1;
     private long generation;
+    private ParcelFileDescriptor outputTransport;
+    private long outputSessionId;
+    private int surfaceWidth;
+    private int surfaceHeight;
 
     private static synchronized void markNativeBridgeUnavailable(UnsatisfiedLinkError error) {
         nativeBridgeAvailable = false;
@@ -176,8 +180,18 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
             Log.w(TAG, "Ignoring invalid Surface lifecycle update");
             return;
         }
+        boolean sizeChanged = surfaceWidth != width || surfaceHeight != height;
+        surfaceWidth = width;
+        surfaceHeight = height;
+        // Surface resize: discard the old receiver before accepting new frames.
+        if (sizeChanged) detachOutputSafely(current);
         int result = attachSurfaceSafely(surface, current);
         if (result != 0) Log.e(TAG, "Native Surface attach failed: " + result);
+        else if (outputTransport != null && outputSessionId > 0) {
+            int outputResult = attachOutputSafely(outputTransport.getFd(), outputSessionId, current);
+            if (outputResult != 0)
+                Log.e(TAG, "Native output receiver restart failed after Surface resize: " + outputResult);
+        }
     }
 
     /**
@@ -389,22 +403,45 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
             detachInputSafely(current);
             detachSurfaceSafely(current);
         }
+        closeOutputTransport();
+        surfaceWidth = 0;
+        surfaceHeight = 0;
     }
 
     /**
      * Attach a connected AF_UNIX SOCK_STREAM socket carrying authenticated XW11 output frames.
      * Native duplicates the descriptor and consumes frames on a background thread.
      */
-    boolean attachOutputTransport(@NonNull ParcelFileDescriptor connectedSocket, long sessionId) {
+    synchronized boolean attachOutputTransport(@NonNull ParcelFileDescriptor connectedSocket, long sessionId) {
         final long current = generation;
         if (current == 0 || sessionId <= 0) return false;
+        ParcelFileDescriptor retained = null;
         try {
-            int result = attachOutputSafely(connectedSocket.getFd(), sessionId, current);
-            if (result != 0) Log.e(TAG, "Native output transport attach failed: " + result);
-            return result == 0;
+            // Keep a private descriptor so a resize can restart the receiver.
+            retained = ParcelFileDescriptor.dup(connectedSocket.getFileDescriptor());
+            int result = attachOutputSafely(retained.getFd(), sessionId, current);
+            if (result != 0) {
+                Log.e(TAG, "Native output transport attach failed: " + result);
+                retained.close();
+                return false;
+            }
+            closeOutputTransport();
+            outputTransport = retained;
+            outputSessionId = sessionId;
+            return true;
         } catch (Exception e) {
-            Log.e(TAG, "Unable to obtain output transport descriptor", e);
+            if (retained != null) try { retained.close(); } catch (Exception ignored) {}
+            Log.e(TAG, "Unable to retain output transport descriptor", e);
             return false;
+        }
+    }
+
+    private synchronized void closeOutputTransport() {
+        outputSessionId = 0;
+        if (outputTransport != null) {
+            try { outputTransport.close(); }
+            catch (Exception e) { Log.w(TAG, "Unable to close retained output socket", e); }
+            outputTransport = null;
         }
     }
 
