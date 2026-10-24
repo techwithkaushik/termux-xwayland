@@ -23,7 +23,7 @@ DISPLAY="$DISPLAY_TO_TEST" xdpyinfo >/dev/null 2>&1 || {
 }
 
 TITLE="XW11-existing-display-acceptance-$$"
-LOG_DIR="${TMPDIR:-/tmp}"
+LOG_DIR="${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}"
 CLIENT_LOG="$LOG_DIR/xw11-existing-display-$$.log"
 XTERM_PID=""
 
