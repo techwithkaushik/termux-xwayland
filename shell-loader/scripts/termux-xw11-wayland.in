@@ -55,6 +55,7 @@ session_file="$STATE/session-id"
 generation_file="$STATE/surface-generation"
 transport_dir_file="$STATE/transport-dir"
 capture_pid_file="$STATE/capture.pid"
+broker_pid_file="$STATE/output-broker.pid"
 capture_log="$STATE/capture.log"
 output_socket_file="$STATE/output-socket"
 output_token_file="$STATE/output-token"
@@ -84,12 +85,13 @@ stop_owned_session() {
   if [[ "$capture_pid" =~ ^[0-9]+$ && -r "/proc/$capture_pid/cmdline" ]]; then
     local capture_cmdline
     capture_cmdline="$(tr '\0' ' ' < "/proc/$capture_pid/cmdline" 2>/dev/null || true)"
-    if [[ "$capture_cmdline" == *"xw11-weston-capture"* ]]; then
+    if [[ "$capture_cmdline" == *"--xw11-output-broker"* || "$capture_cmdline" == *"termux-xw11-wayland-output-broker"* ]]; then
       kill -TERM "$capture_pid" 2>/dev/null || true
-      for _ in {1..20}; do
+      for _ in {1..30}; do
         [[ -r "/proc/$capture_pid/cmdline" ]] || break
         sleep 0.1
       done
+      [[ ! -r "/proc/$capture_pid/cmdline" ]] || kill -KILL "$capture_pid" 2>/dev/null || true
     fi
   fi
   read_session
@@ -111,7 +113,7 @@ stop_owned_session() {
   if [[ -n "$transport_dir" && "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]; then
     rm -rf -- "$transport_dir"
   fi
-  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file" "$capture_pid_file" "$output_socket_file" "$output_token_file" "$capture_auth_pid_file"
+  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file" "$capture_pid_file" "$broker_pid_file" "$output_socket_file" "$output_token_file" "$capture_auth_pid_file"
 }
 
 case "$ACTION" in
@@ -261,33 +263,27 @@ case "$ACTION" in
       stop_owned_session
       exit 1
     fi
-    OUTPUT_SOCKET="xw11-output-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-    OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-    [[ "$OUTPUT_SOCKET" =~ ^xw11-output-[0-9a-f]{32}$ && "$OUTPUT_TOKEN" =~ ^[0-9a-f]{64}$ ]] || {
-      echo "ERROR: could not allocate output IPC credentials" >&2
+    ANDROID_COMPONENT="${XW11_ANDROID_COMPONENT:-org.techwithkaushik.termuxxw11/com.termux.x11.MainActivity}"
+    "$AM" start -n "$ANDROID_COMPONENT" >> "$console_log" 2>&1 || {
+      echo "ERROR: could not launch MainActivity output Surface" >&2
       stop_owned_session
       exit 1
     }
-    printf '%s\n' "$OUTPUT_SOCKET" > "$output_socket_file"
-    printf '%s\n' "$OUTPUT_TOKEN" > "$output_token_file"
-    chmod 600 "$output_socket_file" "$output_token_file"
-    ANDROID_COMPONENT="${XW11_ANDROID_COMPONENT:-org.techwithkaushik.termuxxw11/com.termux.x11.MainActivity}"
-    "$AM" start -n "$ANDROID_COMPONENT" \
-      -a com.termux.x11.ACTION_XW11_OUTPUT \
-      --es org.techwithkaushik.termuxxw11.OUTPUT_SOCKET "$OUTPUT_SOCKET" \
-      --es org.techwithkaushik.termuxxw11.OUTPUT_TOKEN "$OUTPUT_TOKEN" \
-      --el org.techwithkaushik.termuxxw11.OUTPUT_SESSION "$SESSION_ID" \
-      >> "$console_log" 2>&1 || {
-        echo "ERROR: could not launch MainActivity output IPC endpoint" >&2
-        stop_owned_session
-        exit 1
-      }
     : > "$capture_log"
-    env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" PATH="$PREFIX/bin:$PATH" \
-      "$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous \
-      >> "$capture_log" 2>&1 &
-    CAPTURE_PID=$!
-    printf '%s\n' "$CAPTURE_PID" > "$capture_pid_file"
+    CLASSPATH="$PREFIX/libexec/termux-xw11/loader.apk"
+    if [[ ! -r "$CLASSPATH" ]]; then
+      echo "ERROR: Termux-X11 loader APK is missing: $CLASSPATH" >&2
+      stop_owned_session
+      exit 1
+    fi
+    env TMPDIR="$RUNTIME_ROOT" XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" \
+      XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" XW11_CAPTURE_BINARY="$CAPTURE" \
+      XW11_CAPTURE_LOG="$capture_log" PATH="$PREFIX/bin:$PATH" CLASSPATH="$CLASSPATH" \
+      /system/bin/app_process -Xnoimage-dex2oat / --nice-name="termux-xw11-wayland-output-broker" \
+      com.termux.x11.Loader --xw11-output-broker "$SESSION_ID" >> "$console_log" 2>&1 &
+    BROKER_PID=$!
+    printf '%s\\n' "$BROKER_PID" > "$capture_pid_file"
+    printf '%s\\n' "$BROKER_PID" > "$broker_pid_file"
     frame_ready=0
     for _ in {1..40}; do
       if grep -q '^frame_sent=1 ' "$capture_log" 2>/dev/null; then
@@ -307,7 +303,7 @@ case "$ACTION" in
     echo "OUTPUT_SOCKET=$OUTPUT_SOCKET"
     echo "CAPTURE_PID=$CAPTURE_PID"
     echo "capture_log=$capture_log"
-    echo "NOTE: output capture is connected over authenticated abstract AF_UNIX IPC (no TCP). Confirm first-frame presentation in logcat."
+    echo "NOTE: output capture uses a Binder-transferred connected AF_UNIX FD (no TCP, no direct cross-domain socket connect). Confirm first-frame presentation in logcat."
 
     ;;
 esac
