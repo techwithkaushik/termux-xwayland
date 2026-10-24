@@ -51,6 +51,24 @@ final class Xw11OutputSocketServer implements AutoCloseable {
         Log.i(TAG, "Authenticated output socket ready for session " + sessionId);
     }
 
+    /** Read exactly the authentication line without buffering any following frame bytes. */
+    private static String readHandshake(InputStream input) throws IOException {
+        byte[] bytes = new byte[160];
+        int length = 0;
+        while (length < bytes.length) {
+            int value = input.read();
+            if (value < 0) throw new IOException("Peer closed before authentication");
+            if (value == '\n') {
+                return new String(bytes, 0, length, StandardCharsets.US_ASCII);
+            }
+            if (value == '\r' || value < 0x20 || value > 0x7e) {
+                throw new IOException("Invalid authentication line");
+            }
+            bytes[length++] = (byte) value;
+        }
+        throw new IOException("Authentication line too long");
+    }
+
     private void acceptLoop() {
         while (!closed.get()) {
             LocalSocket peer = null;
@@ -58,9 +76,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
             try {
                 peer = server.accept();
                 peer.setSoTimeout(3000);
-                BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    peer.getInputStream(), StandardCharsets.US_ASCII));
-                String handshake = reader.readLine();
+                String handshake = readHandshake(peer.getInputStream());
                 if (!expectedHandshake.equals(handshake)) {
                     Log.w(TAG, "Rejected unauthenticated XW11 output peer");
                     continue;
