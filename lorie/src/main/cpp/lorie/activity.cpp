@@ -769,13 +769,21 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                         fd, errno, strerror(errno));
                     return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
                 }
-                if (peer.ss_family != AF_INET) {
-                    log(ERROR, "XW11 output attach rejected: peer family=%d, expected AF_INET loopback",
+                /*
+                 * The output server uses an authenticated abstract AF_UNIX socket.
+                 * Older prototypes used IPv4 loopback; accept that only for
+                 * compatibility, but do not reject the current local IPC transport.
+                 * Session ID + 256-bit token are validated by Xw11OutputSocketServer
+                 * before this duplicated descriptor is handed to native code.
+                 */
+                if (peer.ss_family == AF_INET) {
+                    if (reinterpret_cast<struct sockaddr_in *>(&peer)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+                        log(ERROR, "XW11 output attach rejected: IPv4 peer is not loopback");
+                        return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                    }
+                } else if (peer.ss_family != AF_UNIX) {
+                    log(ERROR, "XW11 output attach rejected: unsupported peer family=%d",
                         (int)peer.ss_family);
-                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
-                }
-                if (reinterpret_cast<struct sockaddr_in *>(&peer)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
-                    log(ERROR, "XW11 output attach rejected: peer is not IPv4 loopback");
                     return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
                 }
                 int ownedFd = dup(fd);
