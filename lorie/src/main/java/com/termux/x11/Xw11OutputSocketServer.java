@@ -98,6 +98,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                 peer.setSoTimeout(0);
                 descriptor = ParcelFileDescriptor.dup(peer.getFileDescriptor());
                 ParcelFileDescriptor accepted = descriptor;
+                final long readyGeneration = generation;
                 descriptor = null;
                 activity.runOnUiThread(() -> {
                     try {
@@ -105,7 +106,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                             Log.e(TAG, "Authenticated output socket could not attach to Surface");
                             try { accepted.close(); } catch (IOException ignored) {}
                         } else {
-                            Log.i(TAG, "Output transport attached; generation=" + generation);
+                            Log.i(TAG, "Output transport attached; generation=" + readyGeneration);
                         }
                     } catch (RuntimeException error) {
                         Log.e(TAG, "Output transport attach failed", error);
