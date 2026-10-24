@@ -11,6 +11,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #define MAX_DIM 8192u
@@ -130,6 +132,32 @@ int main(int argc, char **argv) {
     if (!end || *end || !session || session > UINT32_MAX) return 2;
     unsigned long long generation = strtoull(argv[3], &end, 10);
     if (!end || *end || !generation) return 2;
+
+    /*
+     * The descriptor is a capability supplied by the trusted launcher, not a
+     * pathname to connect to. Reject pipes, files, TCP sockets and unconnected
+     * sockets before touching the compositor. This is transport validation;
+     * the launcher must still authenticate the peer/session before handing the
+     * descriptor to this process.
+     */
+    int socket_type = 0;
+    socklen_t socket_type_size = sizeof(socket_type);
+    struct sockaddr_storage peer = {0};
+    socklen_t peer_size = sizeof(peer);
+    if (getsockopt((int)socket_fd, SOL_SOCKET, SO_TYPE,
+                   &socket_type, &socket_type_size) != 0 ||
+        socket_type != SOCK_STREAM ||
+        getpeername((int)socket_fd, (struct sockaddr *)&peer, &peer_size) != 0 ||
+        peer.ss_family != AF_UNIX) {
+        fprintf(stderr, "ERROR: output FD must be a connected AF_UNIX SOCK_STREAM socket\\n");
+        return 3;
+    }
+    int descriptor_flags = fcntl((int)socket_fd, F_GETFD);
+    if (descriptor_flags < 0 ||
+        fcntl((int)socket_fd, F_SETFD, descriptor_flags | FD_CLOEXEC) != 0) {
+        perror("configure output socket descriptor");
+        return 3;
+    }
 
     struct app a = {0};
     a.display = wl_display_connect(NULL);
