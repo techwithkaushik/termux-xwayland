@@ -97,12 +97,14 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                     try {
                         if (closed.get() || !activity.attachXw11OutputTransport(accepted, sessionId)) {
                             Log.e(TAG, "Authenticated output IPC could not attach to Surface");
-                            try { accepted.close(); } catch (IOException ignored) {}
                         } else {
                             Log.i(TAG, "Output IPC attached; generation=" + readyGeneration);
                         }
                     } catch (RuntimeException error) {
                         Log.e(TAG, "Output IPC attach failed", error);
+                    } finally {
+                        // attachOutputTransport duplicates the fd into its retained handle.
+                        // Always close this accepted descriptor to avoid leaking one per session.
                         try { accepted.close(); } catch (IOException ignored) {}
                     }
                 });
