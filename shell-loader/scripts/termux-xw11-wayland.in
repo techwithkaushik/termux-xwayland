@@ -270,9 +270,17 @@ case "$ACTION" in
       >> "$capture_log" 2>&1 &
     CAPTURE_PID=$!
     printf '%s\n' "$CAPTURE_PID" > "$capture_pid_file"
-    sleep 0.25
-    if ! kill -0 "$CAPTURE_PID" 2>/dev/null; then
-      echo "ERROR: Weston output capture exited; see $capture_log" >&2
+    frame_ready=0
+    for _ in {1..40}; do
+      if grep -q '^frame_sent=1 ' "$capture_log" 2>/dev/null; then
+        frame_ready=1
+        break
+      fi
+      if ! kill -0 "$CAPTURE_PID" 2>/dev/null; then break; fi
+      sleep 0.25
+    done
+    if (( ! frame_ready )); then
+      echo "ERROR: no first Weston frame reached the Android transport; see $capture_log and $log_file" >&2
       cat "$capture_log" >&2 || true
       stop_owned_session
       exit 1
