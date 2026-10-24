@@ -28,7 +28,7 @@ class SupervisorTransportLifecycleTest(unittest.TestCase):
     def test_status_exposes_session_binding_for_diagnostics(self):
         self.assertIn('echo "SESSION_ID=$(cat "$session_file")"', self.source)
         self.assertIn('echo "SURFACE_GENERATION=$(cat "$generation_file")"', self.source)
-        self.assertIn('echo "CAPTURE_PID=$(cat "$capture_pid_file")"', self.source)
+        self.assertIn('echo "CAPTURE_BROKER_PID=$(cat "$capture_pid_file")"', self.source)
 
     def test_supervisor_launches_authenticated_output_capture(self):
         self.assertIn('"$AM" start -n "$ANDROID_COMPONENT"', self.source)
