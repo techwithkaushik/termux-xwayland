@@ -20,6 +20,12 @@ class BinderOutputBrokerTests(unittest.TestCase):
         self.assertIn("execv(capture, childArgv)", native)
         self.assertIn("ParcelFileDescriptor", native)
         self.assertIn('"getXw11OutputConnection", "(JJ)Landroid/os/ParcelFileDescriptor;"', native)
+        self.assertIn('"--wait-presented"', native)
+        capture = (ROOT / "tools/weston-capture/capture_main.c").read_text()
+        android_native = (ROOT / "lorie/src/main/cpp/lorie/activity.cpp").read_text()
+        self.assertIn("XW11PRESENTED\\n", capture)
+        self.assertIn("XW11PRESENTED\\n", android_native)
+        self.assertIn("first_frame_presented=1", capture)
 
     def test_android_attaches_the_binder_descriptor_to_the_output_surface(self):
         activity = (ROOT / "lorie/src/main/java/com/termux/x11/MainActivity.java").read_text()
