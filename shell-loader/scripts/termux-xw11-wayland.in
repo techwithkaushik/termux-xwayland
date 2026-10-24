@@ -1,7 +1,7 @@
 #!/data/data/@EMBEDDED_APPLICATION_ID@/files/usr/bin/bash
-# Experimental Weston/XWayland supervisor.
-# This prepares a Wayland/X11 server only; it does not launch a desktop and
-# does not replace the Android Lorie renderer or provide Android Surface output.
+# Weston/XWayland supervisor with Binder-transferred FD output to the Android Surface.
+# Capture is spawned by the Termux-side Binder broker; no cross-domain abstract
+# socket connect or TCP transport is used.
 set -Eeuo pipefail
 
 PREFIX="${PREFIX:-/data/data/@EMBEDDED_APPLICATION_ID@/files/usr}"
@@ -134,7 +134,7 @@ case "$ACTION" in
       [[ -r "$session_file" ]] && echo "SESSION_ID=$(cat "$session_file")"
       [[ -r "$generation_file" ]] && echo "SURFACE_GENERATION=$(cat "$generation_file")"
       [[ -r "$transport_dir_file" ]] && echo "TRANSPORT_DIR=$(cat "$transport_dir_file")"
-      [[ -r "$capture_pid_file" ]] && echo "CAPTURE_PID=$(cat "$capture_pid_file")"
+      [[ -r "$capture_pid_file" ]] && echo "CAPTURE_BROKER_PID=$(cat "$capture_pid_file")"
       [[ -r "$capture_log" ]] && echo "capture_log=$capture_log"
       echo "log=$log_file"
       exit 0
