@@ -117,8 +117,10 @@ static void cleanup(struct app *a) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 4) {
-        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION\n", argv[0]);
+    int continuous = 0;
+    if (argc == 5 && strcmp(argv[4], "--continuous") == 0) continuous = 1;
+    else if (argc != 4) {
+        fprintf(stderr, "usage: %s CONNECTED_SOCKET_FD SESSION_ID SURFACE_GENERATION [--continuous]\n", argv[0]);
         return 2;
     }
     char *end = NULL;
@@ -187,32 +189,47 @@ int main(int argc, char **argv) {
         munmap(pixels, bytes); cleanup(&a); return 19;
     }
 
-    weston_capture_source_v1_capture(a.source, buffer);
-    while (!a.complete && !a.failed) {
-        if (wl_display_dispatch(a.display) < 0) {
-            a.failed = 1;
-            snprintf(a.failure, sizeof(a.failure), "Wayland connection lost during capture");
+    uint64_t sequence = 1;
+    xw11_output_stream_result sent = XW11_OUTPUT_STREAM_OK;
+    do {
+        a.complete = 0;
+        weston_capture_source_v1_capture(a.source, buffer);
+        while (!a.complete && !a.failed) {
+            if (wl_display_dispatch(a.display) < 0) {
+                a.failed = 1;
+                snprintf(a.failure, sizeof(a.failure), "Wayland connection lost during capture");
+            }
         }
-    }
-    wl_buffer_destroy(buffer);
-    if (a.failed) {
-        fprintf(stderr, "ERROR: %s\n", a.failure);
-        munmap(pixels, bytes); cleanup(&a); return 20;
-    }
+        if (a.failed) {
+            fprintf(stderr, "ERROR: %s\n", a.failure);
+            sent = XW11_OUTPUT_STREAM_ERR_TRANSPORT;
+            break;
+        }
 
-    xw11_output_frame frame = {
-        (uint64_t)generation, 1, a.width, a.height, (uint32_t)stride,
-        a.format, (uint32_t)bytes
-    };
-    xw11_output_stream_result sent = xw11_output_stream_send(
-        (int)socket_fd, (uint32_t)session, &frame, (const uint8_t *)pixels);
+        xw11_output_frame frame = {
+            (uint64_t)generation, sequence, a.width, a.height, (uint32_t)stride,
+            a.format, (uint32_t)bytes
+        };
+        sent = xw11_output_stream_send(
+            (int)socket_fd, (uint32_t)session, &frame, (const uint8_t *)pixels);
+        if (sent != XW11_OUTPUT_STREAM_OK) {
+            fprintf(stderr, "ERROR: output transport failed (%d)\n", (int)sent);
+            break;
+        }
+        if (sequence == UINT64_MAX) {
+            fprintf(stderr, "ERROR: output frame sequence exhausted\n");
+            sent = XW11_OUTPUT_STREAM_ERR_SEQUENCE;
+            break;
+        }
+        ++sequence;
+        if (!continuous) break;
+    } while (1);
+
+    wl_buffer_destroy(buffer);
     munmap(pixels, bytes);
     cleanup(&a);
-    if (sent != XW11_OUTPUT_STREAM_OK) {
-        fprintf(stderr, "ERROR: output transport failed (%d)\n", (int)sent);
-        return 21;
-    }
-    fprintf(stderr, "captured=%ux%u format=0x%08x bytes=%zu\n",
-            a.width, a.height, a.format, bytes);
+    if (sent != XW11_OUTPUT_STREAM_OK) return 21;
+    fprintf(stderr, "captured=%ux%u format=0x%08x frames=%llu bytes/frame=%zu\n",
+            a.width, a.height, (unsigned long long)(sequence - 1), bytes);
     return 0;
 }
