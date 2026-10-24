@@ -122,7 +122,7 @@ static void *xw11OutputWorker(void *) {
              * Android actually presented the frame, not merely that socket
              * buffering accepted it.
              */
-            static const char presentedAck[] = "XW11PRESENTED\\n";
+            static const char presentedAck[] = "XW11PRESENTED\n";
             size_t ackOffset = 0;
             while (ackOffset < sizeof(presentedAck) - 1) {
                 ssize_t written = send(fd, presentedAck + ackOffset,
