@@ -49,6 +49,8 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private long outputSessionId;
     private int surfaceWidth;
     private int surfaceHeight;
+    // Output-only mode is hosted by MainActivity; all input remains on the existing Lorie path.
+    private final boolean outputOnly;
 
     private static synchronized void markNativeBridgeUnavailable(UnsatisfiedLinkError error) {
         nativeBridgeAvailable = false;
@@ -140,19 +142,30 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     }
 
     Xw11NativeSurfaceView(Context context) {
+        this(context, false);
+    }
+
+    Xw11NativeSurfaceView(Context context, boolean outputOnly) {
         super(context);
+        this.outputOnly = outputOnly;
         initialize();
     }
 
     Xw11NativeSurfaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        this.outputOnly = false;
         initialize();
     }
 
     private void initialize() {
         getHolder().addCallback(this);
-        setFocusable(true);
-        setFocusableInTouchMode(true);
+        setFocusable(!outputOnly);
+        setFocusableInTouchMode(!outputOnly);
+        if (outputOnly) {
+            setClickable(false);
+            setLongClickable(false);
+            setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
     }
 
     private static synchronized long allocateGeneration() {
@@ -214,6 +227,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
 
     @Override
     public boolean onTouchEvent(@NonNull MotionEvent event) {
+        if (outputOnly) return false;
         final long current = generation;
         if (current == 0) return false;
         final int masked = event.getActionMasked();
@@ -240,6 +254,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
 
     @Override
     public boolean onGenericMotionEvent(@NonNull MotionEvent event) {
+        if (outputOnly) return false;
         // Mouse hover and button transitions are delivered through generic motion,
         // not reliably through onTouchEvent. Keep all input on the same native path.
         if ((event.getSource() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
@@ -297,11 +312,13 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
 
     @Override
     public boolean onKeyDown(int keyCode, @NonNull KeyEvent event) {
+        if (outputOnly) return false;
         return submitKey(event, DOWN) || super.onKeyDown(keyCode, event);
     }
 
     @Override
     public boolean onKeyUp(int keyCode, @NonNull KeyEvent event) {
+        if (outputOnly) return false;
         return submitKey(event, UP) || super.onKeyUp(keyCode, event);
     }
 
@@ -386,6 +403,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     protected void onFocusChanged(boolean gainFocus, int direction,
                                   android.graphics.Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+        if (outputOnly) return;
         final long current = generation;
         if (current != 0) {
             submitInputSafely(current, SystemClock.uptimeMillis() * NS_PER_MS,
