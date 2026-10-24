@@ -422,7 +422,11 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         if (current != 0) {
             // Teardown must always complete even if RegisterNatives failed for this APK.
             detachOutputSafely(current);
-            detachInputSafely(current);
+            // The MainActivity output-only Surface never attaches the experimental
+            // input transport. Do not call its JNI teardown on this path: older or
+            // partially updated native libraries may not register that method, and
+            // a single missing input symbol must not prevent Surface cleanup.
+            if (!outputOnly) detachInputSafely(current);
             detachSurfaceSafely(current);
         }
         closeOutputTransport();
