@@ -37,6 +37,19 @@ class OptionalXw11JniStartupTests(unittest.TestCase):
                         detach.index("xw11OutputThreadCreated = false"))
         self.assertIn("xw11OutputThread == thread", detach)
 
+    def test_first_successful_android_surface_presentation_is_logged(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        worker_start = source.index("static void *xw11OutputWorker")
+        worker_end = source.index("struct Xw11InputLock", worker_start)
+        worker = source[worker_start:worker_end]
+        self.assertIn("if (!firstFramePresented)", worker)
+        self.assertIn("XW11 first frame presented to Android Surface", worker)
+        self.assertLess(worker.index("presented != XW11_PRESENT_OK"),
+                        worker.index("XW11 first frame presented to Android Surface"))
+        self.assertIn("frame.width, frame.height", worker)
+        self.assertIn("frame.sequence_id", worker)
+        self.assertIn("generation);", worker)
+
     def test_received_frame_is_validated_and_converted_before_presentation(self):
         source = SOURCE.read_text(encoding="utf-8")
         worker_start = source.index("static void *xw11OutputWorker")
