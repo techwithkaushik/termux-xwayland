@@ -24,6 +24,7 @@ add_library(xw11_native_transport STATIC
     xw11_input_transform.cpp
     xw11_input_transport.cpp
     xw11_output_frame.cpp
+    xw11_output_stream.cpp
     xw11_surface_generation.cpp
     xw11_transport_io.cpp
     xw11_transport_protocol.cpp
@@ -54,3 +55,4 @@ xw11_add_test(test_input_transport test_input_transport.cpp)
 xw11_add_test(test_input_receiver test_input_receiver.cpp)
 xw11_add_test(test_input_dispatcher test_input_dispatcher.cpp)
 xw11_add_test(test_output_frame test_output_frame.cpp)
+xw11_add_test(test_output_stream test_output_stream.cpp)
