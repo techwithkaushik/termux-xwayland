@@ -98,7 +98,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                 output.write(("XW11READY " + generation + "\n").getBytes(StandardCharsets.US_ASCII));
                 output.flush();
                 peer.setSoTimeout(0);
-                descriptor = ParcelFileDescriptor.dup(peer.getFileDescriptor());
+                descriptor = ParcelFileDescriptor.fromSocket(peer);
                 ParcelFileDescriptor accepted = descriptor;
                 descriptor = null;
                 final long readyGeneration = generation;
