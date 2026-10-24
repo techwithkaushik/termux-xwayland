@@ -882,23 +882,37 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 }
             }},
     };
-    // This bridge is experimental and is not part of the legacy :0 startup path.
-    // A stale/mismatched APK (or a method-signature mismatch) must not prevent
-    // the existing Lorie/X11 server from loading. Keep the failure visible in
-    // logcat, clear any pending JNI exception, and continue loading legacy JNI.
+    // Keep this bridge optional so a stale APK cannot prevent legacy :0 startup.
+    // Register methods individually: RegisterNatives(array) is all-or-nothing, so
+    // one stale/mismatched declaration otherwise disables every output/input method.
+    // ExceptionDescribe identifies the exact Java method/signature that failed.
     jclass xw11SurfaceClass = env->FindClass("com/termux/x11/Xw11NativeSurfaceView");
     if (xw11SurfaceClass) {
-        if (env->RegisterNatives(xw11SurfaceClass, xw11SurfaceMethods,
-                sizeof(xw11SurfaceMethods) / sizeof(xw11SurfaceMethods[0])) != JNI_OK) {
-            log(ERROR, "Optional XW11 Surface bridge registration failed; continuing without it");
-            if (env->ExceptionCheck()) env->ExceptionClear();
-        } else {
-            log(INFO, "Optional XW11 Surface bridge registered");
+        unsigned int registered = 0;
+        unsigned int failed = 0;
+        for (const JNINativeMethod &method : xw11SurfaceMethods) {
+            if (env->RegisterNatives(xw11SurfaceClass, const_cast<JNINativeMethod *>(&method), 1) == JNI_OK) {
+                ++registered;
+                continue;
+            }
+            ++failed;
+            log(ERROR, "XW11 JNI registration failed for %s %s",
+                method.name, method.signature);
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
         }
+        log(registered > 0 ? INFO : ERROR,
+            "XW11 JNI registration result: %u registered, %u failed",
+            registered, failed);
         env->DeleteLocalRef(xw11SurfaceClass);
     } else {
         log(WARN, "Optional XW11 Surface bridge class not found; continuing with legacy Lorie");
-        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
     }
 
     static JNINativeMethod mainActivityMethods[] = {
