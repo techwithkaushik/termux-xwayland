@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/socket.h>
@@ -97,55 +99,56 @@ static const struct wl_registry_listener registry_listener = {
     registry_global, registry_remove
 };
 
-static int connect_authenticated_socket(const char *name, const char *token,
+static int connect_authenticated_socket(const char *port_text, const char *token,
                                        uint32_t session, uint64_t *generation_out) {
-    if (!name || !*name || strlen(name) >= sizeof(((struct sockaddr_un *)0)->sun_path) - 1 ||
+    if (!port_text || !*port_text || strlen(port_text) > 5 ||
         !token || strlen(token) != 64) {
-        fprintf(stderr, "ERROR: invalid abstract socket name or authentication token\n");
+        fprintf(stderr, "ERROR: invalid loopback port or authentication token\\n");
+        return -1;
+    }
+    char *end = NULL;
+    long port = strtol(port_text, &end, 10);
+    if (!end || *end || port < 1024 || port > 65535) {
+        fprintf(stderr, "ERROR: output port must be in range 1024..65535\\n");
         return -1;
     }
     for (size_t i = 0; i < 64; ++i) {
         if (!((token[i] >= '0' && token[i] <= '9') ||
               (token[i] >= 'a' && token[i] <= 'f') ||
               (token[i] >= 'A' && token[i] <= 'F'))) {
-            fprintf(stderr, "ERROR: output token must be 64 hexadecimal characters\n");
+            fprintf(stderr, "ERROR: output token must be 64 hexadecimal characters\\n");
             return -1;
         }
     }
-    struct sockaddr_un address = {0};
-    address.sun_family = AF_UNIX;
-    address.sun_path[0] = '\0'; /* Linux abstract namespace; cross-UID filesystem-independent IPC. */
-    memcpy(address.sun_path + 1, name, strlen(name));
-    socklen_t length = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + strlen(name));
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_port = htons((uint16_t)port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    /*
-     * am start returns before Activity.onCreate() necessarily binds the abstract
-     * LocalServerSocket. Retry only transient startup races; don't turn a bad
-     * name or a permanently absent Android endpoint into an infinite loop.
-     */
+    /* Activity startup is asynchronous. Retry only transient connection races. */
     int fd = -1;
     int last_error = 0;
     for (int attempt = 0; attempt < 60; ++attempt) {
-        fd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (fd < 0) { perror("create output socket"); return -1; }
-        if (connect(fd, (struct sockaddr *)&address, length) == 0) break;
+        fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) { perror("create loopback output socket"); return -1; }
+        if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) break;
         last_error = errno;
         close(fd);
         fd = -1;
-        if (last_error != ECONNREFUSED && last_error != ENOENT && last_error != EINTR) {
+        if (last_error != ECONNREFUSED && last_error != EINTR && last_error != EAGAIN) {
             errno = last_error;
-            perror("connect Android XW11 output socket");
+            perror("connect Android XW11 loopback output socket");
             return -1;
         }
         if (attempt != 59) usleep(100000);
     }
     if (fd < 0) {
         errno = last_error;
-        perror("connect Android XW11 output socket after retries");
+        perror("connect Android XW11 loopback output socket after retries");
         return -1;
     }
     char line[128];
-    int n = snprintf(line, sizeof(line), "XW11AUTH %u %s\n", session, token);
+    int n = snprintf(line, sizeof(line), "XW11AUTH %u %s\\n", session, token);
     if (n <= 0 || (size_t)n >= sizeof(line)) { close(fd); return -1; }
     size_t offset = 0;
     while (offset < (size_t)n) {
@@ -161,16 +164,16 @@ static int connect_authenticated_socket(const char *name, const char *token,
         ssize_t got = read(fd, &ch, 1);
         if (got < 0 && errno == EINTR) continue;
         if (got <= 0) { perror("read Android output readiness"); close(fd); return -1; }
-        if (ch == '\n') break;
+        if (ch == '\\n') break;
         if (ch < 0x20 || ch > 0x7e) { close(fd); return -1; }
         ready[ready_length++] = ch;
     }
-    ready[ready_length] = '\0';
+    ready[ready_length] = '\\0';
     unsigned long long negotiated = 0;
     char trailing = 0;
     if (sscanf(ready, "XW11READY %llu%c", &negotiated, &trailing) != 1 ||
         negotiated == 0) {
-        fprintf(stderr, "ERROR: Android output Surface did not provide a valid generation\n");
+        fprintf(stderr, "ERROR: Android output Surface did not provide a valid generation\\n");
         close(fd);
         return -1;
     }
@@ -253,7 +256,7 @@ int main(int argc, char **argv) {
                    &socket_type, &socket_type_size) != 0 ||
         socket_type != SOCK_STREAM ||
         getpeername((int)socket_fd, (struct sockaddr *)&peer, &peer_size) != 0 ||
-        peer.ss_family != AF_UNIX) {
+        peer.ss_family != (connect_mode ? AF_INET : AF_UNIX)) {
         fprintf(stderr, "ERROR: output FD must be a connected AF_UNIX SOCK_STREAM socket\\n");
         return 3;
     }
