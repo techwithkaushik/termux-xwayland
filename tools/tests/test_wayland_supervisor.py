@@ -43,11 +43,11 @@ class WaylandSupervisorTests(unittest.TestCase):
     def test_android_surface_output_transport_is_integrated(self):
         # Abstract AF_UNIX socket names are random, non-filesystem names; do not
         # regress to the old loopback-TCP port allocator.
-        self.assertIn('OUTPUT_SOCKET="xw11-output-$(od -An -N16 -tx1 /dev/urandom', self.source)
-        self.assertIn('OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom', self.source)
-        self.assertIn('[[ "$OUTPUT_SOCKET" =~ ^xw11-output-[0-9a-f]{32}$', self.source)
         self.assertIn('"$AM" start -n "$ANDROID_COMPONENT"', self.source)
-        self.assertIn('"$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous', self.source)
+        self.assertIn('XW11_CAPTURE_BINARY="$CAPTURE"', self.source)
+        self.assertIn('com.termux.x11.Loader --xw11-output-broker "$SESSION_ID"', self.source)
+        self.assertIn('OUTPUT_TRANSPORT=Binder-FD', self.source)
+        self.assertNotIn('"$CAPTURE" --connect "$OUTPUT_SOCKET"', self.source)
         self.assertIn('echo "status=running"', self.source)
         self.assertIn('frame_sent=1', self.source)
 
