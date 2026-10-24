@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""Regression checks for the experimental XW11 supervisor session metadata."""
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "shell-loader/scripts/termux-xw11-wayland.in"
+
+
+class SupervisorTransportLifecycleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = SCRIPT.read_text(encoding="utf-8")
+
+    def test_session_metadata_is_fresh_and_private(self):
+        self.assertIn('SESSION_ID="$(od -An -N4 -tu4 /dev/urandom', self.source)
+        self.assertIn('chmod 700 "$TRANSPORT_DIR"', self.source)
+        self.assertIn('chmod 600 "$session_file" "$generation_file" "$transport_dir_file"', self.source)
+        self.assertIn('printf \'0\\n\' > "$generation_file"', self.source)
+
+    def test_stop_removes_only_recorded_transport_directory(self):
+        self.assertIn('[[ "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]', self.source)
+        self.assertIn('rm -rf -- "$transport_dir"', self.source)
+        self.assertIn('"$session_file" "$generation_file" "$transport_dir_file"', self.source)
+
+    def test_status_exposes_session_binding_for_diagnostics(self):
+        self.assertIn('echo "SESSION_ID=$(cat "$session_file")"', self.source)
+        self.assertIn('echo "SURFACE_GENERATION=$(cat "$generation_file")"', self.source)
+
+    def test_no_legacy_renderer_replacement_or_desktop_autostart(self):
+        self.assertIn("does not present Weston output on the Android app Surface", self.source)
+        self.assertIn("no desktop was launched", self.source)
+
+
+if __name__ == "__main__":
+    unittest.main()
