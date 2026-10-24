@@ -102,3 +102,10 @@ transport failure. One-shot remains the default for diagnostics. This does not
 solve Surface socket provisioning, output resize/recreation, or device-side
 validation; the supervisor still needs to establish the authenticated connected
 socket and provide its descriptor/session/generation to both processes.
+
+
+## Surface resize receiver lifecycle (2026-10-24)
+
+`Xw11NativeSurfaceView` now retains a private duplicate of the authenticated output socket descriptor together with the non-zero session ID. When Android reports a changed Surface size, the view detaches the receiver for the current Surface generation before updating the native Surface, then restarts the receiver with the same session ID and the current generation. Surface destruction closes the retained descriptor and clears the session ID. This prevents stale queued receiver state from silently crossing a Surface resize and keeps ownership of the caller's descriptor unchanged.
+
+A source-level regression test lives at `tools/tests/test_xw11_surface_resize.py`. This is receiver-side lifecycle handling only: it does not resize the Weston capture SHM buffer. The producer currently reports `capture_retry` and exits when the compositor says output parameters changed. The supervisor still needs an authenticated socket endpoint and coordinated producer restart/re-negotiation on resize before the entire lifecycle can be considered complete.
