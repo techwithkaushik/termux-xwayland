@@ -96,6 +96,23 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn("PASS: native ANativeWindow CPU-copy frame posted", self.presenter_runner)
         self.assertIn("no Weston frame producer is connected", self.presenter_runner)
 
+    def test_optional_jni_bridge_failure_does_not_crash_surface_lifecycle(self):
+        # A stale/mismatched libXlorie can fail RegisterNatives. Experimental calls must
+        # fail closed and surfaceDestroyed must still finish without UnsatisfiedLinkError.
+        self.assertIn("nativeBridgeAvailable = true", self.presenter_view)
+        self.assertIn("markNativeBridgeUnavailable(UnsatisfiedLinkError error)", self.presenter_view)
+        self.assertIn("XW11 native bridge unavailable", self.presenter_view)
+        self.assertIn("attachSurfaceSafely(surface, current)", self.presenter_view)
+        self.assertIn("submitInputSafely(current", self.presenter_view)
+        self.assertIn("presentFrameSafely(pixels", self.presenter_view)
+        destroyed = self.presenter_view.index("public void surfaceDestroyed(@NonNull SurfaceHolder holder)")
+        destroyed_end = self.presenter_view.index("\\n    }", destroyed)
+        lifecycle = self.presenter_view[destroyed:destroyed_end]
+        self.assertIn("detachInputSafely(current)", lifecycle)
+        self.assertIn("detachSurfaceSafely(current)", lifecycle)
+        self.assertNotIn("nativeDetachInputTransport(current)", lifecycle)
+        self.assertNotIn("nativeDetachSurface(current)", lifecycle)
+
     def test_diagnostic_is_opt_in_and_surface_lifecycle_scoped(self):
         key = 'getBooleanExtra("org.techwithkaushik.termuxxw11.RUN_EGL_PROBE", false)'
         self.assertIn(key, self.activity)
