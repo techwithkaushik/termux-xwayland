@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${XW11_BUILD_DIR:-${TMPDIR:-/tmp}/xw11-native-transport-build}"
+BUILD_DIR="${XW11_BUILD_DIR:-${TMPDIR:-${PREFIX:-/data/data/com.termux/files/usr}/tmp}/xw11-native-transport-build}"
 RUN_WESTON="${XW11_RUN_WESTON:-0}"
 RUN_ANDROID="${XW11_RUN_ANDROID_PRESENTER:-0}"
 RUN_ANDROID_EGL="${XW11_RUN_ANDROID_EGL_PROBE:-0}"
