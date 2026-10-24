@@ -130,7 +130,6 @@ final class Xw11OutputSocketServer implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) return;
         if (server != null) {
             try { server.close(); } catch (IOException ignored) {}
-            server = null;
         }
         if (thread != null) {
             thread.interrupt();
