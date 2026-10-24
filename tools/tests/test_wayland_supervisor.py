@@ -40,9 +40,12 @@ class WaylandSupervisorTests(unittest.TestCase):
         self.assertIn('kill -TERM "$SESSION_PID"', self.source)
         self.assertIn('"$SESSION_RUNTIME" == "$RUNTIME_ROOT"/xw11-wayland.*', self.source)
 
-    def test_explicitly_disclaims_android_surface_integration(self):
-        self.assertIn("does not replace the Android Lorie renderer", self.source)
-        self.assertIn("does not present Weston output on the Android app Surface", self.source)
+    def test_android_surface_output_transport_is_integrated(self):
+        self.assertIn('OUTPUT_SOCKET="$(od -An -N4 -tx1 /dev/urandom', self.source)
+        self.assertIn('"$AM" start -n "$ANDROID_COMPONENT"', self.source)
+        self.assertIn('"$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous', self.source)
+        self.assertIn('echo "status=running"', self.source)
+        self.assertIn('frame_sent=1', self.source)
 
 
 if __name__ == "__main__":
