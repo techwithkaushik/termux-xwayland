@@ -227,7 +227,7 @@ case "$ACTION" in
       exit 1
     fi
     printf '%s\n' ":$XDISPLAY" > "$display_file"
-    echo "status=running"
+    echo "status=starting-output"
     echo "weston_pid=$WESTON_PID"
     echo "DISPLAY=:$XDISPLAY"
     echo "WAYLAND_DISPLAY=$SESSION_SOCKET"
@@ -235,8 +235,6 @@ case "$ACTION" in
     echo "SESSION_ID=$SESSION_ID"
     echo "SURFACE_GENERATION=0"
     echo "TRANSPORT_DIR=$TRANSPORT_DIR"
-    echo "NOTE: generation 0 means Android Surface has not been bound."
-    echo "NOTE: metadata is private; this does not yet create an Android IPC endpoint."
     echo "log=$log_file"
     # Start Android output IPC only after Weston/XWayland is ready.
     CAPTURE="$PREFIX/bin/xw11-weston-capture"
@@ -279,6 +277,7 @@ case "$ACTION" in
       stop_owned_session
       exit 1
     fi
+    echo "status=running"
     echo "OUTPUT_SOCKET=$OUTPUT_SOCKET"
     echo "CAPTURE_PID=$CAPTURE_PID"
     echo "capture_log=$capture_log"
