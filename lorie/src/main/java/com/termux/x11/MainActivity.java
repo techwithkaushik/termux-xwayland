@@ -925,6 +925,10 @@ public class MainActivity extends AppCompatActivity {
      * session launcher has authenticated the socket and session id. Input remains
      * on the existing TouchInputHandler/LorieView path.
      */
+    void prepareXw11OutputSurface() {
+        if (xw11OutputView != null) xw11OutputView.setVisibility(View.VISIBLE);
+    }
+
     boolean attachXw11OutputTransport(@NonNull ParcelFileDescriptor connectedSocket,
                                       long sessionId) {
         if (xw11OutputView == null || sessionId <= 0) return false;
