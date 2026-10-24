@@ -110,7 +110,7 @@ stop_owned_session() {
   if [[ -n "$transport_dir" && "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]; then
     rm -rf -- "$transport_dir"
   fi
-  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file"
+  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file" "$capture_pid_file" "$output_socket_file" "$output_token_file"
 }
 
 case "$ACTION" in
