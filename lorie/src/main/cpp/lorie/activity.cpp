@@ -52,8 +52,11 @@ static void *xw11OutputWorker(void *) {
     const uint64_t generation = xw11OutputGeneration;
     const size_t capacity = XW11_OUTPUT_FRAME_MAX_BYTES;
     uint8_t *pixels = static_cast<uint8_t *>(malloc(capacity));
-    if (!pixels) {
-        log(ERROR, "XW11 output receiver: allocation failed");
+    uint8_t *rgba = static_cast<uint8_t *>(malloc(capacity));
+    if (!pixels || !rgba) {
+        log(ERROR, "XW11 output receiver: frame buffer allocation failed");
+        free(pixels);
+        free(rgba);
         return nullptr;
     }
     uint64_t lastSequence = 0;
@@ -78,25 +81,27 @@ static void *xw11OutputWorker(void *) {
         }
         lastSequence = frame.sequence_id;
 
-        /* Convert BGRA memory from DRM XRGB/ARGB to RGBA in place. */
-        const size_t rowBytes = (size_t)frame.width * 4u;
-        for (uint32_t y = 0; y < frame.height; ++y) {
-            uint8_t *row = pixels + (size_t)y * frame.stride_bytes;
-            for (uint32_t x = 0; x < frame.width; ++x) {
-                uint8_t *p = row + (size_t)x * 4u;
-                const uint8_t blue = p[0];
-                p[0] = p[2];
-                p[2] = blue;
-                if (frame.fourcc == XW11_OUTPUT_FORMAT_XRGB8888) p[3] = 255;
-            }
+        /*
+         * Validate metadata and convert into a separate tightly packed RGBA
+         * buffer. This avoids mutating the received wire frame and makes source
+         * stride/byte-count checks part of the actual Android presentation path.
+         */
+        const size_t rgbaStride = (size_t)frame.width * 4u;
+        const xw11_output_frame_error converted = xw11_output_frame_to_rgba(
+            &frame, pixels, capacity, rgba, capacity, rgbaStride);
+        if (converted != XW11_OUTPUT_FRAME_OK) {
+            log(ERROR, "XW11 output frame rejected during RGBA conversion (result=%d)",
+                (int)converted);
+            break;
         }
         const xw11_present_result presented = xw11_presenter_present_rgba8888(
-            generation, frame.width, frame.height, pixels, frame.stride_bytes);
+            generation, frame.width, frame.height, rgba, rgbaStride);
         if (presented != XW11_PRESENT_OK) {
             log(WARN, "XW11 output frame not presented (result=%d)", (int)presented);
             break;
         }
     }
+    free(rgba);
     free(pixels);
     return nullptr;
 }
