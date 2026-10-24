@@ -78,6 +78,19 @@ read_session() {
 }
 
 stop_owned_session() {
+  local capture_pid=""
+  [[ -r "$capture_pid_file" ]] && IFS= read -r capture_pid < "$capture_pid_file" || true
+  if [[ "$capture_pid" =~ ^[0-9]+$ && -r "/proc/$capture_pid/cmdline" ]]; then
+    local capture_cmdline
+    capture_cmdline="$(tr '\0' ' ' < "/proc/$capture_pid/cmdline" 2>/dev/null || true)"
+    if [[ "$capture_cmdline" == *"xw11-weston-capture"* ]]; then
+      kill -TERM "$capture_pid" 2>/dev/null || true
+      for _ in {1..20}; do
+        [[ -r "/proc/$capture_pid/cmdline" ]] || break
+        sleep 0.1
+      done
+    fi
+  fi
   read_session
   if [[ -n "$SESSION_PID" ]] && is_owned_weston "$SESSION_PID"; then
     kill -TERM "$SESSION_PID" 2>/dev/null || true
@@ -118,6 +131,8 @@ case "$ACTION" in
       [[ -r "$session_file" ]] && echo "SESSION_ID=$(cat "$session_file")"
       [[ -r "$generation_file" ]] && echo "SURFACE_GENERATION=$(cat "$generation_file")"
       [[ -r "$transport_dir_file" ]] && echo "TRANSPORT_DIR=$(cat "$transport_dir_file")"
+      [[ -r "$capture_pid_file" ]] && echo "CAPTURE_PID=$(cat "$capture_pid_file")"
+      [[ -r "$capture_log" ]] && echo "capture_log=$capture_log"
       echo "log=$log_file"
       exit 0
     fi
