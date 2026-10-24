@@ -20,9 +20,15 @@ class MainActivityOutputSurfaceTests(unittest.TestCase):
         self.assertIn("frm.addView(xw11OutputView);", self.activity)
         self.assertIn("xw11OutputView.attachOutputTransport(connectedSocket, sessionId)", self.activity)
         self.assertIn("xw11OutputView.setVisibility(View.VISIBLE);", self.activity)
+        self.assertLess(
+            self.activity.index("xw11OutputView.setVisibility(View.VISIBLE);", self.activity.index("boolean attachXw11OutputTransport")),
+            self.activity.index("xw11OutputView.attachOutputTransport(connectedSocket, sessionId)", self.activity.index("boolean attachXw11OutputTransport")),
+        )
 
     def test_output_only_view_does_not_submit_input(self):
         self.assertIn("if (outputOnly) return false;", self.view)
+        self.assertIn("Retain the socket even when the view is still GONE", self.view)
+        self.assertIn("else if (outputTransport != null && outputSessionId > 0)", self.view)
         self.assertIn("if (outputOnly) return;", self.view)
         for method in ("onTouchEvent", "onGenericMotionEvent", "onKeyDown", "onKeyUp", "onFocusChanged"):
             self.assertIn(method, self.view)
