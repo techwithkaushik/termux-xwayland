@@ -35,7 +35,7 @@ class WestonCaptureModeTests(unittest.TestCase):
         self.assertIn("socket_type != SOCK_STREAM", self.source)
         self.assertIn("peer.ss_family != AF_UNIX", self.source)
         self.assertIn("FD_CLOEXEC", self.source)
-        self.assertLess(self.source.index("peer.ss_family != (connect_mode ? AF_INET : AF_UNIX)"),
+        self.assertLess(self.source.index("peer.ss_family != AF_UNIX"),
                         self.source.index("wl_display_connect(NULL)"))
 
     def test_abstract_socket_client_authenticates_before_streaming(self):
