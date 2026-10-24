@@ -9,13 +9,31 @@ namespace {
 constexpr uint32_t kMaxDimension = 8192;
 constexpr size_t kMaxFrameBytes = 256u * 1024u * 1024u;
 
-pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t g_state_lock = PTHREAD_MUTEX_INITIALIZER;
+// Only one producer may lock/post a window buffer at a time. This lock is
+// deliberately separate from lifecycle state so Surface callbacks do not need
+// to hold the state mutex while a potentially large frame is copied.
+pthread_mutex_t g_present_lock = PTHREAD_MUTEX_INITIALIZER;
 ANativeWindow *g_window = nullptr;
 uint64_t g_generation = 0;
 // Monotonic high-water mark survives detach so delayed stale attaches cannot win.
 uint64_t g_last_generation = 0;
+// These cache fields are protected by g_present_lock and keyed by generation.
+uint64_t g_cached_generation = 0;
 uint32_t g_width = 0;
 uint32_t g_height = 0;
+
+class MutexLock {
+public:
+    explicit MutexLock(pthread_mutex_t *mutex) : mutex_(mutex) {
+        pthread_mutex_lock(mutex_);
+    }
+    ~MutexLock() { pthread_mutex_unlock(mutex_); }
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+private:
+    pthread_mutex_t *mutex_;
+};
 }
 
 extern "C" xw11_present_result xw11_presenter_set_window(
@@ -24,46 +42,45 @@ extern "C" xw11_present_result xw11_presenter_set_window(
         return XW11_PRESENT_ERR_ARGUMENT;
 
     ANativeWindow_acquire(window);
-    pthread_mutex_lock(&g_lock);
-    // Surface callbacks can race with delayed native work. Never let an older
-    // generation replace a newer Surface, even after the newer one was detached.
-    if (generation < g_last_generation ||
-        (generation == g_last_generation &&
-         (g_generation != generation || g_window != window))) {
-        pthread_mutex_unlock(&g_lock);
-        ANativeWindow_release(window);
-        return XW11_PRESENT_ERR_STALE_ATTACH;
+    ANativeWindow *previous = nullptr;
+    {
+        MutexLock lock(&g_state_lock);
+        // Surface callbacks can race with delayed native work. Never let an older
+        // generation replace a newer Surface, even after the newer Surface detached.
+        if (generation < g_last_generation ||
+            (generation == g_last_generation &&
+             (g_generation != generation || g_window != window))) {
+            ANativeWindow_release(window);
+            return XW11_PRESENT_ERR_STALE_ATTACH;
+        }
+        // Repeated surfaceChanged callbacks for the same live Surface are idempotent.
+        if (generation == g_last_generation && g_generation == generation &&
+            g_window == window) {
+            ANativeWindow_release(window);
+            return XW11_PRESENT_OK;
+        }
+        previous = g_window;
+        g_window = window;
+        g_generation = generation;
+        g_last_generation = generation;
     }
-    // Repeated surfaceChanged callbacks for the same live Surface are idempotent.
-    if (generation == g_last_generation && g_generation == generation &&
-        g_window == window) {
-        pthread_mutex_unlock(&g_lock);
-        ANativeWindow_release(window);
-        return XW11_PRESENT_OK;
-    }
-    ANativeWindow *previous = g_window;
-    g_window = window;
-    g_generation = generation;
-    g_last_generation = generation;
-    g_width = 0;
-    g_height = 0;
-    pthread_mutex_unlock(&g_lock);
+    // A concurrent presenter owns its own ANativeWindow reference, so releasing
+    // the old owner here cannot invalidate an in-flight frame.
     if (previous != nullptr)
         ANativeWindow_release(previous);
     return XW11_PRESENT_OK;
 }
 
 extern "C" void xw11_presenter_clear_window(uint64_t generation) {
-    pthread_mutex_lock(&g_lock);
     ANativeWindow *previous = nullptr;
-    if (generation != 0 && generation == g_generation) {
-        previous = g_window;
-        g_window = nullptr;
-        g_generation = 0;
-        g_width = 0;
-        g_height = 0;
+    {
+        MutexLock lock(&g_state_lock);
+        if (generation != 0 && generation == g_generation) {
+            previous = g_window;
+            g_window = nullptr;
+            g_generation = 0;
+        }
     }
-    pthread_mutex_unlock(&g_lock);
     if (previous != nullptr)
         ANativeWindow_release(previous);
 }
@@ -89,22 +106,36 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
     if (source_bytes > kMaxFrameBytes)
         return XW11_PRESENT_ERR_STRIDE;
 
-    pthread_mutex_lock(&g_lock);
-    if (g_window == nullptr || generation != g_generation) {
-        pthread_mutex_unlock(&g_lock);
-        return XW11_PRESENT_ERR_STALE_GENERATION;
+    MutexLock present_lock(&g_present_lock);
+    ANativeWindow *window = nullptr;
+    {
+        MutexLock state_lock(&g_state_lock);
+        if (g_window == nullptr || generation != g_generation)
+            return XW11_PRESENT_ERR_STALE_GENERATION;
+        window = g_window;
+        // Keep this frame's window alive even if surfaceDestroyed races with
+        // the copy/post below. A detached Surface may receive its final in-flight
+        // post, but no use-after-free or descriptor lifetime race is possible.
+        ANativeWindow_acquire(window);
     }
 
-    ANativeWindow *window = g_window;
-    int32_t current_width = ANativeWindow_getWidth(window);
-    int32_t current_height = ANativeWindow_getHeight(window);
+    xw11_present_result result = XW11_PRESENT_OK;
+    if (g_cached_generation != generation) {
+        g_cached_generation = generation;
+        g_width = 0;
+        g_height = 0;
+    }
+
+    const int32_t current_width = ANativeWindow_getWidth(window);
+    const int32_t current_height = ANativeWindow_getHeight(window);
     if (g_width != width || g_height != height ||
         current_width != (int32_t)width || current_height != (int32_t)height) {
-        int32_t geometry = ANativeWindow_setBuffersGeometry(
+        const int32_t geometry = ANativeWindow_setBuffersGeometry(
             window, (int32_t)width, (int32_t)height, WINDOW_FORMAT_RGBA_8888);
         if (geometry != 0) {
-            pthread_mutex_unlock(&g_lock);
-            return XW11_PRESENT_ERR_WINDOW_SIZE;
+            result = XW11_PRESENT_ERR_WINDOW_SIZE;
+            ANativeWindow_release(window);
+            return result;
         }
         g_width = width;
         g_height = height;
@@ -112,11 +143,10 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
 
     ANativeWindow_Buffer buffer;
     if (ANativeWindow_lock(window, &buffer, nullptr) != 0) {
-        pthread_mutex_unlock(&g_lock);
+        ANativeWindow_release(window);
         return XW11_PRESENT_ERR_WINDOW_LOCK;
     }
 
-    xw11_present_result result = XW11_PRESENT_OK;
     if (buffer.bits == nullptr || buffer.width != (int32_t)width ||
         buffer.height != (int32_t)height || buffer.stride < (int32_t)width ||
         static_cast<size_t>(buffer.stride) > SIZE_MAX / 4u) {
@@ -132,9 +162,9 @@ extern "C" xw11_present_result xw11_presenter_present_rgba8888(
         }
     }
 
-    int32_t post_result = ANativeWindow_unlockAndPost(window);
+    const int32_t post_result = ANativeWindow_unlockAndPost(window);
     if (post_result != 0 && result == XW11_PRESENT_OK)
         result = XW11_PRESENT_ERR_WINDOW_LOCK;
-    pthread_mutex_unlock(&g_lock);
+    ANativeWindow_release(window);
     return result;
 }
