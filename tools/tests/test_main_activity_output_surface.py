@@ -23,6 +23,9 @@ class MainActivityOutputSurfaceTests(unittest.TestCase):
         self.assertIn("new Xw11OutputSocketServer(this, socketName, token, sessionId)", self.activity)
         self.assertIn("activity.attachXw11OutputTransport(accepted, sessionId)", self.server)
         self.assertIn("XW11AUTH ", self.server)
+        self.assertIn("XW11READY ", self.server)
+        self.assertIn("outputSurfaceGenerationForIpc()", self.activity)
+        self.assertIn("prepareXw11OutputSurface()", self.activity)
         self.assertIn("readHandshake(peer.getInputStream())", self.server)
         self.assertIn("setVisibility(View.VISIBLE)", self.activity)
 
