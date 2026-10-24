@@ -32,6 +32,8 @@
 static pthread_mutex_t xw11InputMutex = PTHREAD_MUTEX_INITIALIZER;
 static xw11_input_dispatcher *xw11InputDispatcher = nullptr;
 static uint64_t xw11InputGeneration = 0;
+// Prevent delayed Surface callbacks from replacing a newer input session.
+static uint64_t xw11LastInputGeneration = 0;
 
 struct Xw11InputLock {
     Xw11InputLock() { pthread_mutex_lock(&xw11InputMutex); }
@@ -657,9 +659,29 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 if (generation > 0)
                     xw11_presenter_clear_window((uint64_t) generation);
             }},
-            {"nativeAttachInputTransport", "(IJJ)I", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint {
+            {"nativeAttachInputTransport", "(IJJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint {
                 if (fd < 0 || sessionId <= 0 || (uint64_t) sessionId > UINT32_MAX || generation <= 0)
                     return (jint) XW11_INPUT_DISPATCHER_ERR_ARGUMENT;
+
+                // ParcelFileDescriptor can wrap a regular file or pipe. This
+                // protocol requires a connected Unix stream socket.
+                int socketType = 0;
+                socklen_t socketTypeLength = sizeof(socketType);
+                if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &socketType, &socketTypeLength) != 0 ||
+                    socketType != SOCK_STREAM)
+                    return (jint) XW11_INPUT_DISPATCHER_ERR_ARGUMENT;
+                struct sockaddr_storage peer = {};
+                socklen_t peerLength = sizeof(peer);
+                if (getpeername(fd, reinterpret_cast<struct sockaddr *>(&peer), &peerLength) != 0 ||
+                    peer.ss_family != AF_UNIX)
+                    return (jint) XW11_INPUT_DISPATCHER_ERR_ARGUMENT;
+
+                {
+                    Xw11InputLock lock;
+                    if ((uint64_t) generation < xw11LastInputGeneration)
+                        return (jint) XW11_INPUT_DISPATCHER_ERR_STATE;
+                }
+
                 int ownedFd = dup(fd);
                 if (ownedFd < 0) return (jint) XW11_INPUT_DISPATCHER_ERR_TRANSPORT;
                 xw11_input_dispatcher *next = xw11_input_dispatcher_create(ownedFd, (uint32_t) sessionId);
@@ -672,10 +694,21 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                     xw11_input_dispatcher_destroy(next);
                     return (jint) started;
                 }
-                Xw11InputLock lock;
-                if (xw11InputDispatcher) xw11_input_dispatcher_destroy(xw11InputDispatcher);
-                xw11InputDispatcher = next;
-                xw11InputGeneration = (uint64_t) generation;
+
+                xw11_input_dispatcher *previous = nullptr;
+                {
+                    Xw11InputLock lock;
+                    // Recheck after allocation: another attach may have won the race.
+                    if ((uint64_t) generation < xw11LastInputGeneration) {
+                        xw11_input_dispatcher_destroy(next);
+                        return (jint) XW11_INPUT_DISPATCHER_ERR_STATE;
+                    }
+                    previous = xw11InputDispatcher;
+                    xw11InputDispatcher = next;
+                    xw11InputGeneration = (uint64_t) generation;
+                    xw11LastInputGeneration = (uint64_t) generation;
+                }
+                if (previous) xw11_input_dispatcher_destroy(previous);
                 return 0;
             }},
             {"nativeSubmitInputEvent", "(JJIIIIIII)Z", (void *) +[](__unused JNIEnv *env, __unused jclass clazz, jlong generation, jlong timeNs, jint type, jint action, jint code, jint x, jint y, jint modifiers, jint deviceId) -> jboolean {
