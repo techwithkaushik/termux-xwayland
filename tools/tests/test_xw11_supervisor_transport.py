@@ -19,7 +19,7 @@ class SupervisorTransportLifecycleTest(unittest.TestCase):
         self.assertIn('printf \'0\\n\' > "$generation_file"', self.source)
 
     def test_stop_removes_only_recorded_transport_directory(self):
-        self.assertIn('[[ "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]', self.source)
+        self.assertIn('if [[ -n "$transport_dir" && "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]; then', self.source)
         self.assertIn('rm -rf -- "$transport_dir"', self.source)
         self.assertIn('"$session_file" "$generation_file" "$transport_dir_file"', self.source)
 
