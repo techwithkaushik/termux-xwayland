@@ -40,7 +40,11 @@ first-frame presentation acknowledgement, not merely a successful socket write. 
 PID published in `XW11_CAPTURE_PID_FILE` and matching the compositor UID.
 
 The old authenticated abstract-socket `--connect` mode remains available for diagnostics,
-but it is not used by the supervisor's Android output path.
+but it is not used by the supervisor's Android output path:
+
+```sh
+xw11-weston-capture --connect ABSTRACT_SOCKET_NAME TOKEN SESSION_ID SURFACE_GENERATION --continuous
+```
 
 Native Android code validates session, Surface generation, frame metadata and sequence
 numbers, converts XRGB/ARGB to RGBA, and presents to the dedicated MainActivity Surface.
