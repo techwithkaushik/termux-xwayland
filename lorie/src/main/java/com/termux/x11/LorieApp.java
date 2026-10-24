@@ -135,6 +135,24 @@ public class LorieApp extends Application {
             activity.prefs = getPrefs(activity);
 
         switch (action == null ? "" : action) {
+            case CmdEntryPoint.ACTION_XW11_OUTPUT_BROKER: {
+                IBinder binder = intent.getBinderExtra(CmdEntryPoint.EXTRA_XW11_BROKER_BINDER);
+                long sessionId = intent.getLongExtra(CmdEntryPoint.EXTRA_XW11_SESSION, 0L);
+                if (binder == null || sessionId <= 0) {
+                    Log.e("XW11OutputIPC", "Broker broadcast has invalid Binder/session");
+                    break;
+                }
+                if (activity == null) {
+                    Log.e("XW11OutputIPC", "Cannot attach Binder output: MainActivity is not active");
+                    break;
+                }
+                try {
+                    activity.attachXw11OutputFromBroker(IXw11OutputBroker.Stub.asInterface(binder), sessionId);
+                } catch (Exception error) {
+                    Log.e("XW11OutputIPC", "Could not attach Binder output broker", error);
+                }
+                break;
+            }
             case ACTION_START: {
                 Bundle bundle = intent.getBundleExtra(null);
                 IBinder binder = bundle == null ? null : bundle.getBinder(null);
