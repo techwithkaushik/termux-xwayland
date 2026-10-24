@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+pkg_check_modules(LIBWESTON REQUIRED IMPORTED_TARGET libweston-16)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 set(PROTOCOL_XML "${CMAKE_CURRENT_SOURCE_DIR}/weston-output-capture.xml")
@@ -27,3 +28,8 @@ target_include_directories(xw11-weston-capture PRIVATE
 target_link_libraries(xw11-weston-capture PRIVATE
     xw11_native_transport PkgConfig::WAYLAND_CLIENT)
 target_compile_options(xw11-weston-capture PRIVATE -Wall -Wextra -Wno-unused-parameter)
+
+add_library(xw11-capture-authority MODULE capture_authority.c)
+target_link_libraries(xw11-capture-authority PRIVATE PkgConfig::LIBWESTON)
+target_compile_options(xw11-capture-authority PRIVATE -Wall -Wextra -Werror)
+set_target_properties(xw11-capture-authority PROPERTIES PREFIX "" OUTPUT_NAME "xw11-capture-authority")
