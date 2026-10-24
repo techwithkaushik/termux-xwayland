@@ -35,7 +35,7 @@ typedef struct xw11_output_frame {
     uint32_t stride_bytes;
     uint32_t fourcc;
     uint32_t pixel_bytes;
-} xw11_output_frame_error;
+} xw11_output_frame;
 
 xw11_output_frame_error xw11_output_frame_validate(
     const xw11_output_frame *frame, size_t *out_source_bytes);
