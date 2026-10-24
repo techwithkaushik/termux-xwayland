@@ -163,7 +163,15 @@ static int make_shm_fd(void) {
     int fd = (int)syscall(SYS_memfd_create, "xw11-capture", MFD_CLOEXEC);
     if (fd >= 0) return fd;
 #endif
-    char path[] = "/tmp/xw11-capture-XXXXXX";
+    const char *tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !*tmpdir) tmpdir = ".";
+    char path[PATH_MAX];
+    int path_len = snprintf(path, sizeof(path), "%s/%s", tmpdir,
+                            "xw11-capture-XXXXXX");
+    if (path_len < 0 || (size_t)path_len >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
     int fd2 = mkstemp(path);
     if (fd2 >= 0) {
         unlink(path);
