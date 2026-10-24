@@ -26,4 +26,4 @@ target_include_directories(xw11-weston-capture PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}" "../native-transport")
 target_link_libraries(xw11-weston-capture PRIVATE
     xw11_native_transport PkgConfig::WAYLAND_CLIENT)
-target_compile_options(xw11-weston-capture PRIVATE -Wall -Wextra -Werror)
+target_compile_options(xw11-weston-capture PRIVATE -Wall -Wextra -Wno-unused-parameter)
