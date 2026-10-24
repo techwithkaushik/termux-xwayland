@@ -112,16 +112,36 @@ static int connect_authenticated_socket(const char *name, const char *token,
             return -1;
         }
     }
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) { perror("create output socket"); return -1; }
     struct sockaddr_un address = {0};
     address.sun_family = AF_UNIX;
     address.sun_path[0] = '\0'; /* Linux abstract namespace; cross-UID filesystem-independent IPC. */
     memcpy(address.sun_path + 1, name, strlen(name));
     socklen_t length = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + strlen(name));
-    if (connect(fd, (struct sockaddr *)&address, length) != 0) {
-        perror("connect Android XW11 output socket");
+
+    /*
+     * am start returns before Activity.onCreate() necessarily binds the abstract
+     * LocalServerSocket. Retry only transient startup races; don't turn a bad
+     * name or a permanently absent Android endpoint into an infinite loop.
+     */
+    int fd = -1;
+    int last_error = 0;
+    for (int attempt = 0; attempt < 60; ++attempt) {
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd < 0) { perror("create output socket"); return -1; }
+        if (connect(fd, (struct sockaddr *)&address, length) == 0) break;
+        last_error = errno;
         close(fd);
+        fd = -1;
+        if (last_error != ECONNREFUSED && last_error != ENOENT && last_error != EINTR) {
+            errno = last_error;
+            perror("connect Android XW11 output socket");
+            return -1;
+        }
+        if (attempt != 59) usleep(100000);
+    }
+    if (fd < 0) {
+        errno = last_error;
+        perror("connect Android XW11 output socket after retries");
         return -1;
     }
     char line[128];
