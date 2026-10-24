@@ -156,7 +156,8 @@ public class LorieApp extends Application {
 
         switch (action == null ? "" : action) {
             case CmdEntryPoint.ACTION_XW11_OUTPUT_BROKER: {
-                IBinder binder = intent.getBinderExtra(CmdEntryPoint.EXTRA_XW11_BROKER_BINDER);
+                Bundle binderBundle = intent.getBundleExtra(CmdEntryPoint.EXTRA_XW11_BROKER_BINDER);
+                IBinder binder = binderBundle == null ? null : binderBundle.getBinder(CmdEntryPoint.EXTRA_XW11_BROKER_BINDER);
                 long sessionId = intent.getLongExtra(CmdEntryPoint.EXTRA_XW11_SESSION, 0L);
                 if (binder == null || sessionId <= 0) {
                     Log.e("XW11OutputIPC", "Broker broadcast has invalid Binder/session");
