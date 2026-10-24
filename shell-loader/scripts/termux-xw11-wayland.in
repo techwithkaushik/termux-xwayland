@@ -58,6 +58,7 @@ capture_pid_file="$STATE/capture.pid"
 capture_log="$STATE/capture.log"
 output_socket_file="$STATE/output-socket"
 output_token_file="$STATE/output-token"
+capture_auth_pid_file="$STATE/capture-client.pid"
 
 is_owned_weston() {
   local pid="${1:-}"
@@ -110,7 +111,7 @@ stop_owned_session() {
   if [[ -n "$transport_dir" && "$transport_dir" == "$RUNTIME_ROOT"/xw11-transport.* ]]; then
     rm -rf -- "$transport_dir"
   fi
-  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file" "$capture_pid_file" "$output_socket_file" "$output_token_file"
+  rm -f -- "$pid_file" "$runtime_file" "$display_file" "$socket_file" "$session_file" "$generation_file" "$transport_dir_file" "$capture_pid_file" "$output_socket_file" "$output_token_file" "$capture_auth_pid_file"
 }
 
 case "$ACTION" in
@@ -189,7 +190,16 @@ case "$ACTION" in
     : > "$log_file"
     : > "$console_log"
     SESSION_SOCKET="$SOCKET"
-    WESTON_ARGS=(--renderer=pixman --shell=kiosk --xwayland "--socket=$SESSION_SOCKET" --no-config "--log=$log_file")
+    CAPTURE_AUTH_MODULE="$PREFIX/lib/weston/xw11-capture-authority.so"
+    CAPTURE_AUTH_PID_FILE="$capture_auth_pid_file"
+    if [[ ! -r "$CAPTURE_AUTH_MODULE" ]]; then
+      echo "ERROR: capture authorization module is missing: $CAPTURE_AUTH_MODULE" >&2
+      echo "Run tools/build-weston-capture-termux.sh to build/install it." >&2
+      rm -rf -- "$RUNTIME" "$TRANSPORT_DIR"
+      exit 1
+    fi
+    rm -f -- "$CAPTURE_AUTH_PID_FILE"
+    WESTON_ARGS=(--renderer=pixman --shell=kiosk --xwayland "--socket=$SESSION_SOCKET" --no-config "--log=$log_file" "--modules=$CAPTURE_AUTH_MODULE")
     if [[ "$BACKEND" == "x11" ]]; then
       WESTON_ARGS+=(--backend=x11)
     else
@@ -197,10 +207,10 @@ case "$ACTION" in
     fi
 
     if [[ "$BACKEND" == "x11" ]]; then
-      env TMPDIR="$RUNTIME_ROOT" DISPLAY="$PARENT_DISPLAY" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
+      env TMPDIR="$RUNTIME_ROOT" DISPLAY="$PARENT_DISPLAY" XDG_RUNTIME_DIR="$RUNTIME" XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" PATH="$PREFIX/bin:$PATH" \
         "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     else
-      env TMPDIR="$RUNTIME_ROOT" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
+      env TMPDIR="$RUNTIME_ROOT" XDG_RUNTIME_DIR="$RUNTIME" XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" PATH="$PREFIX/bin:$PATH" \
         "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     fi
     WESTON_PID=$!
@@ -273,7 +283,7 @@ case "$ACTION" in
         exit 1
       }
     : > "$capture_log"
-    env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" PATH="$PREFIX/bin:$PATH" \
+    env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" XW11_CAPTURE_PID_FILE="$CAPTURE_AUTH_PID_FILE" PATH="$PREFIX/bin:$PATH" \
       "$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous \
       >> "$capture_log" 2>&1 &
     CAPTURE_PID=$!
