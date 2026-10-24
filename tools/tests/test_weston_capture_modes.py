@@ -30,6 +30,17 @@ class WestonCaptureModeTests(unittest.TestCase):
         self.assertIn("if (sent != XW11_OUTPUT_STREAM_OK)", self.source)
         self.assertIn("break;", self.source)
 
+    def test_output_fd_is_validated_before_connecting_to_compositor(self):
+        self.assertIn("#include <sys/socket.h>", self.source)
+        self.assertIn("getsockopt((int)socket_fd, SOL_SOCKET, SO_TYPE", self.source)
+        self.assertIn("socket_type != SOCK_STREAM", self.source)
+        self.assertIn("peer.ss_family != AF_UNIX", self.source)
+        self.assertIn("FD_CLOEXEC", self.source)
+        self.assertLess(
+            self.source.index("peer.ss_family != AF_UNIX"),
+            self.source.index("wl_display_connect(NULL)"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
