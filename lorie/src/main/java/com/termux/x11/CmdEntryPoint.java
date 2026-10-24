@@ -74,8 +74,10 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
         try {
             brokerSessionId = Long.parseLong(args[1]);
             if (brokerSessionId <= 0 || brokerSessionId > 0xffffffffL) throw new IllegalArgumentException("Invalid session id");
+            Bundle binderBundle = new Bundle();
+            binderBundle.putBinder(EXTRA_XW11_BROKER_BINDER, outputBroker);
             Intent brokerIntent = new Intent(ACTION_XW11_OUTPUT_BROKER).setPackage(BuildConfig.APPLICATION_ID)
-                    .putExtra(EXTRA_XW11_BROKER_BINDER, (IBinder) outputBroker)
+                    .putExtra(EXTRA_XW11_BROKER_BINDER, binderBundle)
                     .putExtra(EXTRA_XW11_SESSION, brokerSessionId);
             if (getuid() == 0 || getuid() == 2000) brokerIntent.setFlags(0x00400000 /* FLAG_RECEIVER_FROM_SHELL */);
             sendBroadcast(brokerIntent);
