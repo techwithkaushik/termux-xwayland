@@ -91,3 +91,14 @@ descriptor plus session id to the Android view; the capture producer is one-shot
 Weston capture protocol to be advertised and permitted. The existing Lorie view remains the default path.
 The latest Android CI run must complete before treating this receiver integration as build-verified, and
 a device test is required before claiming live rendering works.
+
+
+## Continuous capture milestone (2026-10-24)
+
+The Weston capture helper now has an opt-in `--continuous` mode. It reuses one
+bounded SHM buffer, submits the next capture only after the previous capture
+completes, increments the frame sequence monotonically, and stops on capture or
+transport failure. One-shot remains the default for diagnostics. This does not
+solve Surface socket provisioning, output resize/recreation, or device-side
+validation; the supervisor still needs to establish the authenticated connected
+socket and provide its descriptor/session/generation to both processes.
