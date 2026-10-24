@@ -72,3 +72,22 @@ This is a real implementation of the frame metadata/conversion boundary, but it 
 `tools/weston-capture/capture_main.c` implements the Weston 16 capture protocol lifecycle: registry discovery, explicit failure when the privileged global is unavailable, output capture source setup, supported XRGB8888/ARGB8888 format and size negotiation, bounded SHM allocation, one capture request, and chunked output transport. The `tools/weston-capture` CMake target generates client bindings from the vendored protocol XML using `wayland-scanner`. CI builds this target against `wayland-client`.
 
 The producer is deliberately one-shot rather than a permanent frame loop. It validates the actual compositor protocol and frame delivery seam first. It currently chooses the first output, and does not yet attach the stream to the Android Surface consumer or automatically restart capture after resize.
+
+
+## Android receiver milestone (2026-10-24)
+
+The optional Android bridge now exposes `Xw11NativeSurfaceView.attachOutputTransport(ParcelFileDescriptor, sessionId)`.
+The JNI layer validates that the supplied descriptor is a connected AF_UNIX stream socket, duplicates it,
+and receives output frames on a dedicated pthread rather than the UI thread. The receiver checks the
+session id, Surface generation, frame dimensions/format, and strictly increasing frame sequence before
+converting XRGB/ARGB memory in place and presenting it through the dedicated native Surface presenter.
+Surface teardown shuts down the duplicated socket and joins the worker before detaching the Surface.
+
+The output-frame/stream sources are now part of the Android `Xlorie` native target. The stream implementation
+uses bounded C allocation rather than STL containers to preserve this target's `-nostdlib++` constraint.
+
+**Still not end-to-end:** the session supervisor does not yet create/authorize the output socket and pass its
+descriptor plus session id to the Android view; the capture producer is one-shot and still requires the
+Weston capture protocol to be advertised and permitted. The existing Lorie view remains the default path.
+The latest Android CI run must complete before treating this receiver integration as build-verified, and
+a device test is required before claiming live rendering works.
