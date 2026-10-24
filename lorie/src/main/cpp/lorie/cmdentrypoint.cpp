@@ -129,14 +129,16 @@ static jboolean start(JNIEnv *env, jobject self, jobjectArray args) {
         unsetenv("TMPDIR");
 
     if (!getenv("TMPDIR")) {
-        if (access("/tmp", F_OK) == 0)
-            setenv("TMPDIR", "/tmp", 1);
-        else if (access("/data/data/com.termux/files/usr/tmp", F_OK) == 0)
+        // Prefer Termux's writable temporary directory. Android/Termux does
+        // not guarantee a system-wide /tmp directory exists or is writable.
+        if (access("/data/data/com.termux/files/usr/tmp", F_OK | W_OK) == 0)
             setenv("TMPDIR", "/data/data/com.termux/files/usr/tmp", 1);
+        else if (access("/tmp", F_OK | W_OK) == 0)
+            setenv("TMPDIR", "/tmp", 1);
     }
 
     if (!getenv("TMPDIR")) {
-        char* error = (char*) "$TMPDIR is not set. Normally it is pointing to /tmp of a container.";
+        char* error = (char*) "$TMPDIR is not set and no writable temporary directory was found.";
         log(ERROR, "%s", error);
         dprintf(2, "%s\n", error);
         return JNI_FALSE;
