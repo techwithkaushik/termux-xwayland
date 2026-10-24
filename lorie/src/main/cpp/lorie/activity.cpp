@@ -772,15 +772,22 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 }
                 const pthread_t thread = xw11OutputThread;
                 const int fd = xw11OutputFd;
+                // Keep the slot reserved until join completes. Otherwise a concurrent
+                // attach could overwrite the globals while the previous worker is exiting.
                 xw11OutputRunning = false;
-                xw11OutputThreadCreated = false;
-                xw11OutputFd = -1;
-                xw11OutputGeneration = 0;
-                xw11OutputSession = 0;
                 pthread_mutex_unlock(&xw11OutputMutex);
                 if (fd >= 0) shutdown(fd, SHUT_RDWR);
                 pthread_join(thread, nullptr);
                 if (fd >= 0) close(fd);
+                pthread_mutex_lock(&xw11OutputMutex);
+                if (xw11OutputThreadCreated && xw11OutputThread == thread &&
+                    xw11OutputGeneration == (uint64_t)generation) {
+                    xw11OutputThreadCreated = false;
+                    xw11OutputFd = -1;
+                    xw11OutputGeneration = 0;
+                    xw11OutputSession = 0;
+                }
+                pthread_mutex_unlock(&xw11OutputMutex);
             }},
             {"nativeAttachInputTransport", "(IJJ)I", (void *) +[](JNIEnv *env, __unused jclass clazz, jint fd, jlong sessionId, jlong generation) -> jint {
                 if (fd < 0 || sessionId <= 0 || (uint64_t) sessionId > UINT32_MAX || generation <= 0)
