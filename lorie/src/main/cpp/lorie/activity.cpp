@@ -91,7 +91,7 @@ static void *xw11OutputWorker(void *) {
             }
         }
         const xw11_present_result presented = xw11_presenter_present_rgba8888(
-            generation, frame.width, frame.height, pixels, rowBytes);
+            generation, frame.width, frame.height, pixels, frame.stride_bytes);
         if (presented != XW11_PRESENT_OK) {
             log(WARN, "XW11 output frame not presented (result=%d)", (int)presented);
             break;
