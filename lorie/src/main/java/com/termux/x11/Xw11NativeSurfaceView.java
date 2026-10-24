@@ -279,7 +279,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         final int scanCode = event.getScanCode() > 0
                 ? event.getScanCode() : linuxKeyCode(event.getKeyCode());
         if (current == 0 || scanCode <= 0) return false;
-        return nativeSubmitInputEvent(current, event.getEventTime() * NS_PER_MS,
+        return submitInputSafely(current, event.getEventTime() * NS_PER_MS,
                 INPUT_KEY, action, scanCode, 0, 0, event.getMetaState(),
                 event.getDeviceId());
     }
