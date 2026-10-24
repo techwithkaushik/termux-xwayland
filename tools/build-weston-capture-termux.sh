@@ -20,8 +20,9 @@ pkg-config --exists wayland-client || {
 
 cmake -S "$ROOT/tools/weston-capture" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" --parallel 2
-install -d "$PREFIX/bin"
+install -d "$PREFIX/bin" "$PREFIX/lib/weston"
 install -m 755 "$BUILD_DIR/xw11-weston-capture" "$PREFIX/bin/xw11-weston-capture"
+install -m 755 "$BUILD_DIR/xw11-capture-authority.so" "$PREFIX/lib/weston/xw11-capture-authority.so"
 
 set +e
 "$PREFIX/bin/xw11-weston-capture" >/dev/null 2>&1
@@ -32,3 +33,4 @@ if [[ "$result" -ne 2 ]]; then
   exit 1
 fi
 echo "Installed: $PREFIX/bin/xw11-weston-capture"
+echo "Installed: $PREFIX/lib/weston/xw11-capture-authority.so"
