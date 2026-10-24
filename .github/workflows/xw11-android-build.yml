@@ -270,7 +270,9 @@ jobs:
             echo "ERROR: packaged APK is missing nativeSubmitInputEvent" >&2
             exit 1
           fi
-          unzip -Z1 "$apk" | grep -Eq '^lib/armeabi-v7a/libXlorie\\.so
+          unzip -Z1 "$apk" | grep -Fq 'lib/armeabi-v7a/libXlorie.so'
+          echo "Verified clean APK contains XW11 input JNI declarations and 32-bit ARM native library."
+
       - name: Validate Debian launcher package
         shell: bash
         run: |
