@@ -42,7 +42,7 @@ extern "C" xw11_output_stream_result xw11_output_stream_send(
         const size_t chunk = source_bytes - offset < XW11_OUTPUT_CHUNK_MAX_BYTES
             ? source_bytes - offset : XW11_OUTPUT_CHUNK_MAX_BYTES;
         memcpy(payload, metadata, sizeof(metadata));
-        put32(payload.data() + XW11_OUTPUT_FRAME_WIRE_SIZE,
+        put32(payload + XW11_OUTPUT_FRAME_WIRE_SIZE,
               static_cast<uint32_t>(offset));
         memcpy(payload + XW11_OUTPUT_CHUNK_PREFIX_SIZE,
                pixels + offset, chunk);
@@ -79,33 +79,41 @@ extern "C" xw11_output_stream_result xw11_output_stream_receive(
             fd, &header, payload, XW11_PROTOCOL_MAX_PAYLOAD);
         if (io != XW11_IO_OK) { free(payload); return map_io(io); }
         if (header.type != XW11_MSG_BUFFER_SUBMIT ||
-            header.session_id != expected_session_id)
-            { free(payload); return XW11_OUTPUT_STREAM_ERR_SESSION; }
-        if (header.sequence_id == 0)
-            { free(payload); return XW11_OUTPUT_STREAM_ERR_SEQUENCE; }
-        if (header.payload_length < XW11_OUTPUT_CHUNK_PREFIX_SIZE)
-            { free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME; }
+            header.session_id != expected_session_id) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_SESSION;
+        }
+        if (header.sequence_id == 0) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_SEQUENCE;
+        }
+        if (header.payload_length < XW11_OUTPUT_CHUNK_PREFIX_SIZE) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME;
+        }
 
         xw11_output_frame chunk_frame = {};
         if (xw11_output_frame_decode(payload, XW11_OUTPUT_FRAME_WIRE_SIZE,
-                                     &chunk_frame) != XW11_OUTPUT_FRAME_OK)
-            { free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME; }
+                                     &chunk_frame) != XW11_OUTPUT_FRAME_OK) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME;
+        }
         const uint32_t chunk_offset =
-            get32(payload.data() + XW11_OUTPUT_FRAME_WIRE_SIZE);
+            get32(payload + XW11_OUTPUT_FRAME_WIRE_SIZE);
         const size_t chunk_bytes =
             header.payload_length - XW11_OUTPUT_CHUNK_PREFIX_SIZE;
 
-        if (chunk_frame.sequence_id != header.sequence_id)
-            return XW11_OUTPUT_STREAM_ERR_SEQUENCE;
-        if (chunk_frame.surface_generation != expected_generation)
-            { free(payload); return XW11_OUTPUT_STREAM_ERR_SESSION; }
+        if (chunk_frame.sequence_id != header.sequence_id) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_SEQUENCE;
+        }
+        if (chunk_frame.surface_generation != expected_generation) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_SESSION;
+        }
         if (first) {
             frame = chunk_frame;
             if (xw11_output_frame_validate(&frame, &source_bytes) !=
-                XW11_OUTPUT_FRAME_OK)
-                { free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME; }
-            if (source_bytes > pixel_capacity)
-                { free(payload); return XW11_OUTPUT_STREAM_ERR_BUFFER_TOO_SMALL; }
+                XW11_OUTPUT_FRAME_OK) {
+                free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME;
+            }
+            if (source_bytes > pixel_capacity) {
+                free(payload); return XW11_OUTPUT_STREAM_ERR_BUFFER_TOO_SMALL;
+            }
             first = false;
         } else if (frame.surface_generation != chunk_frame.surface_generation ||
                    frame.sequence_id != chunk_frame.sequence_id ||
@@ -114,11 +122,12 @@ extern "C" xw11_output_stream_result xw11_output_stream_receive(
                    frame.stride_bytes != chunk_frame.stride_bytes ||
                    frame.fourcc != chunk_frame.fourcc ||
                    frame.pixel_bytes != chunk_frame.pixel_bytes) {
-            return XW11_OUTPUT_STREAM_ERR_FRAME;
+            free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME;
         }
         if (chunk_offset != offset || chunk_bytes == 0 ||
-            chunk_bytes > source_bytes - offset)
-            return XW11_OUTPUT_STREAM_ERR_FRAME;
+            offset > source_bytes || chunk_bytes > source_bytes - offset) {
+            free(payload); return XW11_OUTPUT_STREAM_ERR_FRAME;
+        }
         memcpy(pixels + offset,
                payload + XW11_OUTPUT_CHUNK_PREFIX_SIZE, chunk_bytes);
         offset += chunk_bytes;
