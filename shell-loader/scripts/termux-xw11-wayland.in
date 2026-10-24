@@ -54,6 +54,10 @@ socket_file="$STATE/socket"
 session_file="$STATE/session-id"
 generation_file="$STATE/surface-generation"
 transport_dir_file="$STATE/transport-dir"
+capture_pid_file="$STATE/capture.pid"
+capture_log="$STATE/capture.log"
+output_socket_file="$STATE/output-socket"
+output_token_file="$STATE/output-token"
 
 is_owned_weston() {
   local pid="${1:-}"
@@ -219,7 +223,51 @@ case "$ACTION" in
     echo "NOTE: generation 0 means Android Surface has not been bound."
     echo "NOTE: metadata is private; this does not yet create an Android IPC endpoint."
     echo "log=$log_file"
-    echo "NOTE: server is ready; no desktop was launched."
-    echo "NOTE: this does not present Weston output on the Android app Surface."
+    # Start Android output IPC only after Weston/XWayland is ready.
+    CAPTURE="$PREFIX/bin/xw11-weston-capture"
+    AM="$(command -v am || true)"
+    if [[ ! -x "$CAPTURE" || -z "$AM" ]]; then
+      echo "ERROR: output rendering requires xw11-weston-capture in PREFIX/bin and Android am." >&2
+      stop_owned_session
+      exit 1
+    fi
+    OUTPUT_SOCKET="xw11-output-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+    OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    [[ "$OUTPUT_TOKEN" =~ ^[0-9a-f]{64}$ ]] || {
+      echo "ERROR: could not allocate output authentication token" >&2
+      stop_owned_session
+      exit 1
+    }
+    printf '%s\n' "$OUTPUT_SOCKET" > "$output_socket_file"
+    printf '%s\n' "$OUTPUT_TOKEN" > "$output_token_file"
+    chmod 600 "$output_socket_file" "$output_token_file"
+    ANDROID_COMPONENT="\${XW11_ANDROID_COMPONENT:-com.termux.x11/.MainActivity}"
+    "$AM" start -n "$ANDROID_COMPONENT" \
+      -a com.termux.x11.ACTION_XW11_OUTPUT \
+      --es org.techwithkaushik.termuxxw11.OUTPUT_SOCKET "$OUTPUT_SOCKET" \
+      --es org.techwithkaushik.termuxxw11.OUTPUT_TOKEN "$OUTPUT_TOKEN" \
+      --el org.techwithkaushik.termuxxw11.OUTPUT_SESSION "$SESSION_ID" \
+      >> "$console_log" 2>&1 || {
+        echo "ERROR: could not launch MainActivity output IPC endpoint" >&2
+        stop_owned_session
+        exit 1
+      }
+    env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" PATH="$PREFIX/bin:$PATH" \
+      "$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous \
+      >> "$capture_log" 2>&1 &
+    CAPTURE_PID=$!
+    printf '%s\n' "$CAPTURE_PID" > "$capture_pid_file"
+    sleep 0.25
+    if ! kill -0 "$CAPTURE_PID" 2>/dev/null; then
+      echo "ERROR: Weston output capture exited; see $capture_log" >&2
+      cat "$capture_log" >&2 || true
+      stop_owned_session
+      exit 1
+    fi
+    echo "OUTPUT_SOCKET=$OUTPUT_SOCKET"
+    echo "CAPTURE_PID=$CAPTURE_PID"
+    echo "capture_log=$capture_log"
+    echo "NOTE: output capture is connected; confirm first-frame presentation in logcat."
+
     ;;
 esac
