@@ -45,6 +45,8 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static boolean nativeBridgeFailureLogged;
     private static long nextGeneration = 1;
     private volatile long generation;
+    // IPC readiness requires surfaceChanged and successful native attachment; surfaceCreated alone is too early.
+    private volatile boolean surfaceReady;
     private ParcelFileDescriptor outputTransport;
     private long outputSessionId;
     private int surfaceWidth;
@@ -177,12 +179,13 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
+        surfaceReady = false;
         generation = allocateGeneration();
     }
 
     /** Package-private generation access for the isolated presenter diagnostic only. */
     long generationForDiagnostics() {
-        return generation;
+        return surfaceReady ? generation : 0;
     }
 
     @Override
@@ -200,14 +203,16 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
         if (sizeChanged) detachOutputSafely(current);
         int result = attachSurfaceSafely(surface, current);
         if (result != 0) {
+            surfaceReady = false;
             Log.e(TAG, "Native Surface attach failed: " + result);
-        } else if (outputTransport != null && outputSessionId > 0) {
-            // The output Surface may have been GONE when the launcher handed us
-            // its socket. Attach as soon as Surface lifecycle reaches a valid generation,
-            // and restart the receiver after a size change without touching input.
-            int outputResult = attachOutputSafely(outputTransport.getFd(), outputSessionId, current);
-            if (outputResult != 0)
-                Log.e(TAG, "Native output receiver attach/restart failed: " + outputResult);
+        } else {
+            surfaceReady = true;
+            if (outputTransport != null && outputSessionId > 0) {
+                // Attach only after native owns a valid Surface target.
+                int outputResult = attachOutputSafely(outputTransport.getFd(), outputSessionId, current);
+                if (outputResult != 0)
+                    Log.e(TAG, "Native output receiver attach/restart failed: " + outputResult);
+            }
         }
     }
 
@@ -418,6 +423,7 @@ final class Xw11NativeSurfaceView extends SurfaceView implements SurfaceHolder.C
     @Override
     public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
         final long current = generation;
+        surfaceReady = false;
         generation = 0;
         if (current != 0) {
             // Teardown must always complete even if RegisterNatives failed for this APK.
