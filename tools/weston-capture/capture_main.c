@@ -140,11 +140,11 @@ static int connect_authenticated_socket(const char *name, const char *token,
         ssize_t got = read(fd, &ch, 1);
         if (got < 0 && errno == EINTR) continue;
         if (got <= 0) { perror("read Android output readiness"); close(fd); return -1; }
-        if (ch == '\\n') break;
+        if (ch == '\n') break;
         if (ch < 0x20 || ch > 0x7e) { close(fd); return -1; }
         ready[ready_length++] = ch;
     }
-    ready[ready_length] = '\\0';
+    ready[ready_length] = '\0';
     unsigned long long negotiated = 0;
     char trailing = 0;
     if (sscanf(ready, "XW11READY %llu%c", &negotiated, &trailing) != 1 ||
