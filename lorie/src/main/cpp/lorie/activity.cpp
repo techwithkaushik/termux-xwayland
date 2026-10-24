@@ -752,15 +752,32 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                     return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
                 int socketType = 0;
                 socklen_t socketTypeLength = sizeof(socketType);
-                if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &socketType, &socketTypeLength) != 0 ||
-                    socketType != SOCK_STREAM)
+                if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &socketType, &socketTypeLength) != 0) {
+                    log(ERROR, "XW11 output attach rejected: getsockopt(SO_TYPE) fd=%d errno=%d (%s)",
+                        fd, errno, strerror(errno));
                     return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                }
+                if (socketType != SOCK_STREAM) {
+                    log(ERROR, "XW11 output attach rejected: fd=%d socket type=%d, expected SOCK_STREAM",
+                        fd, socketType);
+                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                }
                 struct sockaddr_storage peer = {};
                 socklen_t peerLength = sizeof(peer);
-                if (getpeername(fd, reinterpret_cast<struct sockaddr *>(&peer), &peerLength) != 0 ||
-                    peer.ss_family != AF_INET ||
-                    reinterpret_cast<struct sockaddr_in *>(&peer)->sin_addr.s_addr != htonl(INADDR_LOOPBACK))
+                if (getpeername(fd, reinterpret_cast<struct sockaddr *>(&peer), &peerLength) != 0) {
+                    log(ERROR, "XW11 output attach rejected: getpeername fd=%d errno=%d (%s)",
+                        fd, errno, strerror(errno));
                     return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                }
+                if (peer.ss_family != AF_INET) {
+                    log(ERROR, "XW11 output attach rejected: peer family=%d, expected AF_INET loopback",
+                        (int)peer.ss_family);
+                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                }
+                if (reinterpret_cast<struct sockaddr_in *>(&peer)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+                    log(ERROR, "XW11 output attach rejected: peer is not IPv4 loopback");
+                    return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
+                }
                 int ownedFd = dup(fd);
                 if (ownedFd < 0) return (jint) XW11_OUTPUT_STREAM_ERR_TRANSPORT;
                 pthread_mutex_lock(&xw11OutputMutex);
