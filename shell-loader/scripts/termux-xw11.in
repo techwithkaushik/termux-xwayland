@@ -21,7 +21,8 @@ fi
 # presenter. Keep the legacy entry point available until packaged dependencies
 # and device-side first-frame presentation are verified on all supported builds.
 if [ "${TERMUX_XW11_BACKEND:-legacy}" = "wayland" ]; then
-  WAYLAND_LAUNCHER="@PREFIX@/bin/termux-xw11-wayland"
+  PREFIX="${PREFIX:-/data/data/@EMBEDDED_APPLICATION_ID@/files/usr}"
+  WAYLAND_LAUNCHER="$PREFIX/bin/termux-xw11-wayland"
   if [ ! -x "$WAYLAND_LAUNCHER" ]; then
     echo "ERROR: native XWayland launcher is missing: $WAYLAND_LAUNCHER" >&2
     echo "Install/update the Termux-XW11 package containing termux-xw11-wayland." >&2
