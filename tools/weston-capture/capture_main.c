@@ -257,7 +257,7 @@ int main(int argc, char **argv) {
         socket_type != SOCK_STREAM ||
         getpeername((int)socket_fd, (struct sockaddr *)&peer, &peer_size) != 0 ||
         peer.ss_family != (connect_mode ? AF_INET : AF_UNIX)) {
-        fprintf(stderr, "ERROR: output FD must be a connected AF_UNIX SOCK_STREAM socket\\n");
+        fprintf(stderr, "ERROR: output FD must be a connected stream socket of the expected family\n");
         return 3;
     }
     int descriptor_flags = fcntl((int)socket_fd, F_GETFD);
