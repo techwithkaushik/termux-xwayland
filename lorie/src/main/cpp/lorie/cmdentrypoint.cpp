@@ -627,7 +627,7 @@ static jobject getXw11OutputConnection(JNIEnv *env, __unused jobject self,
         snprintf(sessionText, sizeof(sessionText), "%llu", (unsigned long long)sessionId);
         snprintf(generationText, sizeof(generationText), "%llu", (unsigned long long)surfaceGeneration);
         char *const childArgv[] = {(char *)capture, fdText, sessionText, generationText,
-                                   (char *)"--continuous", nullptr};
+                                   (char *)"--continuous", (char *)"--wait-presented", nullptr};
         execv(capture, childArgv);
         dprintf(STDERR_FILENO, "XW11 capture exec failed: %s\n", strerror(errno));
         _exit(127);
