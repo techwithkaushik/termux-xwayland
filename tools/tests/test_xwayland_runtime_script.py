@@ -32,6 +32,14 @@ class WestonRuntimeScriptContract(unittest.TestCase):
         self.assertIn('xwininfo -root -tree', self.script)
         self.assertIn('PASS: Weston + XWayland smoke test complete.', self.script)
 
+
+    def test_supervisor_only_signals_its_own_socket_session(self):
+        supervisor = (ROOT / "shell-loader/scripts/termux-xw11-wayland.in").read_text()
+        self.assertIn('cmdline="$(tr \'\\0\' \' \' < "/proc/$pid/cmdline")" || return 1', supervisor)
+        self.assertIn('[[ "$cmdline" == *"--socket=$SOCKET"* ]]', supervisor)
+        self.assertIn('kill -TERM "$SESSION_PID"', supervisor)
+        self.assertIn('SESSION_RUNTIME" == "$RUNTIME_ROOT"/xw11-wayland.*', supervisor)
+
     def test_optional_gates_are_both_attempted_and_failures_reported(self):
         self.assertIn('run_optional_gate()', self.runner)
         self.assertIn('run_optional_gate "Weston runtime test"', self.runner)
