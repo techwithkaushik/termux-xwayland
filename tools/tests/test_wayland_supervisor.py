@@ -41,7 +41,11 @@ class WaylandSupervisorTests(unittest.TestCase):
         self.assertIn('"$SESSION_RUNTIME" == "$RUNTIME_ROOT"/xw11-wayland.*', self.source)
 
     def test_android_surface_output_transport_is_integrated(self):
-        self.assertIn('OUTPUT_SOCKET="$((20000 + $(od -An -N2 -tu2 /dev/urandom', self.source)
+        # Abstract AF_UNIX socket names are random, non-filesystem names; do not
+        # regress to the old loopback-TCP port allocator.
+        self.assertIn('OUTPUT_SOCKET="xw11-output-$(od -An -N16 -tx1 /dev/urandom', self.source)
+        self.assertIn('OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom', self.source)
+        self.assertIn('[[ "$OUTPUT_SOCKET" =~ ^xw11-output-[0-9a-f]{32}$', self.source)
         self.assertIn('"$AM" start -n "$ANDROID_COMPONENT"', self.source)
         self.assertIn('"$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous', self.source)
         self.assertIn('echo "status=running"', self.source)
