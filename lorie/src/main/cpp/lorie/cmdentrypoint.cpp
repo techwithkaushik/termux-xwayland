@@ -11,6 +11,11 @@
 #include <android/log.h>
 #include <android/native_window_jni.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/prctl.h>
 #include <sys/ioctl.h>
