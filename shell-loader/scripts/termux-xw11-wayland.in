@@ -200,7 +200,7 @@ case "$ACTION" in
       env TMPDIR="$RUNTIME_ROOT" DISPLAY="$PARENT_DISPLAY" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
         "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     else
-      env TMPDIR="$PREFIX/tmp" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
+      env TMPDIR="$RUNTIME_ROOT" XDG_RUNTIME_DIR="$RUNTIME" PATH="$PREFIX/bin:$PATH" \
         "$WESTON" "${WESTON_ARGS[@]}" >> "$console_log" 2>&1 &
     fi
     WESTON_PID=$!
