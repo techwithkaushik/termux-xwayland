@@ -1,7 +1,5 @@
 package com.termux.x11;
 
-import android.net.LocalServerSocket;
-import android.net.LocalSocket;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -10,60 +8,65 @@ import androidx.annotation.NonNull;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Authenticated, one-session output socket bridge from the Termux-side capture
- * process to MainActivity. The abstract socket is not trusted by name alone:
- * every peer must prove the per-launch random token before its FD is handed to
- * the native frame receiver.
+ * Authenticated loopback TCP output bridge. Android SELinux can deny AF_UNIX
+ * abstract-socket connects from the Termux app domain to this app's domain;
+ * loopback TCP avoids that cross-domain Unix-socket restriction. Every peer
+ * must still prove the per-session random token before its FD reaches native code.
  */
 final class Xw11OutputSocketServer implements AutoCloseable {
     private static final String TAG = "XW11OutputIPC";
-    private final String socketName;
+    private final int port;
     private final String expectedHandshake;
     private final long sessionId;
     private final MainActivity activity;
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private LocalServerSocket server;
+    private ServerSocket server;
     private Thread thread;
 
-    Xw11OutputSocketServer(@NonNull MainActivity activity, @NonNull String socketName,
+    Xw11OutputSocketServer(@NonNull MainActivity activity, @NonNull String portText,
                            @NonNull String token, long sessionId) {
-        if (!socketName.matches("[A-Za-z0-9_.-]{1,80}") ||
+        if (!portText.matches("[0-9]{1,5}") ||
             !token.matches("[A-Fa-f0-9]{64}") || sessionId <= 0 ||
             sessionId > 0xffffffffL) {
             throw new IllegalArgumentException("Invalid XW11 output IPC parameters");
         }
-        this.activity = activity;
-        this.socketName = socketName;
+        int parsedPort = Integer.parseInt(portText);
+        if (parsedPort < 1024 || parsedPort > 65535)
+            throw new IllegalArgumentException("XW11 output port is out of range");
+        this.port = parsedPort;
         this.expectedHandshake = "XW11AUTH " + sessionId + " " + token;
         this.sessionId = sessionId;
+        this.activity = activity;
     }
 
     synchronized void start() throws IOException {
         if (server != null) return;
-        server = new LocalServerSocket(socketName);
+        server = new ServerSocket(port, 4, InetAddress.getByName("127.0.0.1"));
         thread = new Thread(this::acceptLoop, "XW11-output-ipc");
         thread.setDaemon(true);
         thread.start();
-        Log.i(TAG, "Authenticated output socket ready for session " + sessionId);
+        Log.i(TAG, "Authenticated loopback output socket ready on port " + port +
+                " for session " + sessionId);
     }
 
-    /** Read exactly the authentication line without buffering any following frame bytes. */
     private static String readHandshake(InputStream input) throws IOException {
         byte[] bytes = new byte[160];
         int length = 0;
         while (length < bytes.length) {
             int value = input.read();
             if (value < 0) throw new IOException("Peer closed before authentication");
-            if (value == '\n') {
+            if (value == '\n')
                 return new String(bytes, 0, length, StandardCharsets.US_ASCII);
-            }
-            if (value == '\r' || value < 0x20 || value > 0x7e) {
+            if (value == '\r' || value < 0x20 || value > 0x7e)
                 throw new IOException("Invalid authentication line");
-            }
             bytes[length++] = (byte) value;
         }
         throw new IOException("Authentication line too long");
@@ -71,7 +74,7 @@ final class Xw11OutputSocketServer implements AutoCloseable {
 
     private void acceptLoop() {
         while (!closed.get()) {
-            LocalSocket peer = null;
+            Socket peer = null;
             ParcelFileDescriptor descriptor = null;
             try {
                 peer = server.accept();
@@ -81,8 +84,6 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                     Log.w(TAG, "Rejected unauthenticated XW11 output peer");
                     continue;
                 }
-                // Ask Android to create the output-only Surface, then negotiate its
-                // actual generation. The producer must not guess lifecycle generations.
                 activity.runOnUiThread(activity::prepareXw11OutputSurface);
                 long generation = 0;
                 long deadline = android.os.SystemClock.uptimeMillis() + 5000;
@@ -91,15 +92,16 @@ final class Xw11OutputSocketServer implements AutoCloseable {
                     if (generation > 0) break;
                     Thread.sleep(20);
                 }
-                if (generation <= 0) throw new IOException("Android output Surface did not become ready");
+                if (generation <= 0)
+                    throw new IOException("Android output Surface did not become ready");
                 OutputStream output = peer.getOutputStream();
                 output.write(("XW11READY " + generation + "\n").getBytes(StandardCharsets.US_ASCII));
                 output.flush();
                 peer.setSoTimeout(0);
                 descriptor = ParcelFileDescriptor.dup(peer.getFileDescriptor());
                 ParcelFileDescriptor accepted = descriptor;
-                final long readyGeneration = generation;
                 descriptor = null;
+                final long readyGeneration = generation;
                 activity.runOnUiThread(() -> {
                     try {
                         if (closed.get() || !activity.attachXw11OutputTransport(accepted, sessionId)) {
