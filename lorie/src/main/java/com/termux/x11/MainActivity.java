@@ -922,10 +922,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Bind the authenticated XW11 output stream to MainActivity's own Surface.
-     * Call only after the view has received surfaceCreated/surfaceChanged and the
-     * session launcher has authenticated the socket and session id. Input remains
-     * on the existing TouchInputHandler/LorieView path.
+     * Bind the XW11 output stream to MainActivity's own Surface.
+     * The active supervisor obtains the connected descriptor through Binder and
+     * binds it to this session. Input remains on the existing TouchInputHandler/
+     * LorieView path.
      */
     void prepareXw11OutputSurface() {
         if (xw11OutputView != null) xw11OutputView.setVisibility(View.VISIBLE);
