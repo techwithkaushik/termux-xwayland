@@ -34,6 +34,17 @@ class OptionalXw11JniStartupTests(unittest.TestCase):
                         detach.index("xw11OutputThreadCreated = false"))
         self.assertIn("xw11OutputThread == thread", detach)
 
+    def test_received_frame_is_validated_and_converted_before_presentation(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        worker_start = source.index("static void *xw11OutputWorker")
+        worker_end = source.index("struct Xw11InputLock", worker_start)
+        worker = source[worker_start:worker_end]
+        self.assertIn("xw11_output_frame_to_rgba(", worker)
+        self.assertIn("converted != XW11_OUTPUT_FRAME_OK", worker)
+        self.assertIn("rgbaStride", worker)
+        self.assertIn("rgba, rgbaStride", worker)
+        self.assertIn("free(rgba);", worker)
+
 
 if __name__ == "__main__":
     unittest.main()
