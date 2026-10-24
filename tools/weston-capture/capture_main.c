@@ -198,7 +198,7 @@ int main(int argc, char **argv) {
     const char *generation_arg = connect_mode ? argv[5] : argv[3];
     unsigned long session = strtoul(session_arg, &end, 10);
     if (!end || *end || !session || session > UINT32_MAX) return 2;
-    unsigned long long generation = strtoull(generation_arg, &end, 10);
+    uint64_t generation = (uint64_t)strtoull(generation_arg, &end, 10);
     if (!end || *end || !generation) return 2;
     if (connect_mode) {
         socket_fd = connect_authenticated_socket(argv[2], argv[3], (uint32_t)session, &generation);
