@@ -262,15 +262,20 @@ jobs:
           fi
           # The JNI bridge must be checked in the actual APK, not only in source.
           # This catches the exact stale-Dex symptom from the device log.
-          if ! strings "${dex_files[@]}" | grep -Fq 'nativeAttachInputTransport'; then
+          strings "${dex_files[@]}" > "$dex_dir/dex-strings.txt"
+          grep -Fq 'nativeAttachInputTransport' "$dex_dir/dex-strings.txt" || {
             echo "ERROR: packaged APK is missing nativeAttachInputTransport" >&2
             exit 1
-          fi
-          if ! strings "${dex_files[@]}" | grep -Fq 'nativeSubmitInputEvent'; then
+          }
+          grep -Fq 'nativeSubmitInputEvent' "$dex_dir/dex-strings.txt" || {
             echo "ERROR: packaged APK is missing nativeSubmitInputEvent" >&2
             exit 1
-          fi
-          unzip -Z1 "$apk" | grep -Fq 'lib/armeabi-v7a/libXlorie.so'
+          }
+          unzip -Z1 "$apk" > "$dex_dir/apk-entries.txt"
+          grep -Fq 'lib/armeabi-v7a/libXlorie.so' "$dex_dir/apk-entries.txt" || {
+            echo "ERROR: APK is missing the 32-bit ARM libXlorie.so" >&2
+            exit 1
+          }
           echo "Verified clean APK contains XW11 input JNI declarations and 32-bit ARM native library."
 
       - name: Validate Debian launcher package
