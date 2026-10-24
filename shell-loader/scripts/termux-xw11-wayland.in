@@ -55,7 +55,12 @@ socket_file="$STATE/socket"
 is_owned_weston() {
   local pid="${1:-}"
   [[ "$pid" =~ ^[0-9]+$ && -r "/proc/$pid/cmdline" ]] || return 1
-  tr '\0' ' ' < "/proc/$pid/cmdline" | grep -Eq '(^|/|[[:space:]])weston([[:space:]]|$)'
+  local cmdline
+  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")" || return 1
+  # PID files can be stale or modified. Require both the Weston executable and
+  # this supervisor's unique socket argument before sending signals.
+  [[ "$cmdline" =~ (^|/|[[:space:]])weston([[:space:]]|$) ]] || return 1
+  [[ "$cmdline" == *"--socket=$SOCKET"* ]]
 }
 
 read_session() {
