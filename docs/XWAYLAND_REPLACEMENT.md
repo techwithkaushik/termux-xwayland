@@ -150,3 +150,24 @@ The source-preflight workflow validates shell syntax, Python compilation and uni
 The target-prefix architecture guard now checks ELF headers in shared libraries and static archive members, and rejects malformed ELF shared libraries, broken symlinks, and library symlinks escaping the staging prefix. Regression tests cover these cases. The new staging audit also checks the required pkg-config modules and rejects metadata/compiler/linker paths outside the target staging prefix (or an explicitly allowed NDK sysroot). OpenSSL is checked through its actual pkg-config modules, `libcrypto` and `libssl`, rather than a non-portable `openssl` module name. These are safety checks only: they do not prove full Android ABI compatibility, dependency completeness beyond the listed modules, or final linkability.
 
 The Android Meson build driver and cross-file generator are scaffolding only until a target-ABI staging prefix is populated. No real Android target build, compositor handshake, X11 client session, or device rendering/input test has been completed. The build driver now fails fast on missing required pkg-config modules or metadata paths that leak outside the staging prefix. Next work is still to create/populate a real target-ABI dependency staging prefix, run the actual cross-build (prioritizing `armeabi-v7a`), then validate compositor/XWayland startup on the Android device. Detached release-signature verification is also outstanding. Keep this PR Draft and preserve the existing `Xlorie` backend until those acceptance tests pass.
+
+## Repository architecture audit (2026-10-24)
+
+The current branch contains useful transport primitives, but the data paths are not yet connected end to end. The following boundaries are confirmed from the current implementation:
+
+- The Android app still starts the legacy X.Org server through `CmdEntryPoint` / `cmdentrypoint.cpp`; `recipes/xserver.cmake` builds the legacy DIX/X server sources. The standalone upstream XWayland source validation does not replace this runtime.
+- `termux-xw11-wayland` starts Weston with its managed XWayland and checks that the X11 display accepts clients. Its default headless backend does not export a frame stream to the Android app.
+- `xw11_presenter_present_rgba8888` consumes RGBA pixels supplied by a caller. No Weston output producer currently calls it, so the Android Surface bridge is not a live compositor output path.
+- The Java `Xw11NativeSurfaceView` can submit input only after a connected socket and nonzero session ID are supplied. The native dispatcher frames events, but there is no packaged Weston-side receiver that converts those events into a Wayland seat/device. Do not route the existing Lorie input callbacks to this path before that receiver exists.
+- The current legacy `LorieView` remains the working display/input path. Keep it intact until the new output and input paths are connected and the runtime can select the new backend without starting the legacy X server.
+
+### Native safety work completed during this audit
+
+- The Android Surface presenter now separates the short Surface-state mutex from serialized frame presentation. Each in-flight frame retains its own `ANativeWindow` reference, so a concurrent detach/re-attach cannot release a window while a frame is using it. Presentation cache state is protected by the presentation mutex and keyed by Surface generation.
+- JNI input transport attachment now rejects non-stream and non-connected/non-Unix socket descriptors before starting a writer. It also maintains a monotonic input-generation high-water mark and rechecks it after dispatcher creation, preventing a delayed older attach from replacing a newer input session.
+
+These changes improve lifetime and session safety but do not claim that compositor output or input injection is integrated.
+
+### Next implementation dependency
+
+The next blocking component is a real Weston output producer that can deliver a negotiated pixel/buffer representation to the Android presenter. In parallel, input needs a private connected-socket lifecycle plus a Weston/libweston input adapter. These must be implemented as compositor-side components; the Android presenter and event serializer alone cannot create them. Only after both sides exist should the app add an explicit backend mode and retire the legacy X.Org startup.
