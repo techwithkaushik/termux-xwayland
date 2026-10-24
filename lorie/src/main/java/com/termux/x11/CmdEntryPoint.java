@@ -32,6 +32,8 @@ import java.net.URL;
 public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     public static final String ACTION_START = "com.termux.x11.CmdEntryPoint.ACTION_START";
     public static final String ACTION_XW11_OUTPUT_BROKER = "com.termux.x11.ACTION_XW11_OUTPUT_BROKER";
+    public static final String EXTRA_XW11_BROKER_BINDER = "com.termux.x11.EXTRA_XW11_BROKER_BINDER";
+    public static final String EXTRA_XW11_SESSION = "com.termux.x11.EXTRA_XW11_SESSION";
     public static final String EXTRA_DOCUMENT_TAG = "document_tag";
     static final Handler handler;
     public static Context ctx;
@@ -73,8 +75,8 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
             brokerSessionId = Long.parseLong(args[1]);
             if (brokerSessionId <= 0 || brokerSessionId > 0xffffffffL) throw new IllegalArgumentException("Invalid session id");
             Intent brokerIntent = new Intent(ACTION_XW11_OUTPUT_BROKER).setPackage(BuildConfig.APPLICATION_ID)
-                    .putExtra("com.termux.x11.EXTRA_XW11_BROKER_BINDER", (IBinder) outputBroker)
-                    .putExtra("com.termux.x11.EXTRA_XW11_SESSION", brokerSessionId);
+                    .putExtra(EXTRA_XW11_BROKER_BINDER, (IBinder) outputBroker)
+                    .putExtra(EXTRA_XW11_SESSION, brokerSessionId);
             if (getuid() == 0 || getuid() == 2000) brokerIntent.setFlags(0x00400000 /* FLAG_RECEIVER_FROM_SHELL */);
             sendBroadcast(brokerIntent);
             Log.i("XW11OutputBroker", "Published output Binder for session " + brokerSessionId);
