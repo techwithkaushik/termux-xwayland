@@ -106,7 +106,7 @@ class AndroidGraphicsProbeContract(unittest.TestCase):
         self.assertIn("submitInputSafely(current", self.presenter_view)
         self.assertIn("presentFrameSafely(pixels", self.presenter_view)
         destroyed = self.presenter_view.index("public void surfaceDestroyed(@NonNull SurfaceHolder holder)")
-        destroyed_end = self.presenter_view.index("\\n    }", destroyed)
+        destroyed_end = self.presenter_view.index("\n    }", destroyed)
         lifecycle = self.presenter_view[destroyed:destroyed_end]
         self.assertIn("detachInputSafely(current)", lifecycle)
         self.assertIn("detachSurfaceSafely(current)", lifecycle)
