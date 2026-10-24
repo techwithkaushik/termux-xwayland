@@ -31,6 +31,7 @@ import java.net.URL;
 @Keep @SuppressLint({"StaticFieldLeak", "UnsafeDynamicallyLoadedCode"})
 public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     public static final String ACTION_START = "com.termux.x11.CmdEntryPoint.ACTION_START";
+    public static final String ACTION_XW11_OUTPUT_BROKER = "com.termux.x11.ACTION_XW11_OUTPUT_BROKER";
     public static final String EXTRA_DOCUMENT_TAG = "document_tag";
     static final Handler handler;
     public static Context ctx;
