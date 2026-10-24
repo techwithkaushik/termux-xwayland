@@ -25,7 +25,8 @@ class SurfaceResizeLifecycleTest(unittest.TestCase):
         self.assertLess(changed, detach)
         self.assertLess(detach, attach)
         self.assertLess(attach, restart)
-        self.assertIn("else if (outputTransport != null && outputSessionId > 0)", self.source)
+        self.assertIn("return surfaceReady ? generation : 0;", self.source)
+        self.assertIn("if (outputTransport != null && outputSessionId > 0)", self.source)
 
     def test_surface_destroy_closes_retained_transport(self):
         destroyed = self.source.index("public void surfaceDestroyed")
