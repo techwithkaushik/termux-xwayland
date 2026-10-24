@@ -79,7 +79,7 @@ jobs:
           bash -n tools/run-android-presenter-probe.sh
           # Exercise the real Weston -> XWayland -> X11-client startup path on CI.
           # This is a headless protocol smoke test, not Android Surface/GPU validation.
-          PREFIX=/usr TMPDIR=/tmp HOME="$RUNNER_TEMP" bash tools/test-weston-xwayland-runtime.sh --headless
+          PREFIX=/usr TMPDIR="$RUNNER_TEMP" HOME="$RUNNER_TEMP" bash tools/test-weston-xwayland-runtime.sh --headless
           bash -n shell-loader/scripts/termux-xw11-wayland.in
           grep -Fq 'LorieView.this.surfaceCreated(mNativeContext)' lorie/src/main/java/com/termux/x11/LorieView.java
           grep -Fq '{"surfaceCreated", "(J)V"' lorie/src/main/cpp/lorie/activity.cpp
@@ -103,84 +103,84 @@ jobs:
           python3 -m unittest discover -s tools/tests -v
           python3 tools/tests/test_android_graphics_probe.py
           # Prove the portable native transport builds and tests without the legacy X.Org graph.
-          cmake -S tools/native-transport -B /tmp/xw11-native-transport-build -DCMAKE_BUILD_TYPE=Debug
-          cmake --build /tmp/xw11-native-transport-build --parallel 2
-          ctest --test-dir /tmp/xw11-native-transport-build --output-on-failure
+          cmake -S tools/native-transport -B $RUNNER_TEMP/xw11-native-transport-build -DCMAKE_BUILD_TYPE=Debug
+          cmake --build $RUNNER_TEMP/xw11-native-transport-build --parallel 2
+          ctest --test-dir $RUNNER_TEMP/xw11-native-transport-build --output-on-failure
           # Build the standalone Weston 16 output-capture producer against the generated protocol.
-          cmake -S tools/weston-capture -B /tmp/xw11-weston-capture-build -DCMAKE_BUILD_TYPE=Debug
-          cmake --build /tmp/xw11-weston-capture-build --parallel 2
+          cmake -S tools/weston-capture -B $RUNNER_TEMP/xw11-weston-capture-build -DCMAKE_BUILD_TYPE=Debug
+          cmake --build $RUNNER_TEMP/xw11-weston-capture-build --parallel 2
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
             tools/native-transport/tests/test_protocol.cpp \
-            -o /tmp/xw11-transport-protocol-test
-          /tmp/xw11-transport-protocol-test
+            -o $RUNNER_TEMP/xw11-transport-protocol-test
+          $RUNNER_TEMP/xw11-transport-protocol-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
             tools/native-transport/xw11_transport_io.cpp \
             tools/native-transport/tests/test_transport_io.cpp \
-            -o /tmp/xw11-transport-io-test
-          /tmp/xw11-transport-io-test
+            -o $RUNNER_TEMP/xw11-transport-io-test
+          $RUNNER_TEMP/xw11-transport-io-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_fd_passing.cpp \
             tools/native-transport/tests/test_fd_passing.cpp \
-            -o /tmp/xw11-fd-passing-test
-          /tmp/xw11-fd-passing-test
+            -o $RUNNER_TEMP/xw11-fd-passing-test
+          $RUNNER_TEMP/xw11-fd-passing-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_surface_generation.cpp \
             tools/native-transport/tests/test_surface_generation.cpp \
-            -o /tmp/xw11-surface-generation-test
-          /tmp/xw11-surface-generation-test
+            -o $RUNNER_TEMP/xw11-surface-generation-test
+          $RUNNER_TEMP/xw11-surface-generation-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_buffer_descriptor.cpp \
             tools/native-transport/tests/test_buffer_descriptor.cpp \
-            -o /tmp/xw11-buffer-descriptor-test
-          /tmp/xw11-buffer-descriptor-test
+            -o $RUNNER_TEMP/xw11-buffer-descriptor-test
+          $RUNNER_TEMP/xw11-buffer-descriptor-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_buffer_registry.cpp \
             tools/native-transport/tests/test_buffer_registry.cpp \
-            -o /tmp/xw11-buffer-registry-test
-          /tmp/xw11-buffer-registry-test
+            -o $RUNNER_TEMP/xw11-buffer-registry-test
+          $RUNNER_TEMP/xw11-buffer-registry-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_input_transform.cpp \
             tools/native-transport/tests/test_input_transform.cpp \
-            -o /tmp/xw11-input-transform-test
-          /tmp/xw11-input-transform-test
+            -o $RUNNER_TEMP/xw11-input-transform-test
+          $RUNNER_TEMP/xw11-input-transform-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -Itools/native-transport \
             tools/native-transport/xw11_input_event.cpp \
             tools/native-transport/tests/test_input_event.cpp \
-            -o /tmp/xw11-input-event-test
-          /tmp/xw11-input-event-test
+            -o $RUNNER_TEMP/xw11-input-event-test
+          $RUNNER_TEMP/xw11-input-event-test
           c++ -std=c++17 -Wall -Wextra -Werror \
             -pthread -Itools/native-transport \
             tools/native-transport/xw11_input_event.cpp \
             tools/native-transport/xw11_input_queue.cpp \
             tools/native-transport/tests/test_input_queue.cpp \
-            -o /tmp/xw11-input-queue-test
-          /tmp/xw11-input-queue-test
+            -o $RUNNER_TEMP/xw11-input-queue-test
+          $RUNNER_TEMP/xw11-input-queue-test
           c++ -std=c++17 -Wall -Wextra -Werror -pthread -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
             tools/native-transport/xw11_transport_io.cpp \
             tools/native-transport/xw11_input_event.cpp \
             tools/native-transport/xw11_input_transport.cpp \
             tools/native-transport/tests/test_input_transport.cpp \
-            -o /tmp/xw11-input-transport-test
-          /tmp/xw11-input-transport-test
+            -o $RUNNER_TEMP/xw11-input-transport-test
+          $RUNNER_TEMP/xw11-input-transport-test
           c++ -std=c++17 -Wall -Wextra -Werror -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
             tools/native-transport/xw11_transport_io.cpp \
             tools/native-transport/xw11_input_event.cpp \
             tools/native-transport/xw11_input_receiver.cpp \
             tools/native-transport/tests/test_input_receiver.cpp \
-            -o /tmp/xw11-input-receiver-test
-          /tmp/xw11-input-receiver-test
+            -o $RUNNER_TEMP/xw11-input-receiver-test
+          $RUNNER_TEMP/xw11-input-receiver-test
           c++ -std=c++17 -Wall -Wextra -Werror -pthread -Itools/native-transport \
             tools/native-transport/xw11_transport_protocol.cpp \
             tools/native-transport/xw11_transport_io.cpp \
@@ -189,8 +189,8 @@ jobs:
             tools/native-transport/xw11_input_transport.cpp \
             tools/native-transport/xw11_input_dispatcher.cpp \
             tools/native-transport/tests/test_input_dispatcher.cpp \
-            -o /tmp/xw11-input-dispatcher-test
-          /tmp/xw11-input-dispatcher-test
+            -o $RUNNER_TEMP/xw11-input-dispatcher-test
+          $RUNNER_TEMP/xw11-input-dispatcher-test
 
       - name: Diagnose legacy X server gitlink
         run: bash tools/probe-xwayland-source.sh --allow-legacy-source
