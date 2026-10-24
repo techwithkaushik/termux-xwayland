@@ -758,7 +758,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, __unused void *reserved) {
                 struct sockaddr_storage peer = {};
                 socklen_t peerLength = sizeof(peer);
                 if (getpeername(fd, reinterpret_cast<struct sockaddr *>(&peer), &peerLength) != 0 ||
-                    peer.ss_family != AF_UNIX)
+                    peer.ss_family != AF_INET ||
+                    reinterpret_cast<struct sockaddr_in *>(&peer)->sin_addr.s_addr != htonl(INADDR_LOOPBACK))
                     return (jint) XW11_OUTPUT_STREAM_ERR_ARGUMENT;
                 int ownedFd = dup(fd);
                 if (ownedFd < 0) return (jint) XW11_OUTPUT_STREAM_ERR_TRANSPORT;
