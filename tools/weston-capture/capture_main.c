@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/stat.h>
@@ -107,9 +109,10 @@ static int connect_authenticated_socket(const char *port_text, const char *token
         return -1;
     }
     char *end = NULL;
+    errno = 0;
     long port = strtol(port_text, &end, 10);
-    if (!end || *end || port < 1024 || port > 65535) {
-        fprintf(stderr, "ERROR: output port must be in range 1024..65535\n");
+    if (errno || !end || *end || port < 1024 || port > 65535) {
+        fprintf(stderr, "ERROR: output port must be between 1024 and 65535\n");
         return -1;
     }
     for (size_t i = 0; i < 64; ++i) {
@@ -120,33 +123,22 @@ static int connect_authenticated_socket(const char *port_text, const char *token
             return -1;
         }
     }
+
+    /* Loopback TCP is intentional: Android SELinux can reject cross-domain
+     * AF_UNIX abstract-socket connections between Termux and the app. The
+     * per-session token still authenticates the peer before frame transport. */
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) { perror("create output socket"); return -1; }
     struct sockaddr_in address = {0};
     address.sin_family = AF_INET;
     address.sin_port = htons((uint16_t)port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-    /* Activity startup is asynchronous. Retry only transient connection races. */
-    int fd = -1;
-    int last_error = 0;
-    for (int attempt = 0; attempt < 60; ++attempt) {
-        fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) { perror("create loopback output socket"); return -1; }
-        if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) break;
-        last_error = errno;
+    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        perror("connect Android XW11 loopback output socket");
         close(fd);
-        fd = -1;
-        if (last_error != ECONNREFUSED && last_error != EINTR && last_error != EAGAIN) {
-            errno = last_error;
-            perror("connect Android XW11 loopback output socket");
-            return -1;
-        }
-        if (attempt != 59) usleep(100000);
-    }
-    if (fd < 0) {
-        errno = last_error;
-        perror("connect Android XW11 loopback output socket after retries");
         return -1;
     }
+
     char line[128];
     int n = snprintf(line, sizeof(line), "XW11AUTH %u %s\n", session, token);
     if (n <= 0 || (size_t)n >= sizeof(line)) { close(fd); return -1; }
