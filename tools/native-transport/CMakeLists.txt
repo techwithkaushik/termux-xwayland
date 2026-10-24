@@ -36,7 +36,7 @@ target_compile_options(xw11_native_transport PRIVATE -Wall -Wextra -Werror)
 function(xw11_add_test target source)
     add_executable(${target} "tests/${source}")
     target_link_libraries(${target} PRIVATE xw11_native_transport)
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    target_compile_options(${target} PRIVATE -UNDEBUG -Wall -Wextra -Werror)
     add_test(NAME ${target} COMMAND ${target})
 endfunction()
 
