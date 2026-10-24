@@ -2,9 +2,9 @@
 # Build and install the Weston capture producer in the active Termux prefix.
 set -Eeuo pipefail
 
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
-PREFIX="\${PREFIX:-/data/data/com.termux/files/usr}"
-BUILD_DIR="\${TMPDIR:-$PREFIX/tmp}/xw11-weston-capture-build"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+BUILD_DIR="${TMPDIR:-$PREFIX/tmp}/xw11-weston-capture-build"
 
 for command in cmake pkg-config wayland-scanner; do
   command -v "$command" >/dev/null 2>&1 || {
