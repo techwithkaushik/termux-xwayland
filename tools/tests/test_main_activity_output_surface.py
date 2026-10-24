@@ -41,6 +41,16 @@ class MainActivityOutputSurfaceTests(unittest.TestCase):
         self.assertIn("lorieView.setOnKeyListener(mLorieKeyListener);", self.activity)
         self.assertIn("mInputHandler.handleTouchEvent(lorieParent, lorieView, e)", self.activity)
 
+    def test_native_bridge_reports_each_jni_registration_failure_individually(self):
+        native = (ROOT / "lorie/src/main/cpp/lorie/activity.cpp").read_text(encoding="utf-8")
+        self.assertIn("for (const JNINativeMethod &method : xw11SurfaceMethods)", native)
+        self.assertIn('method.name, method.signature', native)
+        self.assertIn("env->ExceptionDescribe();", native)
+        self.assertIn("XW11 JNI registration result: %u registered, %u failed", native)
+        # A stale declaration must not make RegisterNatives fail atomically for
+        # the entire output/input bridge; the legacy Lorie startup stays optional.
+        self.assertNotIn('env->RegisterNatives(xw11SurfaceClass, xw11SurfaceMethods,', native)
+
 
 if __name__ == "__main__":
     unittest.main()
