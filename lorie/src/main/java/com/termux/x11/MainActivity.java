@@ -929,6 +929,10 @@ public class MainActivity extends AppCompatActivity {
         if (xw11OutputView != null) xw11OutputView.setVisibility(View.VISIBLE);
     }
 
+    long outputSurfaceGenerationForIpc() {
+        return xw11OutputView == null ? 0 : xw11OutputView.generationForDiagnostics();
+    }
+
     boolean attachXw11OutputTransport(@NonNull ParcelFileDescriptor connectedSocket,
                                       long sessionId) {
         if (xw11OutputView == null || sessionId <= 0) return false;
