@@ -251,30 +251,30 @@ case "$ACTION" in
       stop_owned_session
       exit 1
     fi
-    OUTPUT_SOCKET="xw11-output-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \\n')"
-    OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \\n')"
+    OUTPUT_SOCKET="xw11-output-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    OUTPUT_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     [[ "$OUTPUT_SOCKET" =~ ^xw11-output-[0-9a-f]{32}$ && "$OUTPUT_TOKEN" =~ ^[0-9a-f]{64}$ ]] || {
       echo "ERROR: could not allocate output IPC credentials" >&2
       stop_owned_session
       exit 1
     }
-    printf '%s\\n' "$OUTPUT_SOCKET" > "$output_socket_file"
-    printf '%s\\n' "$OUTPUT_TOKEN" > "$output_token_file"
+    printf '%s\n' "$OUTPUT_SOCKET" > "$output_socket_file"
+    printf '%s\n' "$OUTPUT_TOKEN" > "$output_token_file"
     chmod 600 "$output_socket_file" "$output_token_file"
     ANDROID_COMPONENT="${XW11_ANDROID_COMPONENT:-org.techwithkaushik.termuxxw11/com.termux.x11.MainActivity}"
-    "$AM" start -n "$ANDROID_COMPONENT" \\
-      -a com.termux.x11.ACTION_XW11_OUTPUT \\
-      --es org.techwithkaushik.termuxxw11.OUTPUT_SOCKET "$OUTPUT_SOCKET" \\
-      --es org.techwithkaushik.termuxxw11.OUTPUT_TOKEN "$OUTPUT_TOKEN" \\
-      --el org.techwithkaushik.termuxxw11.OUTPUT_SESSION "$SESSION_ID" \\
+    "$AM" start -n "$ANDROID_COMPONENT" \
+      -a com.termux.x11.ACTION_XW11_OUTPUT \
+      --es org.techwithkaushik.termuxxw11.OUTPUT_SOCKET "$OUTPUT_SOCKET" \
+      --es org.techwithkaushik.termuxxw11.OUTPUT_TOKEN "$OUTPUT_TOKEN" \
+      --el org.techwithkaushik.termuxxw11.OUTPUT_SESSION "$SESSION_ID" \
       >> "$console_log" 2>&1 || {
         echo "ERROR: could not launch MainActivity output IPC endpoint" >&2
         stop_owned_session
         exit 1
       }
     : > "$capture_log"
-    env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" PATH="$PREFIX/bin:$PATH" \\
-      "$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous \\
+    env XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY="$SESSION_SOCKET" PATH="$PREFIX/bin:$PATH" \
+      "$CAPTURE" --connect "$OUTPUT_SOCKET" "$OUTPUT_TOKEN" "$SESSION_ID" 1 --continuous \
       >> "$capture_log" 2>&1 &
     CAPTURE_PID=$!
     printf '%s\n' "$CAPTURE_PID" > "$capture_pid_file"
